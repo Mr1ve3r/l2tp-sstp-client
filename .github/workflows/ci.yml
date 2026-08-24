@@ -9,6 +9,9 @@ on:
     branches:
       - main
       - release/**
+      # Phase branches from the SPEC implementation plan. Each phase has build
+      # and test acceptance criteria, so they need CI before they are merged.
+      - spec/**
   workflow_dispatch:
 
 permissions:
@@ -30,6 +33,8 @@ jobs:
     name: flutter-checks
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      HAS_CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN != '' }}
 
     steps:
       - name: Checkout
@@ -61,6 +66,7 @@ jobs:
         run: flutter test --coverage
 
       - name: Upload coverage to Codecov
+        if: env.HAS_CODECOV_TOKEN == 'true'
         uses: codecov/codecov-action@v5
         with:
           files: coverage/lcov.info
@@ -108,6 +114,8 @@ jobs:
     name: android-unit-tests
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      HAS_CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN != '' }}
 
     steps:
       - name: Checkout
@@ -178,7 +186,7 @@ jobs:
             :core-trust:testDebugUnitTest
 
       - name: Upload Android test results to Codecov
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && env.HAS_CODECOV_TOKEN == 'true' }}
         uses: codecov/test-results-action@0fa95f0e1eeaafde2c782583b36b28ad0d8c77d3 # v1.2.1
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
@@ -274,7 +282,9 @@ jobs:
       - native-tests
       - android-go-tests
       - android-unit-tests
-    if: github.event_name == 'workflow_dispatch' || github.event_name == 'push'
+    if: >-
+      (github.event_name == 'workflow_dispatch' || github.event_name == 'push') &&
+      (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release/'))
 
     steps:
       - name: Checkout
