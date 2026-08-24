@@ -2,6 +2,8 @@
 > with an SSTP engine derived from [Open SSTP Client](https://github.com/kittoku/Open-SSTP-Client) (MIT).
 > This is an independent project and is not affiliated with or endorsed by
 > the authors of either upstream project.
+>
+> [Русская версия](README.ru.md) • [SPEC](SPEC) • [Architecture](docs/ARCHITECTURE.md) • [Licensing](docs/LICENSING.md)
 
 <p align="center">
   <img src="resources/logo/tf-xxxhdpi.png" alt="TunnelForge logo" width="160">
@@ -56,6 +58,28 @@
   <a href="#feedback">Feedback</a> •
   <a href="#licensing">Licensing</a>
 </p>
+
+## Fork status
+
+This fork adds an SSTP engine alongside the existing L2TP/IPsec one, behind a
+protocol selector in the profile, with a tunnel layer and a server-certificate
+store shared by both. Work follows the phased plan in [`SPEC`](SPEC):
+
+- [x] Phase 1 — module layout, version catalog, ktlint, CI
+- [ ] Phase 2 — `engine-api` contract
+- [ ] Phase 3 — `core-tunnel`
+- [ ] Phase 4 — `engine-l2tp`
+- [ ] Phase 5 — `core-trust`
+- [ ] Phase 6 — `engine-sstp`
+- [ ] Phase 7 — single `VpnService` and protocol dispatcher
+- [ ] Phase 8 — profile model, storage, migration
+- [ ] Phase 9 — UI
+- [ ] Phase 10 — failover and protocol auto-selection
+- [ ] Phase 11 — tests, documentation, release
+
+Until phase 7 lands, a build of this repository is functionally equivalent to
+upstream TunnelForge. Everything below this section describes the L2TP client
+inherited from upstream and still applies.
 
 ## Overview
 
@@ -192,6 +216,13 @@ Netty is the local proxy frontend. It accepts HTTP CONNECT and SOCKS5 clients wi
 | `android/gvisor/` | Go/gVisor userspace networking used by proxy mode |
 | `fastlane/metadata/` | Store metadata, screenshots, and changelogs |
 | `tool/` | Release, versioning, and VPN diagnostic scripts |
+| `engine-api/` | Protocol-agnostic engine contract: `VpnEngine`, `EngineProfile`, `EngineError` |
+| `engine-l2tp/` | `VpnEngine` wrapper around the native L2TP/IPsec engine |
+| `engine-sstp/` | SSTP engine derived from Open SSTP Client |
+| `core-tunnel/` | Shared TUN, routing and DNS layer |
+| `core-trust/` | Server certificate store and trust policies |
+| `third_party/open-sstp-client/` | Upstream MIT licence and per-file provenance |
+| `docs/` | Architecture, licensing, and dependency notes |
 
 ## Security & Privacy
 
@@ -225,4 +256,11 @@ include the values used in the profile (such as MTU and DNS), Android version, d
 
 ## Licensing
 
-This project is licensed under `GPL-3.0-only`. See [LICENSE](LICENSE).
+This project is licensed under `GPL-3.0-or-later`. It combines GPL-3.0 code from
+TunnelForge with MIT code from Open SSTP Client; the combination must be GPL-3.0.
+
+- [`LICENSE`](LICENSE) — full GPL-3.0 text
+- [`NOTICE`](NOTICE) — upstream projects and their licences
+- [`third_party/open-sstp-client/LICENSE`](third_party/open-sstp-client/LICENSE) — verbatim MIT text
+- [`third_party/open-sstp-client/PROVENANCE.md`](third_party/open-sstp-client/PROVENANCE.md) — per-file origin of imported code
+- [`docs/LICENSING.md`](docs/LICENSING.md) — why GPL-3.0, and what a fork of this fork must do

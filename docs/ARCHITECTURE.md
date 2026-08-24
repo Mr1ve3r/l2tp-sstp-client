@@ -1,0 +1,94 @@
+# Architecture
+
+This document describes the layering of the combined L2TP/IPsec + SSTP client.
+It is written against the plan in [`SPEC`](../SPEC) and is updated as each phase
+lands. Sections marked **(planned)** describe work that has not been implemented
+yet; they exist so the target shape is agreed before code is written.
+
+## Layers
+
+```
+Flutter UI (lib/)
+      │  MethodChannel / EventChannel
+      ▼
+android/app  ──  CombinedVpnService, platform channels        (planned, phase 7)
+      │
+      ├── core-tunnel ── TunnelBuilder, KillSwitchController,  (planned, phase 3)
+      │                  DnsConfigurator, NetworkMonitor,
+      │                  SocketProtectorImpl
+      │
+      ├── engine-l2tp ── L2tpEngine : VpnEngine                (planned, phase 4)
+      │        └── JNI ── android/app/src/main/cpp (unchanged native engine)
+      │
+      ├── engine-sstp ── SstpEngine : VpnEngine                (planned, phase 6)
+      │        └── core-trust ── certificate store, TrustPolicy (planned, phase 5)
+      │
+      └── engine-api ─── VpnEngine, EngineProfile, EngineState, (phase 2)
+                         EngineError, TunnelParams, SocketProtector
+```
+
+Dependency rules, in force from phase 1:
+
+- `engine-api` depends on nothing but Kotlin coroutines and the Android SDK. No
+  Flutter, no concrete engine, no `VpnService`.
+- `core-tunnel` depends on `engine-api` only. It must not learn which protocol is
+  running.
+- `engine-l2tp` and `engine-sstp` depend on `engine-api`; `engine-sstp` also
+  depends on `core-trust`. Neither depends on the other, and neither depends on
+  `android/app`.
+- Only `android/app` may touch `VpnService` and `VpnService.Builder`.
+
+The last rule is the one that decides whether phase 7 works. An engine that can
+reach a `VpnService.Builder` will quietly configure the tunnel itself, and the
+single-service dispatcher then has two owners for one resource.
+
+## The `VpnEngine` contract
+
+Both engines expose the same lifecycle:
+
+```
+engine.connect(profile, protector)  ->  TunnelParams
+        (transport up, PPP negotiated, TUN not yet created)
+tunnelBuilder.build(params, perAppConfig)  ->  ParcelFileDescriptor
+engine.attachTun(fd)
+        (packet pumping starts)
+engine.disconnect()
+```
+
+`connect()` deliberately stops short of creating the TUN. The negotiated address,
+DNS servers and MTU come back as `TunnelParams`, and the host builds the
+interface. That keeps routing policy — default route, per-app rules, kill switch
+— in one place for both protocols instead of duplicated inside each engine.
+
+Every socket an engine opens must be passed to `SocketProtector.protect()`
+*before* `connect()` on that socket, including sockets created during a
+reconnect and the socket to an HTTP proxy. See appendix Б of the `SPEC`.
+
+## Error mapping
+
+`EngineError` is the single vocabulary both engines report in. The per-protocol
+mapping tables below are filled in as the engines land.
+
+### Native L2TP layer → `EngineError` (planned, phase 4)
+
+| Native status | `EngineError` |
+|---|---|
+| _to be filled in phase 4_ | |
+
+### SSTP `Where` / `Result` → `EngineError` (planned, phase 6)
+
+Upstream Open SSTP Client reports failures as a `Where` (which component failed)
+plus a `Result` (why). The granularity is good and is carried over verbatim; the
+table below maps it onto `EngineError`.
+
+| `Where` | `Result` | `EngineError` |
+|---|---|---|
+| _to be filled in phase 6_ | | |
+
+## Native code
+
+The C engine under `android/app/src/main/cpp/` implements L2TP, IKEv1 and the
+IPv4 data plane. It is working and tested, and phase 4 is explicitly a
+behaviour-preserving refactor around it: `git diff` over that directory is
+expected to stay empty. Any change there needs a justification in the commit
+message.
