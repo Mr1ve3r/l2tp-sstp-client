@@ -66,7 +66,7 @@ protocol selector in the profile, with a tunnel layer and a server-certificate
 store shared by both. Work follows the phased plan in [`SPEC`](SPEC):
 
 - [x] Phase 1 — module layout, version catalog, ktlint, CI
-- [ ] Phase 2 — `engine-api` contract
+- [x] Phase 2 — `engine-api` contract
 - [ ] Phase 3 — `core-tunnel`
 - [ ] Phase 4 — `engine-l2tp`
 - [ ] Phase 5 — `core-trust`

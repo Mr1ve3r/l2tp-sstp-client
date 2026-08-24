@@ -23,7 +23,7 @@ android/app  ──  CombinedVpnService, platform channels        (planned, phas
       ├── engine-sstp ── SstpEngine : VpnEngine                (planned, phase 6)
       │        └── core-trust ── certificate store, TrustPolicy (planned, phase 5)
       │
-      └── engine-api ─── VpnEngine, EngineProfile, EngineState, (phase 2)
+      └── engine-api ─── VpnEngine, EngineProfile, EngineState,
                          EngineError, TunnelParams, SocketProtector
 ```
 
@@ -63,6 +63,30 @@ interface. That keeps routing policy — default route, per-app rules, kill swit
 Every socket an engine opens must be passed to `SocketProtector.protect()`
 *before* `connect()` on that socket, including sockets created during a
 reconnect and the socket to an HTTP proxy. See appendix Б of the `SPEC`.
+
+## Deviations from the SPEC in `engine-api`
+
+Two things in the SPEC's phase 2 listing could not be implemented as written.
+Both are recorded here rather than silently changed.
+
+**`SocketProtector` is a plain interface, not a `fun interface`.** The SPEC
+declares it `fun interface` with three `protect` overloads. Kotlin allows
+exactly one abstract method in a functional interface, so that does not
+compile. The three overloads are the useful part — a TCP socket, a UDP socket
+and a raw descriptor are all genuinely needed — so the `fun` modifier is what
+gave way. Callers lose SAM-conversion syntax and pass an object instead.
+
+**`EngineProfile.Sstp` carries certificate selections.** The SPEC's field list
+stops at `trustPolicy`, but `TrustManagerFactoryProvider.create(policy, certs,
+pins)` in phase 5.6 needs the certificates and the pinned fingerprints too, and
+the profile handed to an engine has no identifier it could use to look them up.
+Two fields are added: `trustedCertificateIds`, holding SHA-256 fingerprints
+that identify entries in the `core-trust` store, and `pinnedFingerprints` for
+`PIN_LEAF`. Without them `CUSTOM_ONLY` and `PIN_LEAF` cannot be expressed at
+all.
+
+`EngineException` is also new: `connect()` is declared to return `TunnelParams`,
+so it needs a way to fail that carries an `EngineError`.
 
 ## Error mapping
 
