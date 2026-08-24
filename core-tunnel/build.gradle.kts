@@ -1,7 +1,8 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import java.io.File
 
-// Protocol-agnostic TUN/routes/DNS layer (SPEC phase 3). Must never learn which protocol is running.
+// Protocol-agnostic TUN/routes/DNS layer (SPEC phase 3).
+// Must never learn which protocol is running.
 plugins {
     id("com.android.library")
     id("org.jetbrains.kotlin.android")
@@ -30,9 +31,8 @@ kotlin {
     }
 }
 
-// ktlint is applied only to the modules introduced by this fork. The existing
-// `:app` sources come from upstream TunnelForge and reformatting them wholesale
-// would bury real changes in noise (SPEC rule 0.3.1).
+// ktlint runs on the modules this fork adds, not on `:app`: those sources come
+// from upstream TunnelForge, and reformatting them would bury real changes.
 ktlint {
     android.set(true)
     ignoreFailures.set(false)

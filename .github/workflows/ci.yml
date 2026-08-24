@@ -171,6 +171,25 @@ jobs:
         working-directory: android
         run: ./gradlew --no-daemon --console=plain --stacktrace -Dorg.gradle.vfs.watch=false ktlintCheck
 
+      # Job logs are only readable by repository admins. Re-emitting the ktlint
+      # report as workflow annotations puts the findings on the check run, where
+      # the public API can reach them.
+      - name: Surface ktlint findings
+        if: failure()
+        run: |
+          shopt -s nullglob globstar
+          found=0
+          for report in build/**/reports/ktlint/**/*.txt; do
+            while IFS= read -r line; do
+              [ -z "${line}" ] && continue
+              echo "::error title=ktlint::${line}"
+              found=1
+            done < "${report}"
+          done
+          if [ "${found}" -eq 0 ]; then
+            echo "::error title=ktlint::ktlintCheck failed without producing a report -- the failure is in task configuration or plugin resolution, not in lint findings"
+          fi
+
       - name: Run Android JVM tests
         working-directory: android
         run: ./gradlew --no-daemon --console=plain --info --stacktrace -Dorg.gradle.vfs.watch=false :app:testDebugUnitTest
