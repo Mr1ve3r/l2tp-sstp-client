@@ -36,10 +36,7 @@ class FakeVpnEngine(
     var disconnectCount: Int = 0
         private set
 
-    override suspend fun connect(
-        profile: EngineProfile,
-        protector: SocketProtector,
-    ): TunnelParams {
+    override suspend fun connect(profile: EngineProfile, protector: SocketProtector): TunnelParams {
         mutableState.value = EngineState.Connecting(STAGE_TRANSPORT)
         log("connecting to ${profile.server}")
 
