@@ -1,0 +1,10 @@
+This product includes software from the following projects.
+
+1. TunnelForge — https://github.com/evokelektrique/tunnel-forge
+   License: GPL-3.0
+   Role: base application (Flutter UI, VpnService, native L2TP/IPsec engine)
+
+2. Open SSTP Client — https://github.com/kittoku/Open-SSTP-Client
+   Copyright (c) KOBAYASHI Ittoku
+   License: MIT — full text in third_party/open-sstp-client/LICENSE
+   Role: SSTP protocol and PPP implementation (modified)

@@ -1,0 +1,909 @@
+# Техническое задание: совмещённый L2TP/IPsec + SSTP VPN-клиент для Android
+
+Документ предназначен для исполнения агентом (Claude Code). Работа разбита на фазы.
+**Фазы выполняются строго последовательно. Переход к следующей фазе запрещён, пока
+не выполнены все критерии приёмки текущей.**
+
+---
+
+## 0. Контекст и правила работы
+
+### 0.1. Что делаем
+
+Форк проекта `evokelektrique/tunnel-forge` (Flutter UI + Kotlin `VpnService` +
+нативный C-движок L2TP/IPsec), в который встраивается SSTP-движок, извлечённый из
+`kittoku/Open-SSTP-Client` (чистый Kotlin, корутины). Результат — одно приложение
+с выбором протокола в профиле, общим слоем туннеля и хранилищем серверных
+сертификатов для SSTP.
+
+### 0.2. Лицензионный режим
+
+- Итоговый проект: **GPL-3.0-or-later**.
+- Код из Open-SSTP-Client: **MIT**, совместим в направлении MIT → GPL.
+- В каждом файле, взятом из OSC, сохраняется исходный копирайт-заголовок MIT.
+- Файл `NOTICE` в корне перечисляет upstream-проекты и их лицензии.
+- Полный текст MIT-лицензии OSC кладётся в `third_party/open-sstp-client/LICENSE`.
+- Запрещено удалять или переписывать существующие копирайт-заголовки TunnelForge.
+
+### 0.2.1. Опорные точки upstream
+
+| Проект | Роль | Коммит / состояние |
+|---|---|---|
+| `evokelektrique/tunnel-forge` | база приложения | форк, история сохраняется |
+| `kittoku/Open-SSTP-Client` | источник SSTP-движка | `5f97511c3afff7dcf76b763882e0e29207ad1a36`, тег `1.10.3`, 15.08.2026 |
+
+При обновлении из upstream хеш обновляется здесь и в `PROVENANCE.md`
+одновременно.
+
+### 0.3. Правила для агента
+
+1. **Не рефакторить то, что не просили.** Особенно нативный C-код L2TP —
+   он рабочий и оттестирован. Любое изменение в `native/` требует явного
+   обоснования в commit message.
+2. **Один коммит — одна логическая единица.** Формат Conventional Commits
+   (`feat:`, `fix:`, `refactor:`, `chore:`, `docs:`, `test:`).
+3. **После каждой фазы** — сборка debug APK должна проходить, существующий
+   L2TP-функционал не должен ломаться.
+4. **Не добавлять зависимости** без записи в `docs/DEPENDENCIES.md` с указанием
+   лицензии зависимости и проверки её совместимости с GPL-3.0.
+5. **Никаких сетевых запросов телеметрии, аналитики, crash-репортинга** в
+   сторонние сервисы. Приложение не должно ходить никуда, кроме VPN-сервера
+   пользователя.
+6. Секреты (пароли, PSK) — только в зашифрованном хранилище, никогда в логах,
+   никогда в `SharedPreferences` в открытом виде.
+7. Язык кода и комментариев — английский. Язык документации — русский и английский
+   (`README.md` — английский, `README.ru.md` — русский).
+
+---
+
+## Фаза 1. Подготовка репозитория и базовая структура
+
+### 1.1. Задачи
+
+1. Создать структуру Gradle-модулей:
+
+```
+/
+├── android/                     # Android host-приложение (из TunnelForge)
+│   └── app/
+├── lib/                         # Flutter UI (из TunnelForge)
+├── engine-api/                  # НОВЫЙ: чистый Kotlin, интерфейсы движков
+├── engine-l2tp/                 # НОВЫЙ: обёртка существующего C-движка
+├── engine-sstp/                 # НОВЫЙ: SSTP-движок из OSC
+├── core-tunnel/                 # НОВЫЙ: общий слой TUN/маршруты/DNS
+├── core-trust/                  # НОВЫЙ: хранилище серверных сертификатов
+├── native/                      # Существующий C-код L2TP/IPsec — НЕ ТРОГАТЬ
+├── third_party/
+│   └── open-sstp-client/
+│       ├── LICENSE              # MIT-текст из upstream
+│       └── PROVENANCE.md        # список перенесённых файлов и их origin-путей
+├── LICENSE                      # GPL-3.0
+├── NOTICE
+├── README.md
+├── README.ru.md
+└── docs/
+    ├── ARCHITECTURE.md
+    ├── DEPENDENCIES.md
+    └── LICENSING.md
+```
+
+2. Модули `engine-api`, `core-trust` — плагин `java-library` или
+   `com.android.library` без зависимостей от Flutter.
+3. Настроить `libs.versions.toml` (version catalog) для всех версий.
+4. Настроить ktlint или detekt, добавить задачу в CI.
+5. GitHub Actions workflow: сборка debug APK + unit-тесты на каждый push и PR.
+   Никаких секретов в workflow на этом этапе (подпись релиза — позже).
+
+### 1.2. Критерии приёмки
+
+- `./gradlew assembleDebug` проходит.
+- Приложение устанавливается и подключается по L2TP к тестовому серверу —
+  поведение идентично upstream.
+- `./gradlew ktlintCheck` (или detekt) проходит без ошибок.
+- В корне есть `LICENSE` (GPL-3.0), `NOTICE`, `third_party/open-sstp-client/LICENSE`.
+- CI зелёный.
+
+---
+
+## Фаза 2. Модуль `engine-api` — контракт движков
+
+### 2.1. Задачи
+
+Определить protocol-agnostic контракт. Ничего не реализовывать, только API.
+
+```kotlin
+package io.github.<owner>.combined.engine
+
+/** Абстракция над VpnService.protect(). Реализуется хостом. */
+fun interface SocketProtector {
+    fun protect(socket: java.net.Socket): Boolean
+    fun protect(socket: java.net.DatagramSocket): Boolean
+    fun protect(fd: Int): Boolean
+}
+
+/** Параметры туннеля, согласованные с сервером после установки соединения. */
+data class TunnelParams(
+    val localAddress: java.net.InetAddress,
+    val prefixLength: Int,
+    val dnsServers: List<java.net.InetAddress>,
+    val mtu: Int,
+    val searchDomains: List<String> = emptyList(),
+    val routes: List<Route> = emptyList()   // пусто = default route 0.0.0.0/0
+)
+
+data class Route(val address: java.net.InetAddress, val prefixLength: Int)
+
+sealed interface EngineState {
+    data object Idle : EngineState
+    data class Connecting(val stage: String) : EngineState
+    data class Connected(val params: TunnelParams, val since: Long) : EngineState
+    data class Reconnecting(val attempt: Int, val cause: EngineError) : EngineState
+    data class Failed(val error: EngineError) : EngineState
+    data object Disconnected : EngineState
+}
+
+sealed interface EngineError {
+    val messageKey: String        // ключ для локализации в UI
+    val detail: String?           // техническая деталь для лога
+
+    data class NetworkUnreachable(override val detail: String?) : EngineError { ... }
+    data class AuthenticationFailed(override val detail: String?) : EngineError { ... }
+    data class TlsHandshakeFailed(override val detail: String?) : EngineError { ... }
+    data class CertificateRejected(
+        val fingerprintSha256: String?, override val detail: String?
+    ) : EngineError { ... }
+    data class CertificateExpired(val notAfter: Long, override val detail: String?) : EngineError { ... }
+    data class HostnameMismatch(
+        val expected: String, val presented: List<String>, override val detail: String?
+    ) : EngineError { ... }
+    data class IpsecFailed(override val detail: String?) : EngineError { ... }
+    data class PppNegotiationFailed(val phase: String, override val detail: String?) : EngineError { ... }
+    data class TimedOut(val stage: String, override val detail: String?) : EngineError { ... }
+    data class Internal(override val detail: String?) : EngineError { ... }
+}
+
+interface VpnEngine {
+    val state: kotlinx.coroutines.flow.StateFlow<EngineState>
+    val events: kotlinx.coroutines.flow.SharedFlow<EngineLogEvent>
+
+    /**
+     * Устанавливает транспорт и согласует PPP. Возвращает параметры туннеля.
+     * TUN на этом этапе ещё НЕ создан — его создаёт хост по возвращённым параметрам.
+     * Все сокеты обязаны быть защищены через [protector] до connect().
+     */
+    suspend fun connect(profile: EngineProfile, protector: SocketProtector): TunnelParams
+
+    /** Передаёт готовый TUN. Движок начинает перекачку пакетов. */
+    fun attachTun(fd: android.os.ParcelFileDescriptor)
+
+    suspend fun disconnect()
+}
+
+data class EngineLogEvent(
+    val timestamp: Long,
+    val level: LogLevel,
+    val protocol: Protocol,
+    val tag: String,
+    val message: String
+)
+
+enum class LogLevel { DEBUG, INFO, WARN, ERROR }
+enum class Protocol { L2TP, SSTP }
+```
+
+`EngineProfile` — sealed-класс:
+
+```kotlin
+sealed interface EngineProfile {
+    val server: String
+    val username: String
+    val password: String
+    val mtu: Int
+    val customDns: List<String>
+
+    data class L2tp(
+        override val server: String,
+        override val username: String,
+        override val password: String,
+        override val mtu: Int,
+        override val customDns: List<String>,
+        val ipsecEnabled: Boolean,
+        val presharedKey: String?,
+        val localIdentifier: String?,
+        val phase1Proposals: List<String>,
+        val phase2Proposals: List<String>
+    ) : EngineProfile
+
+    data class Sstp(
+        override val server: String,
+        override val username: String,
+        override val password: String,
+        override val mtu: Int,
+        override val customDns: List<String>,
+        val port: Int,
+        val trustPolicy: TrustPolicy,
+        val expectedHostname: String?,   // переопределение SNI/verify-имени
+        val minTlsVersion: TlsVersion,
+        val pppAuthMethods: Set<PppAuthMethod>,
+        val proxy: ProxyConfig?          // null = прямое соединение
+    ) : EngineProfile
+}
+
+data class ProxyConfig(
+    val host: String,
+    val port: Int,
+    val username: String?,
+    val password: String?
+)
+
+enum class PppAuthMethod { PAP, CHAP, MSCHAPV2, EAP_MSCHAPV2 }
+```
+
+`TrustPolicy`, `TlsVersion` — объявить здесь же (без реализации проверки;
+логика в `core-trust`).
+
+**Про прокси.** SSTP идёт через HTTP CONNECT-прокси с опциональной basic-аутентификацией.
+Реализация переносится из upstream (`SSLTerminal.establishProxy()`), но параметры
+приходят из профиля, а не из `SharedPreferences`. Порядок установки соединения:
+TCP до прокси → `CONNECT host:port` → TLS-хендшейк **с целевым сервером**, не с
+прокси. Сертификат проверяется у целевого сервера; SNI — `expectedHostname ?: server`.
+
+**Про EAP.** `EAP_MSCHAPV2` переносится из upstream и остаётся в наборе, но
+**по умолчанию выключен**. MikroTik и SoftEther договариваются на MSCHAPv2
+напрямую; EAP нужен для отдельных развёртываний Windows RRAS.
+
+### 2.2. Критерии приёмки
+
+- Модуль компилируется, не зависит ни от `engine-l2tp`, ни от `engine-sstp`,
+  ни от Flutter.
+- KDoc на каждом публичном типе.
+- Unit-тест-заглушка `FakeVpnEngine`, реализующий интерфейс — доказательство,
+  что контракт реализуем.
+
+---
+
+## Фаза 3. Модуль `core-tunnel` — общий слой туннеля
+
+### 3.1. Задачи
+
+Вынести из существующего кода TunnelForge всё, что относится к построению TUN и
+не зависит от протокола:
+
+1. `TunnelBuilder` — обёртка над `VpnService.Builder`:
+   - применение `TunnelParams` (адрес, DNS, MTU, маршруты);
+   - per-app routing: `addAllowedApplication` / `addDisallowedApplication` по
+     режиму профиля;
+   - исключение собственного пакета из туннеля;
+   - `setBlocking(true)`, конфигурируемый `setUnderlyingNetworks`.
+2. `KillSwitchController` — поведение при разрыве (существующая логика).
+3. `DnsConfigurator` — существующая поддержка UDP/TCP/TLS/HTTPS DNS.
+4. `NetworkMonitor` — `ConnectivityManager.NetworkCallback`, публикует смену
+   активной сети в `Flow`. Используется для реконнекта и (позже) для автовыбора
+   протокола.
+5. `SocketProtectorImpl` — реализация `SocketProtector` поверх `VpnService`.
+
+**Важно:** `core-tunnel` не должен знать о существовании конкретных протоколов.
+Зависит только от `engine-api`.
+
+### 3.2. Критерии приёмки
+
+- L2TP-подключение по-прежнему работает, TUN строится через `TunnelBuilder`.
+- Per-app routing проверен вручную: приложение в exclude-списке ходит мимо туннеля.
+- Unit-тесты на `TunnelBuilder` с mock `VpnService.Builder` (проверка порядка и
+  состава вызовов).
+
+---
+
+## Фаза 4. Модуль `engine-l2tp` — обёртка существующего движка
+
+### 4.1. Задачи
+
+Это **рефакторинг «в ноль»**: поведение не меняется, меняется только форма.
+
+1. Создать `L2tpEngine : VpnEngine`, инкапсулирующий текущий путь
+   Flutter → Kotlin → JNI → C.
+2. Все вызовы `protect()`, разбросанные по коду, заменить на использование
+   переданного `SocketProtector`.
+3. Согласованные параметры (IP из IPCP, DNS, MTU) больше не применяются движком
+   напрямую к `VpnService.Builder` — они возвращаются из `connect()` как
+   `TunnelParams`. TUN строит хост, затем вызывает `attachTun()`.
+4. Ошибки C-слоя маппятся в `EngineError`. Составить таблицу соответствия в
+   `docs/ARCHITECTURE.md`.
+5. Логи движка публикуются в `events` как `EngineLogEvent` с `protocol = L2TP`.
+
+### 4.2. Критерии приёмки
+
+- **Регрессионный прогон:** подключение к реальному L2TP/IPsec-серверу
+  (MikroTik, IKEv1, PSK) успешно, скорость и стабильность не хуже baseline.
+- Реконнект после смены Wi-Fi → LTE работает.
+- Отключение и повторное подключение в рамках одной сессии сервиса работает
+  (проверка на утечку fd и незакрытые сокеты).
+- В логах виден полный цикл: Connecting → Connected → Disconnected.
+- `git diff` по каталогу `native/` пустой.
+
+**Если после этой фазы L2TP работает как раньше — граница абстракции выбрана
+верно. Если пришлось менять C-код — остановиться и пересмотреть контракт.**
+
+---
+
+## Фаза 5. Модуль `core-trust` — хранилище серверных сертификатов
+
+Этот модуль автономен и может разрабатываться параллельно с фазами 3–4,
+но интегрируется после фазы 4.
+
+### 5.1. Модель данных (Room)
+
+```kotlin
+@Entity(tableName = "server_certificates")
+data class ServerCertificateEntity(
+    @PrimaryKey val id: String,              // = sha256Fingerprint
+    val alias: String,                       // задаётся пользователем
+    val subjectCn: String?,
+    val subjectDn: String,
+    val issuerDn: String,
+    val serialNumber: String,
+    val notBefore: Long,
+    val notAfter: Long,
+    val sha256Fingerprint: String,           // hex, lowercase, без разделителей
+    val sha1Fingerprint: String,
+    val isCa: Boolean,                       // basicConstraints CA:TRUE
+    val keyUsage: String?,                   // human-readable
+    val subjectAltNames: List<String>,       // TypeConverter → JSON
+    val importedAt: Long,
+    val fileName: String                     // имя файла в filesDir/trust/
+)
+```
+
+Связь профиль↔сертификаты — many-to-many через `profile_certificate_ref`.
+
+### 5.2. Хранение файлов
+
+- Каталог: `context.filesDir/trust/`, права `0700`.
+- Имя файла: `<sha256Fingerprint>.pem`.
+- Формат хранения: всегда PEM, независимо от формата импорта.
+- **Не хранить `Uri` на внешний файл.** Причина: при запуске по always-on VPN до
+  разблокировки устройства (Direct Boot) внешние источники недоступны. Всегда
+  копировать содержимое внутрь.
+- Опционально: рассмотреть device-encrypted storage для случая always-on.
+  Если реализуется — отдельно задокументировать компромисс по безопасности.
+
+### 5.3. Импорт сертификатов
+
+Три пути импорта:
+
+**А. Из файла (SAF).**
+- `ACTION_OPEN_DOCUMENT`, MIME: `application/x-x509-ca-cert`,
+  `application/x-pem-file`, `application/pkix-cert`, `application/octet-stream`,
+  `text/plain`, `*/*`.
+- Парсинг: `CertificateFactory.getInstance("X.509").generateCertificates(stream)` —
+  поддерживает и PEM, и DER, и bundle из нескольких сертификатов.
+- При bundle — показать список, дать выбрать какие импортировать.
+
+**Б. Вставка PEM текстом.**
+- Многострочное поле, валидация наличия `-----BEGIN CERTIFICATE-----`.
+- Нормализация переводов строк и обрезка пробелов перед парсингом.
+
+**В. Загрузка с сервера.**
+- Пользователь вводит host:port. Приложение делает TLS-хендшейк с
+  `TrustManager`, который принимает всё и **только сохраняет цепочку**
+  (соединение немедленно закрывается, никаких данных не передаётся).
+- Показывается вся цепочка: subject, issuer, срок, SHA-256 отпечаток.
+- Пользователь выбирает, какой элемент цепочки добавить в доверенные, и
+  подтверждает, сверив отпечаток вне канала.
+- В UI явное предупреждение: этот способ не защищает от MITM в момент загрузки,
+  отпечаток обязателен к проверке по независимому каналу.
+
+### 5.4. Валидация при импорте
+
+Показывать пользователю как предупреждения, не блокировать импорт (кроме
+непарсящегося файла):
+
+| Проверка | Реакция |
+|---|---|
+| Файл не парсится как X.509 | Ошибка, импорт отклонён |
+| `notAfter` в прошлом | Предупреждение «сертификат истёк» |
+| `notAfter` < now + 30 дней | Предупреждение «истекает через N дней» |
+| `notBefore` в будущем | Предупреждение «ещё не действителен» |
+| Дубликат по SHA-256 | Информация «уже импортирован», обновить alias |
+| `isCa == false` при выборе режима CA | Предупреждение «не является CA, используйте пиннинг» |
+| Ключ RSA < 2048 бит | Предупреждение |
+| Подпись MD5/SHA-1 | Предупреждение |
+
+### 5.5. Политики доверия
+
+```kotlin
+enum class TrustPolicy {
+    SYSTEM,               // только системный trust store
+    SYSTEM_PLUS_CUSTOM,   // системный, при неудаче — пользовательские CA
+    CUSTOM_ONLY,          // только выбранные CA (свой CA на MikroTik)
+    PIN_LEAF,             // сверка SHA-256 листа, цепочка игнорируется
+    INSECURE              // проверок нет — только debug-сборка
+}
+```
+
+`INSECURE` в release-сборке недоступен: значение отсутствует в UI, при загрузке
+профиля с таким значением он принудительно понижается до `SYSTEM_PLUS_CUSTOM`
+с записью в лог.
+
+### 5.6. Фабрика TrustManager
+
+```kotlin
+object TrustManagerFactoryProvider {
+
+    fun create(
+        policy: TrustPolicy,
+        customCerts: List<X509Certificate>,
+        pinnedFingerprints: Set<String>
+    ): X509TrustManager = when (policy) {
+        SYSTEM              -> systemTrustManager()
+        CUSTOM_ONLY         -> pkixTrustManager(customCerts)
+        SYSTEM_PLUS_CUSTOM  -> CompositeTrustManager(
+                                   systemTrustManager(),
+                                   pkixTrustManager(customCerts)
+                               )
+        PIN_LEAF            -> FingerprintPinningTrustManager(pinnedFingerprints)
+        INSECURE            -> InsecureTrustManager()   // только debug
+    }
+
+    private fun pkixTrustManager(certs: List<X509Certificate>): X509TrustManager {
+        val ks = KeyStore.getInstance(KeyStore.getDefaultType()).apply { load(null, null) }
+        certs.forEachIndexed { i, c -> ks.setCertificateEntry("ca$i", c) }
+        val tmf = TrustManagerFactory.getInstance("PKIX")
+        tmf.init(ks)
+        return tmf.trustManagers.filterIsInstance<X509TrustManager>().first()
+    }
+}
+```
+
+`CompositeTrustManager.checkServerTrusted`: пробует системный, при
+`CertificateException` пробует пользовательский; если оба упали — бросает
+исключение системного (оно информативнее) с приложенной причиной второго.
+
+`FingerprintPinningTrustManager`: сравнивает
+`MessageDigest.getInstance("SHA-256").digest(chain[0].encoded)` с набором
+пиннингов. Сравнение — константное по времени (`MessageDigest.isEqual`).
+Цепочка и срок действия не проверяются; срок проверяется отдельно на уровне
+pre-flight (см. 5.7) и даёт предупреждение, а не отказ.
+
+### 5.7. Pre-flight проверка перед подключением
+
+Выполняется до открытия сокета, результат показывается пользователю:
+
+- сертификаты профиля существуют в хранилище (не удалены);
+- ни один не истёк (если истёк — диалог «продолжить / отменить», по умолчанию отмена);
+- при `CUSTOM_ONLY` выбран хотя бы один сертификат;
+- при `PIN_LEAF` задан хотя бы один отпечаток.
+
+Цель: заменить невнятный `SSLHandshakeException` через 10 секунд на конкретное
+сообщение до попытки соединения.
+
+### 5.8. Проверка имени хоста
+
+Отдельно от политики доверия. Поле `expectedHostname` в профиле:
+- пусто → verify по значению `server`;
+- заполнено → verify по нему, и это же значение идёт в SNI.
+
+Сценарий: сертификат MikroTik выписан на `vpn.internal.lan`, подключение идёт по
+DDNS-имени или IP. Это должно решаться указанием ожидаемого имени, **а не
+отключением проверки**.
+
+Реализация: после хендшейка — `DefaultHostnameVerifier` (или собственная
+проверка SAN/CN) против `expectedHostname ?: server`. При несовпадении —
+`EngineError.HostnameMismatch` со списком имён из сертификата, чтобы пользователь
+видел, что именно вписать.
+
+### 5.9. UI хранилища (Flutter)
+
+Экран «Сертификаты серверов»:
+- список: alias, CN, срок (цветовой индикатор: ok / истекает / истёк),
+  число профилей, использующих сертификат;
+- карточка сертификата: полные поля, SHA-256 в формате с разделителями
+  (`ab:cd:ef:...`) и кнопка копирования, кнопка «Экспортировать PEM»,
+  кнопка «Удалить» (с предупреждением, если используется в профилях);
+- кнопка добавления с тремя способами импорта;
+- в редакторе SSTP-профиля — мультивыбор сертификатов из хранилища и селектор
+  политики доверия с пояснением каждого режима одной строкой.
+
+### 5.10. Критерии приёмки
+
+- Unit-тесты: парсинг PEM, парсинг DER, парсинг bundle, вычисление отпечатка,
+  все четыре (пять с INSECURE) политики против самоподписанного, против
+  подписанного своим CA и против валидного публичного сертификата.
+- Тест: `CompositeTrustManager` принимает и системный, и пользовательский.
+- Тест: `FingerprintPinningTrustManager` отвергает при изменении одного байта.
+- Инструментальный тест: импорт → перезапуск приложения → сертификат на месте.
+- Ручная проверка: `INSECURE` отсутствует в release-сборке.
+
+---
+
+## Фаза 6. Модуль `engine-sstp` — извлечение движка из Open-SSTP-Client
+
+### 6.1. Что переносим
+
+**Опорная точка upstream:** коммит `5f97511c3afff7dcf76b763882e0e29207ad1a36`
+(тег `1.10.3`, 15.08.2026). Все пути ниже — от `app/src/main/java/kittoku/osc/`.
+Полное сопоставление «upstream → назначение» ведётся в
+`third_party/open-sstp-client/PROVENANCE.md`; при переносе каждого файла строка
+таблицы заполняется в том же коммите.
+
+Переносим:
+
+| Группа | Файлы |
+|---|---|
+| SSTP-юниты | `unit/sstp/ControlPacket.kt`, `unit/sstp/Attribute.kt`, `unit/DataUnit.kt` |
+| PPP-фреймы | `unit/ppp/Frame.kt`, `LCPFrame.kt`, `IpcpFrame.kt`, `Ipv6cpFrame.kt` |
+| PPP-опции | `unit/ppp/option/Option.kt`, `lcp.kt`, `ipcp.kt`, `ipv6cp.kt` |
+| Auth-фреймы | `unit/ppp/auth/PAPFrame.kt`, `ChapFrame.kt`, `ChapField.kt`, `EAPFrame.kt` |
+| Клиенты | `client/SstpClietnt.kt`, `client/ppp/*` (6 файлов), `client/ppp/auth/*` (6 файлов) |
+| I/O | `io/OutgoingManager.kt`, `io/incoming/IncomingManager.kt`, `process.kt`, `EchoTimer.kt` |
+| Терминалы | `terminal/SSLTerminal.kt`, `terminal/IPTerminal.kt` |
+| Утилиты | `cipher/hash.kt`, `extension/{Byte,ByteArray,ByteBuffer,Short,String}.kt`, `debug/exception.kt` |
+
+**Опечатка в upstream:** файл называется `client/SstpClietnt.kt` (переставлены
+буквы). При переносе имя исправляется на `SstpClient.kt`, факт исправления
+фиксируется в `PROVENANCE.md` — иначе сопоставление с upstream перестанет сходиться.
+
+**Не переносим:** `activity/*`, `fragment/*`, `preference/*` (все 22 файла),
+`extension/SharedPreferences.kt`, `extension/View.kt`, `service/SstpVpnService.kt`,
+`service/SstpTileService.kt`, `configuration.kt`, `control/NetworkObserver.kt`
+(заменяется на `core-tunnel/NetworkMonitor`).
+
+**Переписываем, а не переносим:** `SharedBridge.kt`, `control/Controller.kt`,
+`control/LogWriter.kt` — см. 6.3.
+
+`debug/Capture.kt` — опционально, только для debug-сборок; решение принять в
+начале фазы и записать в `PROVENANCE.md`.
+
+### 6.2. Правила переноса
+
+1. **В upstream нет per-file копирайт-заголовков** — только корневой `LICENSE`
+   (`Copyright (c) 2019 KOBAYASHI Ittoku`). MIT требует, чтобы copyright notice и
+   permission notice сопровождали все копии и существенные части ПО, поэтому
+   заголовок добавляем мы, в каждый перенесённый файл:
+   ```
+   /*
+    * Derived from Open SSTP Client
+    * https://github.com/kittoku/Open-SSTP-Client
+    * Copyright (c) 2019 KOBAYASHI Ittoku
+    * Licensed under the MIT License.
+    * See third_party/open-sstp-client/LICENSE for the full text.
+    *
+    * Modifications Copyright (C) <year> <owner>
+    * Licensed under GPL-3.0-or-later as part of this project.
+    */
+   ```
+2. Заполнять `third_party/open-sstp-client/PROVENANCE.md` по мере переноса, а не
+   в конце фазы. Каждая строка: upstream-путь, назначение, уровень адаптации
+   (VERBATIM / MINOR / ADAPTED / REWRITTEN), примечание.
+3. Пакет переименовать в `io.github.<owner>.combined.engine.sstp`, но
+   **атрибуцию сохранить** — переименование пакета не отменяет обязательств MIT.
+4. Все точки настройки, которые в OSC читались из `SharedPreferences`,
+   параметризуются через `EngineProfile.Sstp`.
+5. Проверка полноты атрибуции (обе команды должны возвращать пустоту):
+   ```bash
+   grep -rL "Derived from Open SSTP Client" engine-sstp/src/main/java --include=*.kt
+   grep -rl "Derived from Open SSTP Client" --include=*.kt . | grep -v "^./engine-sstp/"
+   ```
+
+### 6.3. Декомпозиция `SharedBridge`
+
+Upstream-класс `SharedBridge` — god-object: в нём одновременно живут
+`SharedPreferences`, живой `VpnService.Builder`, оба терминала, всё состояние
+PPP-негоциации, канал управляющих сообщений и список выбранных приложений.
+Каждый клиент обращается к нему напрямую. Разрезать на три типа:
+
+- **`SstpEngineConfig`** — иммутабельный, строится один раз из
+  `EngineProfile.Sstp`. Только чтение. Никаких `SharedPreferences`.
+- **`SstpSessionState`** — изменяемое состояние негоциации: `currentMRU`,
+  `currentAuth`, `currentIPv4`, `currentIPv6`, `currentProposedDNS`, `hlak`,
+  `nonce`, `guid`, аллокатор `frameID`. Владелец — движок.
+- **`ControlMailbox`** — `Channel<ControlMessage>` плюс перечисления `Where` и
+  `Result`. Переносятся как есть: их гранулярность хорошая и они чисто
+  ложатся на `EngineError`.
+
+**Критично: ни в одном из трёх типов не должно быть `VpnService.Builder`.**
+Пока клиент может до него дотянуться, абстракция протекает и фаза 7 не соберётся.
+Контрольная проверка — `grep -rn "VpnService\|\.builder" engine-sstp/src/main/java`
+не должен находить обращений к builder'у.
+
+### 6.4. Реализация `SstpEngine : VpnEngine`
+
+1. `connect()`:
+   - pre-flight проверка сертификатов (`core-trust`);
+   - создание `Socket` (до прокси, если он задан, иначе до сервера),
+     **немедленный `protector.protect(socket)` до `connect()`**;
+   - при заданном прокси — `CONNECT host:port HTTP/1.1` с опциональным
+     `Proxy-Authorization: Basic`, ожидание `200`;
+   - TLS через `SSLContext` с `TrustManager` из `core-trust` — **всегда с
+     целевым сервером, а не с прокси**;
+   - SNI = `expectedHostname ?: server`;
+   - `minTlsVersion` применяется через `setEnabledProtocols`;
+   - после хендшейка — проверка имени хоста;
+   - SSTP call setup, затем PPP-негоциация;
+   - возврат `TunnelParams` из результата IPCP.
+2. `attachTun()` — запуск перекачки: TUN → PPP → SSTP → TLS и обратно.
+3. `disconnect()` — корректный SSTP call disconnect, затем закрытие сокета,
+   отмена корутин через `SupervisorJob`, ожидание завершения с таймаутом.
+4. **Реконнект:** каждый новый сокет заново защищается через `protect()`.
+   В upstream `protect()` вызывается в единственном месте —
+   `SSLTerminal.kt:318` (`bridge.service.protect(socket)`). После переноса точек
+   становится больше: прямой сокет, сокет до прокси, сокет при реконнекте.
+   Реализовать явный тест — типовой баг, при котором первое соединение работает,
+   а реконнект уходит в собственный туннель и виснет.
+5. **Удалить `createTrustManagers()` целиком.** Upstream-реализация
+   (`SSLTerminal.kt:91–127`) читает сертификаты через
+   `DocumentFile.fromTreeUri` из выбранной пользователем внешней директории и
+   грузит в `KeyStore` все файлы подряд. Следствия: `Uri` может быть
+   неразрешим при старте по always-on до разблокировки устройства; нет
+   пиннинга, проверки срока и выбора на профиль; один непарсящийся файл в
+   директории роняет всё соединение. Замена —
+   `core-trust/TrustManagerFactoryProvider.create(policy, certs, pins)`.
+   Настройки `SSL_DO_SPECIFY_CERT` и `SSL_CERT_DIR` эквивалента не имеют и
+   отбрасываются; автоматической миграции для пользователей OSC нет — отметить
+   в release notes.
+6. Keepalive: SSTP echo-request по таймеру, детект мёртвого соединения.
+7. Логи → `events` с `protocol = SSTP`. Пароли, PSK и пароль прокси в логи не
+   попадают (реализовать редактор-фильтр по ключевым полям).
+
+### 6.5. MTU для SSTP
+
+SSTP несёт IP поверх TCP, внутри едет TCP — при потерях два таймера
+ретрансмиссии конфликтуют. Мера: значение MTU по умолчанию для SSTP-профилей
+задаётся отдельно от L2TP, **1400** (против типичных 1400–1450 у L2TP).
+Настройка редактируема пользователем.
+
+### 6.6. Критерии приёмки
+
+- Подключение к SoftEther-серверу успешно.
+- Подключение к MikroTik SSTP-серверу с self-signed сертификатом в режиме
+  `PIN_LEAF` успешно.
+- Подключение к MikroTik SSTP с сертификатом от своего CA в режиме
+  `CUSTOM_ONLY` успешно.
+- Подключение с сертификатом от публичного CA в режиме `SYSTEM` успешно.
+- Отказ при подмене сертификата: получен `EngineError.CertificateRejected`
+  с корректным отпечатком.
+- Несовпадение имени: получен `HostnameMismatch` со списком SAN из сертификата.
+- Реконнект после смены сети: соединение восстанавливается, сокет защищён
+  (проверяется отсутствием петли и по логу).
+- Подключение через HTTP CONNECT-прокси без аутентификации успешно.
+- Подключение через прокси с basic-аутентификацией успешно.
+- При работе через прокси TLS-сертификат проверяется у целевого сервера:
+  подмена сертификата сервера отвергается, сертификат прокси в проверке не
+  участвует.
+- Неверный пароль прокси → внятная ошибка, а не таймаут.
+- Пароль прокси отсутствует в экспортированном логе.
+- `grep -rn "\.builder" engine-sstp/src/main/java` пуст.
+- Утечек нет: 10 циклов connect/disconnect подряд, `lsof` по процессу не растёт.
+
+---
+
+## Фаза 7. Интеграция: единый сервис и диспетчер протокола
+
+### 7.1. Задачи
+
+1. Один `VpnService` на приложение — `CombinedVpnService`. Внутри:
+   ```kotlin
+   private fun createEngine(profile: EngineProfile): VpnEngine = when (profile) {
+       is EngineProfile.L2tp -> L2tpEngine(...)
+       is EngineProfile.Sstp -> SstpEngine(...)
+   }
+   ```
+2. Единый жизненный цикл:
+   ```
+   engine.connect(profile, protector)
+       → TunnelParams
+       → tunnelBuilder.build(params, perAppConfig)
+       → engine.attachTun(fd)
+       → state = Connected
+   ```
+3. Foreground-нотификация: общая, отображает протокол, сервер, время сессии.
+4. QS-тайл: подключение последнего использованного профиля.
+5. Always-on VPN и lockdown: проверить работу с обоими движками.
+6. `onRevoke()` — корректная остановка активного движка.
+7. Единый журнал: события обоих движков в один буфер, экспорт в файл,
+   фильтр по уровню и протоколу.
+
+### 7.2. Критерии приёмки
+
+- Переключение между L2TP- и SSTP-профилем без перезапуска приложения работает.
+- Попытка запустить второй профиль при активном первом корректно останавливает
+  первый.
+- Always-on с lockdown: трафик не идёт до установки туннеля, для обоих протоколов.
+- `onRevoke()` (отзыв разрешения из системных настроек) корректно всё гасит.
+- Экспорт лога содержит события обоих протоколов, паролей в нём нет.
+
+---
+
+## Фаза 8. Модель профилей, хранилище и миграция
+
+### 8.1. Задачи
+
+1. Room-схема профилей:
+   ```
+   ProfileEntity:
+     id, name, protocol (L2TP|SSTP), server, username,
+     passwordRef (ссылка на зашифрованное хранилище),
+     mtu, customDns, perAppMode (OFF|INCLUDE|EXCLUDE), appList,
+     killSwitch, autoReconnect,
+     -- L2TP
+     ipsecEnabled, pskRef, localIdentifier, phase1Proposals, phase2Proposals,
+     -- SSTP
+     port, trustPolicy, expectedHostname, minTlsVersion, pppAuthMethods,
+     proxyEnabled, proxyHost, proxyPort, proxyUsername, proxyPasswordRef
+   ```
+2. Секреты (пароль VPN, PSK, пароль прокси) — в `EncryptedSharedPreferences`
+   или Keystore-обёртке, в БД только ссылка.
+3. **Миграция с upstream-схемы:** существующие профили получают
+   `protocol = L2TP`, все SSTP-поля — значения по умолчанию. Миграция должна
+   быть протестирована на реальной БД из upstream-сборки.
+4. Экспорт/импорт профилей в JSON:
+   - по умолчанию **без секретов**;
+   - опционально с секретами — только в зашифрованный паролем контейнер;
+   - сертификаты экспортируются вместе с профилем (PEM внутри JSON, base64).
+
+### 8.2. Критерии приёмки
+
+- Обновление поверх upstream-сборки не теряет профили.
+- Тест миграции Room на снапшоте старой схемы.
+- Экспортированный без секретов JSON не содержит пароля ни в каком виде
+  (проверяется тестом-грепом).
+
+---
+
+## Фаза 9. UI (Flutter)
+
+### 9.1. Задачи
+
+1. Селектор протокола в редакторе профиля, переключающий секции формы.
+2. Секция SSTP: порт, политика доверия (с однострочным пояснением каждого
+   режима), выбор сертификатов, ожидаемое имя хоста, минимальная версия TLS,
+   методы PPP-аутентификации (`EAP_MSCHAPV2` выключен по умолчанию), MTU.
+3. Подсекция «HTTP-прокси» в SSTP-профиле: тумблер, host, port, опциональные
+   логин и пароль. Свёрнута, пока тумблер выключен. Пароль — в то же
+   зашифрованное хранилище, что и пароль VPN.
+4. Секция L2TP — существующая, без изменений.
+5. Экран сертификатов (см. 5.9).
+6. Список профилей: бейдж протокола у каждого.
+7. Экран статуса: протокол, IP, DNS, MTU, время сессии, счётчики трафика.
+   При активном прокси — индикатор «через прокси».
+8. Экран логов: фильтры по уровню и протоколу, кнопка экспорта.
+9. Каналы:
+   - `MethodChannel` — CRUD профилей, CRUD сертификатов, connect/disconnect;
+   - `EventChannel` — состояние и логи, с полем `protocol` в каждом событии.
+10. Локализация: английский и русский, все строки в ARB.
+
+### 9.2. Критерии приёмки
+
+- Создание SSTP-профиля с импортом сертификата целиком проходится в UI без
+  обращения к adb.
+- Ошибки движка отображаются человекочитаемо на обоих языках.
+- Тёмная тема корректна на всех новых экранах.
+
+---
+
+## Фаза 10. Failover и автовыбор протокола
+
+Реализуется только после стабильной работы фаз 1–9.
+
+### 10.1. Failover-группа
+
+1. Новая сущность: группа профилей с упорядоченным списком членов.
+2. Логика: попытка первого профиля с таймаутом `connectTimeoutSec`
+   (по умолчанию 15). При `NetworkUnreachable`, `TimedOut`, `IpsecFailed` —
+   переход к следующему. При `AuthenticationFailed` — **не переходить**,
+   остановиться (неверные учётные данные, перебор бессмыслен).
+3. UI показывает, какой член группы активен.
+4. Типовой сценарий: L2TP/IPsec первым (UDP, быстрее), SSTP/443 запасным —
+   для сетей, где зарублены UDP/500 и ESP.
+
+### 10.2. Автовыбор по сети
+
+1. Правила: `если SSID == X → профиль A`, `если тип сети == CELLULAR → профиль B`,
+   `иначе → группа по умолчанию`.
+2. Источник данных — `NetworkCapabilities` и SSID. **Геолокация не используется**;
+   на современных Android для чтения SSID может требоваться разрешение — если
+   его нет, правило по SSID деактивируется с пояснением в UI, разрешение
+   запрашивается только по явному действию пользователя.
+3. Правила хранятся локально, наружу не уходят.
+
+### 10.3. Критерии приёмки
+
+- Тест: сервер L2TP недоступен → автоматический переход на SSTP за < 20 секунд.
+- Тест: неверный пароль → перебора нет, показана ошибка аутентификации.
+- Правило по типу сети срабатывает при переключении Wi-Fi ↔ LTE.
+
+---
+
+## Фаза 11. Тестирование, документация, релиз
+
+### 11.1. Тесты
+
+- Unit: `core-trust` (полное покрытие политик доверия), парсеры PPP-пакетов,
+  `TunnelBuilder`, миграции Room.
+- **В upstream Open-SSTP-Client тестов нет вообще** (`app/src/` содержит только
+  `main`), покрытие пишется с нуля. Для `cipher/hash.kt` использовать готовые
+  тестовые векторы: MSCHAPv2 — RFC 2759 §9, AES-CMAC — RFC 4493 §4. Это дешёвый
+  способ убедиться, что при переносе криптография не поехала.
+- Инструментальные: жизненный цикл сервиса, персистентность хранилища.
+- Ручная матрица (зафиксировать в `docs/TEST_MATRIX.md`):
+
+  | Протокол | Сервер | Сертификат | Политика | Сеть |
+  |---|---|---|---|---|
+  | L2TP/IPsec | MikroTik | — | — | Wi-Fi / LTE |
+  | SSTP | MikroTik | self-signed | PIN_LEAF | Wi-Fi / LTE |
+  | SSTP | MikroTik | свой CA | CUSTOM_ONLY | Wi-Fi / LTE |
+  | SSTP | SoftEther | публичный CA | SYSTEM | Wi-Fi / LTE |
+  | SSTP через прокси | MikroTik | свой CA | CUSTOM_ONLY | Wi-Fi |
+  | SSTP через прокси с auth | MikroTik | свой CA | CUSTOM_ONLY | Wi-Fi |
+  | Оба | — | — | — | смена сети в процессе |
+
+- Версии Android: минимальная поддерживаемая, 13, 14, 15, 16 (или актуальные
+  на момент разработки). Отдельно проверить поведение `VpnService` и always-on
+  на самых свежих API.
+
+### 11.2. Документация
+
+- `README.md` (EN) и `README.ru.md`: что это, чем отличается от upstream,
+  ссылки на оба upstream-проекта, лицензионный статус, скриншоты, сборка.
+- `docs/ARCHITECTURE.md`: слои, контракт `VpnEngine`, таблица маппинга ошибок.
+- `docs/LICENSING.md`: происхождение кода, почему GPL-3.0, обязательства при форке.
+- `docs/DEPENDENCIES.md`: зависимости и их лицензии.
+- `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SECURITY.md` (контакт для
+  сообщений об уязвимостях).
+- `CHANGELOG.md` (Keep a Changelog).
+
+### 11.3. Релиз
+
+- Reproducible build по возможности; в CI — сборка release APK по тегу.
+- Ключ подписи хранится в GitHub Secrets, в репозитории отсутствует.
+- Публикация: GitHub Releases с APK и `SHA256SUMS`; F-Droid — метаданные и
+  merge request в fdroiddata.
+- Google Play — опционально; требует отдельного ревью для VPN-приложений и
+  prominent disclosure. Не блокирует релиз.
+
+### 11.4. Критерии приёмки проекта
+
+- Вся матрица тестов пройдена.
+- CI зелёный, покрытие `core-trust` не ниже 80%.
+- В APK нет сетевых обращений, кроме VPN-сервера пользователя (проверяется
+  анализом манифеста и трассировкой).
+- Лицензионные файлы и атрибуция на месте, `PROVENANCE.md` заполнен.
+
+---
+
+## Приложение А. Чек-лист безопасности
+
+Проверить перед каждым релизом:
+
+- [ ] Пароли VPN, PSK и пароль прокси не попадают в логи, включая debug-уровень.
+- [ ] Экспорт лога проходит через редактор-фильтр секретов.
+- [ ] `INSECURE`-политика недоступна в release-сборке.
+- [ ] Все сокеты защищены через `protect()`, включая сокет до прокси и все
+      сокеты, созданные при реконнекте.
+- [ ] При работе через прокси TLS проверяется у целевого сервера, а не у прокси.
+- [ ] Сертификаты хранятся во внутреннем хранилище, права `0700`.
+- [ ] Секреты в `EncryptedSharedPreferences` / Keystore, не в открытой БД.
+- [ ] `android:allowBackup="false"` либо явные правила исключения секретов.
+- [ ] Нет экспортируемых компонентов, кроме необходимых.
+- [ ] Сравнение отпечатков — константное по времени.
+- [ ] `minTlsVersion` по умолчанию не ниже TLS 1.2.
+
+## Приложение Б. Типовые ошибки, которых следует избегать
+
+1. **Незащищённый сокет на реконнекте.** Первое соединение работает, второе
+   уходит в собственный туннель. Проверять явным тестом.
+2. **Два `VpnService`.** Android допускает только один активный. Единый сервис
+   с диспетчером.
+3. **Внешний `Uri` на сертификат.** Ломается при always-on до разблокировки.
+   Всегда копировать внутрь.
+4. **Отключение проверки имени хоста вместо его указания.** Даёт постоянно
+   включённый небезопасный режим. Правильно — поле `expectedHostname`.
+5. **Единый MTU для обоих протоколов.** SSTP из-за TCP-over-TCP требует меньшего.
+6. **Переписывание C-движка L2TP «заодно».** Отдельная задача, не в этом проекте.
+7. **Потеря MIT-атрибуции при переименовании пакетов.** Переименование не
+   отменяет обязательств.
+8. **Сохранение `SharedBridge` «как есть» с подменой источника настроек.** Путь
+   наименьшего сопротивления при переносе SSTP-движка и прямая дорога к
+   провалу фазы 7. Пока клиент видит `VpnService.Builder`, абстракция протекает.
+9. **Проверка TLS у прокси вместо целевого сервера.** Соединение при этом
+   устанавливается, и ошибка остаётся незамеченной до аудита.

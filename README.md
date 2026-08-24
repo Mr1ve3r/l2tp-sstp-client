@@ -1,3 +1,8 @@
+> A fork of [TunnelForge](https://github.com/evokelektrique/tunnel-forge) (GPL-3.0)
+> with an SSTP engine derived from [Open SSTP Client](https://github.com/kittoku/Open-SSTP-Client) (MIT).
+> This is an independent project and is not affiliated with or endorsed by
+> the authors of either upstream project.
+
 <p align="center">
   <img src="resources/logo/tf-xxxhdpi.png" alt="TunnelForge logo" width="160">
 </p>
