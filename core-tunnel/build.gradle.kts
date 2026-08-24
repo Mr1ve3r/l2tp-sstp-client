@@ -1,5 +1,5 @@
-import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import java.io.File
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 // Protocol-agnostic TUN/routes/DNS layer (SPEC phase 3).
 // Must never learn which protocol is running.

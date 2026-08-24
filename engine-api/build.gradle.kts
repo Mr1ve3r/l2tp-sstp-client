@@ -1,5 +1,5 @@
-import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import java.io.File
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 // Protocol-agnostic engine contract (SPEC phase 2).
 // Depends on coroutines and the Android SDK only: no Flutter, no concrete engine.

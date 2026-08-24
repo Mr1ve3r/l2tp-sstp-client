@@ -169,7 +169,7 @@ jobs:
 
       - name: Check Kotlin style in the engine and core modules
         working-directory: android
-        run: ./gradlew --no-daemon --console=plain --stacktrace -Dorg.gradle.vfs.watch=false ktlintCheck
+        run: ./gradlew --no-daemon --console=plain --stacktrace --continue -Dorg.gradle.vfs.watch=false ktlintCheck
 
       # Job logs are only readable by repository admins. Re-emitting the ktlint
       # report as workflow annotations puts the findings on the check run, where

@@ -1,5 +1,5 @@
-import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import java.io.File
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 // VpnEngine wrapper around the native L2TP/IPsec engine (SPEC phase 4).
 // The C sources under android/app/src/main/cpp stay where they are.

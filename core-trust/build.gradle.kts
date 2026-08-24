@@ -1,5 +1,5 @@
-import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import java.io.File
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 // Server certificate store and trust policies (SPEC phase 5).
 plugins {

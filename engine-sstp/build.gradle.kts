@@ -1,5 +1,5 @@
-import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import java.io.File
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 // SSTP engine derived from Open SSTP Client (SPEC phase 6).
 // See third_party/open-sstp-client/PROVENANCE.md.
