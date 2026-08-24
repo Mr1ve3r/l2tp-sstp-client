@@ -19,95 +19,88 @@ import org.junit.Test
  */
 class EngineContractTest {
     @Test
-    fun `connect reports the negotiated parameters and reaches Connected`() =
-        runTest {
-            val engine = FakeVpnEngine(TUNNEL_PARAMS)
-            assertEquals(EngineState.Idle, engine.state.value)
+    fun `connect reports the negotiated parameters and reaches Connected`() = runTest {
+        val engine = FakeVpnEngine(TUNNEL_PARAMS)
+        assertEquals(EngineState.Idle, engine.state.value)
 
-            val params = engine.connect(SSTP_PROFILE, RecordingProtector())
+        val params = engine.connect(SSTP_PROFILE, RecordingProtector())
 
-            assertEquals(TUNNEL_PARAMS, params)
-            val state = engine.state.value
-            assertTrue("expected Connected, was $state", state is EngineState.Connected)
-            assertEquals(TUNNEL_PARAMS, (state as EngineState.Connected).params)
-        }
-
-    @Test
-    fun `connect protects its socket before returning`() =
-        runTest {
-            val protector = RecordingProtector()
-
-            FakeVpnEngine(TUNNEL_PARAMS).connect(SSTP_PROFILE, protector)
-
-            assertEquals(
-                "the engine must protect its transport socket, or its traffic re-enters the tunnel",
-                1,
-                protector.protectedDescriptors.size,
-            )
-        }
+        assertEquals(TUNNEL_PARAMS, params)
+        val state = engine.state.value
+        assertTrue("expected Connected, was $state", state is EngineState.Connected)
+        assertEquals(TUNNEL_PARAMS, (state as EngineState.Connected).params)
+    }
 
     @Test
-    fun `a refused protect call fails the connection instead of proceeding`() =
-        runTest {
-            val engine = FakeVpnEngine(TUNNEL_PARAMS)
+    fun `connect protects its socket before returning`() = runTest {
+        val protector = RecordingProtector()
 
-            val thrown =
-                runCatching { engine.connect(SSTP_PROFILE, RecordingProtector(succeed = false)) }
-                    .exceptionOrNull()
+        FakeVpnEngine(TUNNEL_PARAMS).connect(SSTP_PROFILE, protector)
 
-            assertTrue("expected EngineException, was $thrown", thrown is EngineException)
-            assertTrue(engine.state.value is EngineState.Failed)
-        }
-
-    @Test
-    fun `connect surfaces a failure as EngineException carrying the error`() =
-        runTest {
-            val error = EngineError.AuthenticationFailed("bad password")
-            val engine = FakeVpnEngine(TUNNEL_PARAMS, failWith = error)
-
-            val thrown =
-                runCatching { engine.connect(SSTP_PROFILE, RecordingProtector()) }
-                    .exceptionOrNull()
-
-            assertEquals(error, (thrown as EngineException).error)
-        }
+        assertEquals(
+            "the engine must protect its transport socket, or its traffic re-enters the tunnel",
+            1,
+            protector.protectedDescriptors.size,
+        )
+    }
 
     @Test
-    fun `disconnect is idempotent and releases the tun`() =
-        runTest {
-            val engine = FakeVpnEngine(TUNNEL_PARAMS)
-            engine.connect(SSTP_PROFILE, RecordingProtector())
+    fun `a refused protect call fails the connection instead of proceeding`() = runTest {
+        val engine = FakeVpnEngine(TUNNEL_PARAMS)
 
-            engine.disconnect()
-            engine.disconnect()
+        val thrown =
+            runCatching { engine.connect(SSTP_PROFILE, RecordingProtector(succeed = false)) }
+                .exceptionOrNull()
 
-            assertEquals(EngineState.Disconnected, engine.state.value)
-            assertEquals(2, engine.disconnectCount)
-            assertNull(engine.attachedTun)
-        }
+        assertTrue("expected EngineException, was $thrown", thrown is EngineException)
+        assertTrue(engine.state.value is EngineState.Failed)
+    }
 
     @Test
-    fun `log events carry the protocol that produced them`() =
-        runTest {
-            val engine = FakeVpnEngine(TUNNEL_PARAMS)
-            engine.connect(SSTP_PROFILE, RecordingProtector())
+    fun `connect surfaces a failure as EngineException carrying the error`() = runTest {
+        val error = EngineError.AuthenticationFailed("bad password")
+        val engine = FakeVpnEngine(TUNNEL_PARAMS, failWith = error)
 
-            val emitted = engine.events.replayCache
-            assertTrue("expected log events", emitted.isNotEmpty())
-            assertTrue(emitted.all { it.protocol == Protocol.SSTP })
-        }
+        val thrown =
+            runCatching { engine.connect(SSTP_PROFILE, RecordingProtector()) }
+                .exceptionOrNull()
+
+        assertEquals(error, (thrown as EngineException).error)
+    }
 
     @Test
-    fun `no log event repeats the password`() =
-        runTest {
-            val engine = FakeVpnEngine(TUNNEL_PARAMS)
-            engine.connect(SSTP_PROFILE, RecordingProtector())
+    fun `disconnect is idempotent and releases the tun`() = runTest {
+        val engine = FakeVpnEngine(TUNNEL_PARAMS)
+        engine.connect(SSTP_PROFILE, RecordingProtector())
 
-            assertTrue(
-                "credentials must never reach the log stream",
-                engine.events.replayCache.none { it.message.contains(SSTP_PROFILE.password) },
-            )
-        }
+        engine.disconnect()
+        engine.disconnect()
+
+        assertEquals(EngineState.Disconnected, engine.state.value)
+        assertEquals(2, engine.disconnectCount)
+        assertNull(engine.attachedTun)
+    }
+
+    @Test
+    fun `log events carry the protocol that produced them`() = runTest {
+        val engine = FakeVpnEngine(TUNNEL_PARAMS)
+        engine.connect(SSTP_PROFILE, RecordingProtector())
+
+        val emitted = engine.events.replayCache
+        assertTrue("expected log events", emitted.isNotEmpty())
+        assertTrue(emitted.all { it.protocol == Protocol.SSTP })
+    }
+
+    @Test
+    fun `no log event repeats the password`() = runTest {
+        val engine = FakeVpnEngine(TUNNEL_PARAMS)
+        engine.connect(SSTP_PROFILE, RecordingProtector())
+
+        assertTrue(
+            "credentials must never reach the log stream",
+            engine.events.replayCache.none { it.message.contains(SSTP_PROFILE.password) },
+        )
+    }
 
     @Test
     fun `empty routes mean the default route rather than no routes`() {

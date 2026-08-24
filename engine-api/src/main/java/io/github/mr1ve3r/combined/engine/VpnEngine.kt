@@ -57,10 +57,7 @@ interface VpnEngine {
      * @return parameters agreed with the server.
      * @throws EngineException if the connection could not be established.
      */
-    suspend fun connect(
-        profile: EngineProfile,
-        protector: SocketProtector,
-    ): TunnelParams
+    suspend fun connect(profile: EngineProfile, protector: SocketProtector): TunnelParams
 
     /**
      * Hands the engine the TUN device built from the parameters [connect]
