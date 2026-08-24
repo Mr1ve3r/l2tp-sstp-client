@@ -222,13 +222,13 @@ android {
 }
 
 dependencies {
-    implementation("androidx.annotation:annotation:1.8.2")
-    implementation("androidx.core:core-ktx:1.15.0")
-    implementation("io.netty:netty-codec-http:4.2.12.Final")
-    implementation("io.netty:netty-codec-socks:4.2.12.Final")
-    testImplementation("junit:junit:4.13.2")
-    androidTestImplementation("androidx.test.ext:junit:1.1.5")
-    androidTestImplementation("androidx.test:runner:1.2.0")
+    implementation(libs.androidx.annotation)
+    implementation(libs.androidx.core.ktx)
+    implementation(libs.netty.codec.http)
+    implementation(libs.netty.codec.socks)
+    testImplementation(libs.junit)
+    androidTestImplementation(libs.androidx.test.junit)
+    androidTestImplementation(libs.androidx.test.runner)
 }
 
 flutter {
