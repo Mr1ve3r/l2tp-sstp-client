@@ -67,7 +67,7 @@ store shared by both. Work follows the phased plan in [`SPEC`](SPEC):
 
 - [x] Phase 1 — module layout, version catalog, ktlint, CI
 - [x] Phase 2 — `engine-api` contract
-- [ ] Phase 3 — `core-tunnel`
+- [x] Phase 3 — `core-tunnel` (pending manual device verification)
 - [ ] Phase 4 — `engine-l2tp`
 - [ ] Phase 5 — `core-trust`
 - [ ] Phase 6 — `engine-sstp`
