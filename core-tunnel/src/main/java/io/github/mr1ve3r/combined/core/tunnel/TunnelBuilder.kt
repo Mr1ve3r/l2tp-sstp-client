@@ -52,15 +52,21 @@ class TunnelBuilder(
         spec.addAddress(params.localAddress, params.prefixLength)
 
         applyRoutes(spec, params)
-        applyExcludedRoutes(spec, params)
 
         params.dnsServers.forEach(spec::addDnsServer)
         params.searchDomains.forEach(spec::addSearchDomain)
 
+        // Order below matches upstream TunnelForge exactly. The platform builder
+        // accumulates configuration and only acts on establish(), so ordering
+        // between unrelated calls is not load-bearing -- but keeping it
+        // identical means a behaviour difference here can never be the
+        // explanation for a regression.
         if (config.ipv4Only) {
             spec.allowFamily(OsConstants.AF_INET)
+            onEvent("ipv4-only: allowFamily(AF_INET)")
         }
 
+        applyExcludedRoutes(spec, params)
         applyPerAppRouting(spec, config)
 
         config.blocking?.let(spec::setBlocking)
@@ -76,10 +82,13 @@ class TunnelBuilder(
 
     private fun applyExcludedRoutes(spec: TunnelInterfaceSpec, params: TunnelParams) {
         params.excludedRoutes.forEach { route ->
-            if (!spec.excludeRoute(route.address, route.prefixLength)) {
+            val address = "${route.address.hostAddress}/${route.prefixLength}"
+            if (spec.excludeRoute(route.address, route.prefixLength)) {
+                onEvent("excludeRoute $address so the transport stays outside the tunnel")
+            } else {
                 onEvent(
-                    "excludeRoute unavailable below API 33; ${route.address.hostAddress} " +
-                        "stays outside the tunnel through socket protection only",
+                    "excludeRoute unavailable below API 33; $address stays outside " +
+                        "the tunnel through socket protection only",
                 )
             }
         }

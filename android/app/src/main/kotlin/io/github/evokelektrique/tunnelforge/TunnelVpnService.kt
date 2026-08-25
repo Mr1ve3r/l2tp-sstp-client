@@ -6,17 +6,22 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
-import android.net.IpPrefix
 import android.net.VpnService
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.ParcelFileDescriptor
-import android.system.OsConstants
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import io.github.mr1ve3r.combined.core.tunnel.PackageNotInstalledException
+import io.github.mr1ve3r.combined.core.tunnel.PerAppRouting
+import io.github.mr1ve3r.combined.core.tunnel.TunnelBuilder
+import io.github.mr1ve3r.combined.core.tunnel.TunnelConfig
+import io.github.mr1ve3r.combined.core.tunnel.TunnelEstablishFailedException
+import io.github.mr1ve3r.combined.core.tunnel.VpnServiceTunnelInterface
+import io.github.mr1ve3r.combined.engine.Route
+import io.github.mr1ve3r.combined.engine.TunnelParams
 import java.io.IOException
 import java.net.DatagramSocket
 import java.net.Inet4Address
@@ -61,28 +66,43 @@ class TunnelVpnService : VpnService() {
     }
 
     /**
-     * Keep IKE/L2TP traffic to the VPN gateway off the TUN default route (API 33+).
-     * [protect] alone is unreliable on some OEMs when the peer is on the LAN.
+     * Keeps IKE/L2TP traffic to the VPN gateway off the TUN default route.
+     *
+     * [protect] alone is unreliable on some OEMs when the peer is on the LAN,
+     * which is why the route exclusion exists in addition to it.
+     *
+     * Reported as part of `TunnelParams` so that `core-tunnel` applies it; the
+     * API-33 floor and the "applied / could not apply" logging live there.
      */
-    private fun applyExcludeRouteForVpnServer(builder: Builder, server: String) {
+    private fun vpnServerExclusion(server: String): List<Route> =
         try {
             val resolved = InetAddress.getByName(server)
-            when {
-                Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && resolved is Inet4Address -> {
-                    builder.excludeRoute(IpPrefix(resolved, 32))
-                    AppLog.d(TAG, "excludeRoute IPv4/32 for VPN server ${resolved.hostAddress}")
-                }
-                resolved is Inet4Address ->
-                    AppLog.d(
-                        TAG,
-                        "excludeRoute requires API 33+; using socket protect() only (device API ${Build.VERSION.SDK_INT})",
-                    )
-                else -> AppLog.w(TAG, "VPN server is not IPv4; excludeRoute not applied")
+            if (resolved is Inet4Address) {
+                listOf(Route(resolved, IPV4_HOST_PREFIX_LENGTH))
+            } else {
+                AppLog.w(TAG, "VPN server is not IPv4; excludeRoute not applied")
+                emptyList()
             }
         } catch (e: Exception) {
             AppLog.w(TAG, "Could not resolve VPN server for excludeRoute: ${e.message}")
+            emptyList()
         }
-    }
+
+    // Upstream deliberately keeps this application inside the tunnel: it adds
+    // itself to the inclusive list and filters itself out of the exclusive one.
+    // That is why TunnelConfig.excludeOwnPackage is left unset here.
+    private fun perAppRoutingFor(
+        splitTunnelEnabled: Boolean,
+        splitTunnelMode: String,
+        inclusivePackages: List<String>,
+        exclusivePackages: List<String>,
+    ): PerAppRouting =
+        when {
+            !splitTunnelEnabled -> PerAppRouting.AllApps
+            splitTunnelMode == VpnContract.SPLIT_TUNNEL_MODE_INCLUSIVE -> PerAppRouting.Include(inclusivePackages.toSet())
+            splitTunnelMode == VpnContract.SPLIT_TUNNEL_MODE_EXCLUSIVE -> PerAppRouting.Exclude(exclusivePackages.toSet())
+            else -> PerAppRouting.AllApps
+        }
 
     override fun onCreate() {
         super.onCreate()
@@ -502,54 +522,40 @@ class TunnelVpnService : VpnService() {
             } else {
                 VpnBridge.nativeSetVpnDnsInterceptIpv4(null)
             }
-            val builder = Builder()
-                .setSession(getString(R.string.vpn_session_name))
-                .setMtu(tunMtu)
-                .addAddress(addressForTun, 32)
-                .addRoute("0.0.0.0", 0)
-            for (dnsServer in tunDnsServersForBuilder(dnsAutomatic, automaticDnsServers)) {
-                builder.addDnsServer(dnsServer)
-            }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                builder.allowFamily(OsConstants.AF_INET)
-                VpnTunnelEvents.emitEngineLog(Log.DEBUG, TAG, "${prefixAttempt(attemptId)}TUN allowFamily(AF_INET) IPv4-only")
-            }
-            applyExcludeRouteForVpnServer(builder, server)
-            if (splitTunnelEnabled &&
-                splitTunnelMode == VpnContract.SPLIT_TUNNEL_MODE_INCLUSIVE
-            ) {
-                VpnTunnelEvents.emitEngineLog(
-                    Log.DEBUG,
-                    TAG,
-                    "${prefixAttempt(attemptId)}TUN split-tunnel inclusive packages=${effectiveInclusivePkgs.size} includesSelf=${effectiveInclusivePkgs.contains(packageName)}",
+            val tunnelParams =
+                TunnelParams(
+                    localAddress = InetAddress.getByName(addressForTun),
+                    prefixLength = IPV4_HOST_PREFIX_LENGTH,
+                    dnsServers =
+                        tunDnsServersForBuilder(dnsAutomatic, automaticDnsServers)
+                            .map { InetAddress.getByName(it) },
+                    mtu = tunMtu,
+                    excludedRoutes = vpnServerExclusion(server),
                 )
-                for (pkg in effectiveInclusivePkgs) {
-                    try {
-                        builder.addAllowedApplication(pkg)
-                    } catch (e: PackageManager.NameNotFoundException) {
-                        throw IllegalArgumentException("Package not installed: $pkg")
-                    }
-                }
-            } else if (splitTunnelEnabled &&
-                splitTunnelMode == VpnContract.SPLIT_TUNNEL_MODE_EXCLUSIVE
-            ) {
-                VpnTunnelEvents.emitEngineLog(
-                    Log.DEBUG,
-                    TAG,
-                    "${prefixAttempt(attemptId)}TUN split-tunnel exclusive packages=${effectiveExclusivePkgs.size}",
+            val tunnelConfig =
+                TunnelConfig(
+                    sessionName = getString(R.string.vpn_session_name),
+                    perAppRouting =
+                        perAppRoutingFor(
+                            splitTunnelEnabled,
+                            splitTunnelMode,
+                            effectiveInclusivePkgs,
+                            effectiveExclusivePkgs,
+                        ),
+                    ipv4Only = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q,
                 )
-                for (pkg in effectiveExclusivePkgs) {
-                    try {
-                        builder.addDisallowedApplication(pkg)
-                    } catch (e: PackageManager.NameNotFoundException) {
-                        throw IllegalArgumentException("Package not installed: $pkg")
-                    }
+            val pfd =
+                try {
+                    TunnelBuilder { message ->
+                        VpnTunnelEvents.emitEngineLog(Log.DEBUG, TAG, "${prefixAttempt(attemptId)}TUN $message")
+                    }.build(VpnServiceTunnelInterface(Builder()), tunnelParams, tunnelConfig)
+                } catch (e: PackageNotInstalledException) {
+                    // Preserve the exact failure text the UI used to show.
+                    throw IllegalArgumentException("Package not installed: ${e.packageName}", e)
+                } catch (e: TunnelEstablishFailedException) {
+                    throw IllegalStateException("TUN establish() returned null", e)
                 }
-            } else {
-                VpnTunnelEvents.emitEngineLog(Log.DEBUG, TAG, "${prefixAttempt(attemptId)}TUN full-device routing")
-            }
-            tunInterface = builder.establish()
-            val pfd = tunInterface ?: throw IllegalStateException("TUN establish() returned null")
+            tunInterface = pfd
             if (!shouldHandleAttempt(attemptId, "post-tun-establish")) {
                 try {
                     pfd.close()
@@ -999,6 +1005,9 @@ class TunnelVpnService : VpnService() {
         private const val MAX_TUN_MTU = 1500
 
         private const val TUN_LOCAL_IPV4 = "10.0.0.2"
+
+        /** A /32 covers exactly the one host: the VPN server, or the TUN address. */
+        private const val IPV4_HOST_PREFIX_LENGTH = 32
         internal const val MANUAL_DNS_VIRTUAL_IPV4 = "198.18.0.1"
         internal const val DEFAULT_NATIVE_EXIT_STOPPED = 12
 
