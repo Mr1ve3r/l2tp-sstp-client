@@ -60,12 +60,24 @@ fun hostNdkPrebuiltDir(): String {
 // keeps clang-tidy aligned with the Android compiler/sysroot used by CMake.
 fun findAndroidNdkTool(name: String): File? {
     val ndkRoot = androidSdkPath?.let { file(it).resolve("ndk") } ?: return null
-    val executableName = if (System.getProperty("os.name").lowercase().contains("windows")) "$name.exe" else name
+    // On Windows the NDK ships two kinds of tool in the same directory: plain
+    // .exe binaries (clang, clang-format, clang-tidy) and per-API target
+    // wrappers that are .cmd files (aarch64-linux-android31-clang.cmd). Looking
+    // only for .exe silently misses every wrapper, and cgo then fails with
+    // "executable file not found in %PATH%". Elsewhere the names are bare.
+    val executableNames =
+        if (System.getProperty("os.name").lowercase().contains("windows")) {
+            listOf("$name.exe", "$name.cmd")
+        } else {
+            listOf(name)
+        }
     val prebuiltDir = hostNdkPrebuiltDir()
     return ndkRoot
         .listFiles()
         ?.sortedByDescending { it.name }
-        ?.map { it.resolve("toolchains/llvm/prebuilt/$prebuiltDir/bin/$executableName") }
+        ?.flatMap { ndk ->
+            executableNames.map { ndk.resolve("toolchains/llvm/prebuilt/$prebuiltDir/bin/$it") }
+        }
         ?.firstOrNull { it.isFile }
 }
 
