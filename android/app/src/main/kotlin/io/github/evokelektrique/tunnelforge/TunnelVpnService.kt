@@ -88,9 +88,9 @@ class TunnelVpnService : VpnService() {
             emptyList()
         }
 
-    // Upstream deliberately keeps this application inside the tunnel: it adds
-    // itself to the inclusive list and filters itself out of the exclusive one.
-    // That is why TunnelConfig.excludeOwnPackage is left unset here.
+    // This application stays outside the tunnel in every mode (SPEC 3.1).
+    // Upstream did the opposite; see effectiveInclusivePackages for the
+    // reasoning and docs/MANUAL_TEST_PHASE3.md for what that changed.
     private fun perAppRoutingFor(
         splitTunnelEnabled: Boolean,
         splitTunnelMode: String,
@@ -543,6 +543,7 @@ class TunnelVpnService : VpnService() {
                             effectiveExclusivePkgs,
                         ),
                     ipv4Only = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q,
+                    excludeOwnPackage = packageName,
                 )
             val pfd =
                 try {
@@ -568,7 +569,9 @@ class TunnelVpnService : VpnService() {
             VpnTunnelEvents.emitEngineLog(
                 Log.INFO,
                 TAG,
-                "${prefixAttempt(attemptId)}TUN established",
+                "${prefixAttempt(attemptId)}TUN established address=$addressForTun/$IPV4_HOST_PREFIX_LENGTH " +
+                    "mtu=$tunMtu dnsServers=${tunnelParams.dnsServers.size} " +
+                    "excludedRoutes=${tunnelParams.excludedRoutes.size} perApp=${tunnelConfig.perAppRouting}",
             )
             VpnTunnelEvents.emitEngineLog(
                 Log.INFO,
@@ -1033,6 +1036,19 @@ class TunnelVpnService : VpnService() {
                 emptyList()
             }
 
+        /**
+         * Packages to route through the tunnel in inclusive mode.
+         *
+         * This application is **not** among them. Upstream TunnelForge added it
+         * here, so its own traffic went through the tunnel; SPEC 3.1 asks for
+         * the opposite, and the project owner confirmed that choice. The app
+         * reaches the network only to carry the tunnel, and those sockets are
+         * already excluded through [SocketProtector][
+         * io.github.mr1ve3r.combined.engine.SocketProtector].
+         *
+         * @param selfPackageName this application, filtered out rather than
+         *   added. Kept as a parameter so the intent is visible at call sites.
+         */
         internal fun effectiveInclusivePackages(
             splitTunnelEnabled: Boolean,
             splitTunnelMode: String,
@@ -1042,7 +1058,8 @@ class TunnelVpnService : VpnService() {
             if (splitTunnelEnabled &&
                 splitTunnelMode == VpnContract.SPLIT_TUNNEL_MODE_INCLUSIVE
             ) {
-                (requestedInclusivePackages(splitTunnelEnabled, splitTunnelMode, inclusivePackages) + selfPackageName)
+                requestedInclusivePackages(splitTunnelEnabled, splitTunnelMode, inclusivePackages)
+                    .filterNot { it == selfPackageName }
                     .distinct()
             } else {
                 emptyList()

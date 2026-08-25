@@ -8,8 +8,11 @@ import org.junit.Test
 
 class TunnelVpnServiceTest {
 
+    // Upstream TunnelForge added this application to the inclusive list, and
+    // these two tests asserted it. SPEC 3.1 asks for the opposite and the
+    // project owner confirmed that choice, so they now assert the exclusion.
     @Test
-    fun effectiveInclusivePackagesAddsTunnelForgePackage() {
+    fun effectiveInclusivePackagesLeavesOutTunnelForgePackage() {
         val effective =
             TunnelVpnService.effectiveInclusivePackages(
                 splitTunnelEnabled = true,
@@ -18,18 +21,11 @@ class TunnelVpnServiceTest {
                 selfPackageName = "io.github.evokelektrique.tunnelforge",
             )
 
-        assertEquals(
-            listOf(
-                "com.example.alpha",
-                "com.example.beta",
-                "io.github.evokelektrique.tunnelforge",
-            ),
-            effective,
-        )
+        assertEquals(listOf("com.example.alpha", "com.example.beta"), effective)
     }
 
     @Test
-    fun effectiveInclusivePackagesDoesNotDuplicateTunnelForgePackage() {
+    fun effectiveInclusivePackagesDropsTunnelForgePackageEvenWhenSelected() {
         val effective =
             TunnelVpnService.effectiveInclusivePackages(
                 splitTunnelEnabled = true,
@@ -43,10 +39,7 @@ class TunnelVpnServiceTest {
                 selfPackageName = "io.github.evokelektrique.tunnelforge",
             )
 
-        assertEquals(
-            listOf("io.github.evokelektrique.tunnelforge", "com.example.alpha"),
-            effective,
-        )
+        assertEquals(listOf("com.example.alpha"), effective)
     }
 
     @Test

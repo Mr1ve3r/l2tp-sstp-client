@@ -87,31 +87,66 @@ session and confirm it comes up again.
 
 ---
 
-## Decisions I need from you
+## Decisions taken
 
-Two SPEC requirements contradict what upstream TunnelForge deliberately does. I
-implemented neither, defaulting to upstream behaviour, because phase 3 is
-supposed to be behaviour-preserving. Both are one field in `TunnelConfig`.
+Both were resolved by the project owner on 2026-08-25.
 
-**12. Should this application's own traffic bypass the tunnel?**
-SPEC 3.1 asks for the app's own package to be excluded. Upstream works at
-keeping it *inside*: `effectiveInclusivePackages` adds the app to the inclusive
-list, and `requestedExclusivePackages` filters it out of the exclusive one. That
-is too deliberate to be an oversight, so I left it alone.
+**12. This application is excluded from the tunnel.** SPEC 3.1 asked for it and
+the owner confirmed. This changed more than one field: upstream actively added
+the app to the inclusive list, with two tests asserting it, so
+`effectiveInclusivePackages` now filters the package out instead and those
+tests were rewritten. Item R3 below re-checks the mode this affects.
 
-What I need: does anything in the app need to reach the network from outside the
-tunnel? If not, upstream's behaviour is fine and the SPEC line should be dropped.
+**13. `setBlocking` stays unset.** Upstream never calls it, so the descriptor
+handed to the native L2TP loop keeps its current read semantics. This matches
+what `TunnelConfig` already defaulted to; no code changed.
 
-**13. Should `setBlocking(true)` be set on the TUN?**
-SPEC 3.1 asks for it. Upstream never calls it, so the descriptor is
-non-blocking, and that descriptor goes straight to the native L2TP poll loop.
-Switching it changes read semantics for C code that phase 4 must not disturb.
+## Round two
 
-What I need: is the native loop written to expect a blocking descriptor? If it
-polls, leaving this alone is correct. This is the sort of thing that would work
-in testing and fail under packet loss, so I would rather not guess.
+Against the build that carries the native Quick Mode fix, the self-exclusion,
+and the enriched log line. Items 1-3 and 6-8 passed already and only need a
+glance to confirm nothing regressed.
 
----
+**R1. MTU is applied.** Set an unusual MTU, connect, and read the `TUN
+established` line, now at INFO:
+
+```
+TUN established address=10.x.x.x/32 mtu=1300 dnsServers=2 excludedRoutes=1 perApp=AllApps
+```
+
+`mtu=` must be what the profile says. This closes item 5, which could not be
+checked before because nothing reported it.
+
+**R2. The server route exclusion is applied.** Switch the log filter in the app
+to Debug — the default is Info, which is why item 10 looked empty — and look
+for `excludeRoute <server>/32`. `excludedRoutes=1` on the R1 line is the
+shorter version of the same check.
+
+**R3. Inclusive routing still works with the app excluded.** This is the change
+with the most risk in it, because it reverses something upstream did
+deliberately. Put one browser in the inclusive list and connect. The browser
+must show the VPN address, everything else must not. Then repeat with manual
+DNS configured, since the app's DNS bridge is the part most likely to care
+about the app's own routing.
+
+**R4. Exclusive routing still works.** As item 8, but confirm the app itself is
+now outside the tunnel too.
+
+## Out of scope for phase 3
+
+**Item 11, reconnect across a network change.** Reported as "nothing happens".
+That is upstream behaviour, not a regression: there is no reconnect logic in
+the app at all — no `NetworkCallback`, no network-change handling. `core-tunnel`
+now ships `NetworkMonitor` as the building block, but nothing consumes it yet.
+The SPEC places this in phase 4 for L2TP.
+
+**Item 9, uninstalled package in a routing rule.** The connection succeeded
+where the code says it should have failed with `Package not installed`. Still
+unexplained; the package lists are sent unfiltered and nothing checks
+installation. Being followed up separately along with the counter mismatch.
+
+**Item 4, DNS over TLS and HTTPS.** UDP verified; the owner chose to skip the
+rest.
 
 ## Known and excluded
 
