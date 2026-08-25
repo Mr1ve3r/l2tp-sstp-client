@@ -20,6 +20,19 @@ import java.net.InetAddress
  * @property searchDomains DNS search domains, empty when the server proposed none.
  * @property routes routes to send through the tunnel. **Empty means the default
  *   route** `0.0.0.0/0`, not "no routes".
+ * @property excludedRoutes addresses that must stay outside the tunnel — the
+ *   peers this engine is actually talking to.
+ *
+ *   Only the engine knows what belongs here. For L2TP it is the VPN server; for
+ *   SSTP through an HTTP proxy it is the *proxy*, since that is the host the
+ *   socket connects to. Routing the transport back into the tunnel it carries
+ *   is the loop described in appendix Б.
+ *
+ *   This is belt and braces: the sockets are already protected through
+ *   [SocketProtector]. The exclusion additionally keeps the traffic off the
+ *   tunnel interface where the platform supports it — `VpnService.Builder`
+ *   gained `excludeRoute` in API 33, and below that the host silently relies on
+ *   socket protection alone.
  */
 data class TunnelParams(
     val localAddress: InetAddress,
@@ -28,6 +41,7 @@ data class TunnelParams(
     val mtu: Int,
     val searchDomains: List<String> = emptyList(),
     val routes: List<Route> = emptyList(),
+    val excludedRoutes: List<Route> = emptyList(),
 )
 
 /**

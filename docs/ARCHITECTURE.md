@@ -88,6 +88,22 @@ all.
 `EngineException` is also new: `connect()` is declared to return `TunnelParams`,
 so it needs a way to fail that carries an `EngineError`.
 
+**`TunnelParams` carries `excludedRoutes`.** Added in phase 3. Upstream
+TunnelForge calls `VpnService.Builder.excludeRoute()` for the VPN server address
+on API 33+, so that the tunnel's own transport does not get routed into the
+tunnel. `TunnelParams.routes` cannot express this: it means "send these through
+the tunnel", and the exclusion is the opposite.
+
+The host cannot derive the value either. For L2TP the excluded address is the
+server from the profile, but for SSTP through an HTTP proxy it is the proxy —
+that is the host the socket actually connects to, and only the engine knows it.
+So the engine reports it.
+
+This duplicates protection already provided by `SocketProtector`, deliberately.
+Socket protection is the mechanism that must work; the route exclusion is a
+second line that also keeps the traffic off the tunnel interface, and it is
+unavailable below API 33.
+
 ## Error mapping
 
 `EngineError` is the single vocabulary both engines report in. The per-protocol
