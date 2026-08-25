@@ -132,3 +132,42 @@ IPv4 data plane. It is working and tested, and phase 4 is explicitly a
 behaviour-preserving refactor around it: `git diff` over that directory is
 expected to stay empty. Any change there needs a justification in the commit
 message.
+
+### Changes made to the native engine
+
+One entry per change, with the reason. The list should stay short; if it grows,
+the boundary between the engine and the layers around it is in the wrong place.
+
+#### Quick Mode no longer aborts on an interleaved Informational exchange
+
+*`ikev1.c`, 2026-08-25. Found while running the phase 3 manual test plan.*
+
+**Symptom.** Connecting to a MikroTik L2TP/IPsec server failed every time from
+a debug build, and succeeded every time from a release build of the same code.
+The log said `Quick Mode: server sent NOTIFY type=24578 (0x6002) - proposal
+rejected`, while the server logged `ISAKMP-SA established` and no error at all.
+
+**Cause.** After sending Quick Mode msg1, the engine took the first datagram
+that came back and treated any Informational exchange among them as a rejected
+ESP proposal. A peer may send an Informational at any time, and MikroTik sends
+INITIAL-CONTACT shortly after phase 1 authentication. Whether it arrives before
+or after QM2 is a race, and the two builds sat on opposite sides of it: native
+code is compiled `-O0` for debug variants and optimised for release, so the
+debug build consistently lost.
+
+Notification type 24578 is INITIAL-CONTACT. RFC 2408 §3.14.1 splits NOTIFY
+types into errors (1..16383) and status messages (16384 and up), and RFC 2407
+§4.6.3 assigns INITIAL-CONTACT, RESPONDER-LIFETIME and REPLAY-STATUS in the
+status range. The engine was reporting a status message as a rejection.
+
+**Change.** An Informational carrying only status notifications is logged and
+skipped, and the engine keeps waiting for QM2 rather than giving up; an
+Informational carrying an error notification still fails the negotiation, now
+with an accurate message. Reading again uses a new `ike_recv_only()` rather
+than `ike_send_recv()`, because QM1 was delivered and must not be re-sent.
+Bounded by `IKE_QM_MAX_INFO_BEFORE_QM2` and `IKE_QM_INFO_WAIT_MS`.
+
+**Why this was not left alone.** It is not cosmetic and it is not specific to
+debug builds. The race exists in release too — a slower device or a busier
+network puts a release build on the losing side of it just as readily. The
+behaviour on a genuinely rejected proposal is unchanged.
