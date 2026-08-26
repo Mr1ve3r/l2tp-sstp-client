@@ -21,7 +21,8 @@ android/app  ──  CombinedVpnService, platform channels        (planned, phas
       │        └── JNI ── android/app/src/main/cpp (unchanged native engine)
       │
       ├── engine-sstp ── SstpEngine : VpnEngine                (planned, phase 6)
-      │        └── core-trust ── certificate store, TrustPolicy (planned, phase 5)
+      │        └── core-trust ── trust policies, hostname check,
+      │                          pre-flight; store still to come
       │
       └── engine-api ─── VpnEngine, EngineProfile, EngineState,
                          EngineError, TunnelParams, SocketProtector
@@ -103,6 +104,41 @@ This duplicates protection already provided by `SocketProtector`, deliberately.
 Socket protection is the mechanism that must work; the route exclusion is a
 second line that also keeps the traffic off the tunnel interface, and it is
 unavailable below API 33.
+
+## Trust, in `core-trust`
+
+Verification splits into three questions that fail differently, so they are
+three types rather than one.
+
+**Is the certificate trusted?** `TrustManagerFactoryProvider` builds the
+`X509TrustManager` a profile's `TrustPolicy` calls for. `SYSTEM` and
+`CUSTOM_ONLY` are ordinary PKIX managers over different anchors;
+`SYSTEM_PLUS_CUSTOM` tries the system store first and falls back, throwing the
+system failure with the custom one attached because the system message is the
+one that explains what is wrong; `PIN_LEAF` compares the leaf's SHA-256 against
+the profile's pins in constant time and ignores the chain entirely, which is
+what makes a self-signed router certificate usable without disabling
+verification everywhere.
+
+`INSECURE` cannot be built unless the caller passes `allowInsecure`, and the
+default is `false` so that forgetting produces a refusal rather than an
+unverified tunnel. A profile carrying it in a release build is downgraded to
+`SYSTEM_PLUS_CUSTOM` with a log entry rather than refused, so a profile written
+on a debug build still connects.
+
+**Is it the right host?** `HostnameVerification` answers separately, because a
+trusted certificate with the wrong name needs a different fix from an untrusted
+one — filling in `expectedHostname` rather than importing anything. A mismatch
+carries every name the certificate presents, which is what
+`EngineError.HostnameMismatch` shows the user.
+
+**Will this work at all?** `TrustPreflight` runs before a socket is opened and
+turns what would be an `SSLHandshakeException` ten seconds in into a sentence
+beforehand. It blocks on things that make the attempt pointless — a deleted
+certificate, a chain policy with no anchors, pinning with no pins — and merely
+asks about an expired certificate, since a router serving one is common and the
+user may know why. `PIN_LEAF` never checks expiry during the handshake, so
+without this the fact would never surface at all.
 
 ## Error mapping
 
