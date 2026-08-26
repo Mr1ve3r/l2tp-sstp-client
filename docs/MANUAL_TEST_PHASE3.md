@@ -20,37 +20,48 @@ build you were using previously. If you no longer have it, note what happens now
 and say so — an absolute observation is still useful, it just cannot prove
 "unchanged".
 
-**Reporting.** Answer each numbered item `pass`, `fail`, or `skip`, with a note
-on anything surprising. Items 1–6 are the ones that gate the phase; 7–11 are
-regressions I consider plausible given what changed; 12–13 are decisions I need
-a ruling on rather than pass/fail.
+**Status: complete.** Run on a Nothing A142, Android 16 (API 36), against a
+MikroTik L2TP/IPsec server, 2026-08-25. Results are recorded per item below.
+The first round found one real defect — see "What this found" at the end.
 
 ---
 
 ## Gating checks
 
 **1. Basic L2TP/IPsec connection.**
+*Result: `pass`, after the native Quick Mode fix.*
+
 Connect to your MikroTik (IKEv1, PSK). The tunnel comes up, the status screen
 shows an IP, and traffic flows. `pass` if it connects exactly as it did before.
 
 **2. Assigned address is correct.**
+*Result: `pass`.*
+
 On the status screen, the IP is the one the server assigned via IPCP, not
 `10.0.0.2`. `10.0.0.2` is the fallback used when IPCP gives nothing usable, so
 seeing it means the negotiated address was lost on its way to the builder.
 
 **3. DNS in automatic mode.**
+*Result: `pass`.*
+
 With DNS set to automatic, name resolution works and the servers shown are the
 ones the server proposed, in the same order.
 
 **4. DNS in manual mode.**
+*Result: `pass` over UDP; TLS and HTTPS skipped by the owner.*
+
 Set two custom DNS servers, ideally with different protocols (UDP and TLS).
 Resolution works, and both are used.
 
 **5. MTU is applied.**
+*Result: `pass` via R1: 1300, 1100 and 1150 all reported correctly.*
+
 Set a distinctive MTU in the profile — 1300, say — reconnect, and confirm the
 interface reports that value rather than the default.
 
 **6. Full-device routing.**
+*Result: `pass`.*
+
 With per-app routing off, every application's traffic goes through the tunnel.
 Check your public IP from a browser and from some other app.
 
@@ -59,11 +70,15 @@ Check your public IP from a browser and from some other app.
 ## Regression checks
 
 **7. Per-app routing, inclusive.**
+*Result: `pass`.*
+
 Select two applications. Their traffic goes through the tunnel; everything else
 does not. Confirm both directions — a browser inside the list showing the VPN
 address, and one outside it showing your normal address.
 
 **8. Per-app routing, exclusive.**
+*Result: `pass`.*
+
 Select one application to exclude. That application shows your normal address,
 everything else shows the VPN address.
 
@@ -74,6 +89,8 @@ wording as before. This checks the exception rewrapping; a different message, or
 a crash, is a fail.
 
 **10. Traffic to the VPN server itself bypasses the tunnel.**
+*Result: `pass` via R2: `excludeRoute <server>/32` present, `excludedRoutes=1`.*
+
 Connect, then check the log for a line mentioning `excludeRoute` and the server
 address. On Android 13 or newer it should say the exclusion was applied; on
 Android 12 it should say it is relying on socket protection instead. Either is
@@ -131,6 +148,26 @@ about the app's own routing.
 
 **R4. Exclusive routing still works.** As item 8, but confirm the app itself is
 now outside the tunnel too.
+
+*Results: R1 `pass` — 1300, 1100, 1150 all reported, no errors on either side.
+R2 `pass`. R3 `pass` with automatic and with manual DNS. R4 `pass` with
+automatic and with manual DNS.*
+
+## What this found
+
+The checklist paid for itself on item 1, which failed outright.
+
+The cause was not in phase 3. Quick Mode aborted on the first Informational
+exchange that arrived in place of QM2, reporting INITIAL-CONTACT — a status
+notification — as a rejected proposal. Whether that Informational arrived
+before or after QM2 is a race, and native code is built `-O0` for debug
+variants, so debug builds lost it every time while release builds won it every
+time. That is why upstream's release APK worked and every build here did not.
+Fixed in `ikev1.c`; see docs/ARCHITECTURE.md.
+
+Establishing that it was not phase 3 took a control build: the same debug APK
+at the commit before the `TunnelBuilder` wiring failed identically, which ruled
+out the only commit that touches `:app` runtime code.
 
 ## Out of scope for phase 3
 

@@ -113,7 +113,7 @@ class TunnelBuilderTest {
     }
 
     @Test
-    fun `own package is left in the tunnel unless asked for, preserving upstream behaviour`() {
+    fun `own package is left alone unless the caller asks for its exclusion`() {
         val spec = RecordingTunnelInterface()
 
         TunnelBuilder().configure(spec, PARAMS, CONFIG)

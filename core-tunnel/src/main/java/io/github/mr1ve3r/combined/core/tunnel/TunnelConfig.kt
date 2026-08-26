@@ -27,12 +27,13 @@ import android.net.Network
  * @property excludeOwnPackage this application's package name, to be kept out
  *   of the tunnel, or `null` to leave it in.
  *
- *   The SPEC asks for self-exclusion unconditionally. Upstream does not do it,
- *   relying on socket protection instead, so the default here is `null` to
- *   preserve behaviour. Note it is only meaningful for
- *   [PerAppRouting.Exclude] and [PerAppRouting.AllApps]: under
- *   [PerAppRouting.Include] an application is already outside the tunnel unless
- *   it is named.
+ *   The default is `null` because this module takes no position on it; the host
+ *   decides. The Android application does set it, having verified on a device
+ *   that excluding itself breaks neither routing mode (SPEC 3.1).
+ *
+ *   Only meaningful for [PerAppRouting.Exclude] and [PerAppRouting.AllApps]:
+ *   under [PerAppRouting.Include] an application is already outside the tunnel
+ *   unless it is named.
  */
 data class TunnelConfig(
     val sessionName: String,
