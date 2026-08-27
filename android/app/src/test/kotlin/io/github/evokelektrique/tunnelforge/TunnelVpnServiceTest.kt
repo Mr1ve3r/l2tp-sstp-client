@@ -5,6 +5,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.net.InetAddress
 
 class TunnelVpnServiceTest {
 
@@ -97,40 +98,26 @@ class TunnelVpnServiceTest {
         assertEquals(exposure, runtimeConfig.exposure)
     }
 
+    // The negotiated servers now arrive as addresses from the engine's
+    // TunnelParams rather than as resolved DNS configs read out of the intent.
     @Test
     fun manualVpnDnsAdvertisesVirtualResolver() {
         val dnsServers =
-            TunnelVpnService.tunDnsServersForBuilder(
+            TunnelVpnService.tunDnsServers(
                 dnsAutomatic = false,
-                automaticDnsServers =
-                    listOf(
-                        ResolvedDnsServerConfig(
-                            host = "172.20.21.22",
-                            protocol = DnsProtocol.dnsOverUdp,
-                            resolvedIpv4 = "172.20.21.22",
-                        ),
-                    ),
+                negotiatedDnsServers = listOf(InetAddress.getByName("172.20.21.22")),
             )
 
-        assertEquals(listOf(TunnelVpnService.MANUAL_DNS_VIRTUAL_IPV4), dnsServers)
+        assertEquals(listOf(InetAddress.getByName(TunnelVpnService.MANUAL_DNS_VIRTUAL_IPV4)), dnsServers)
     }
 
     @Test
     fun automaticVpnDnsAdvertisesNegotiatedResolvers() {
-        val dnsServers =
-            TunnelVpnService.tunDnsServersForBuilder(
-                dnsAutomatic = true,
-                automaticDnsServers =
-                    listOf(
-                        ResolvedDnsServerConfig(
-                            host = "172.20.21.22",
-                            protocol = DnsProtocol.dnsOverUdp,
-                            resolvedIpv4 = "172.20.21.22",
-                        ),
-                    ),
-            )
+        val negotiated = listOf(InetAddress.getByName("172.20.21.22"))
 
-        assertEquals(listOf("172.20.21.22"), dnsServers)
+        val dnsServers = TunnelVpnService.tunDnsServers(dnsAutomatic = true, negotiatedDnsServers = negotiated)
+
+        assertEquals(negotiated, dnsServers)
     }
 
     @Test
@@ -139,7 +126,7 @@ class TunnelVpnServiceTest {
             TunnelVpnServiceStopPolicy.shouldEmitStoppedOnActionStop(
                 running = false,
                 hasSetupThread = false,
-                hasEngineThread = false,
+                hasEngine = false,
                 hasTunInterface = false,
                 hasDnsServer = false,
                 hasLocalProxyRuntime = false,
@@ -153,7 +140,7 @@ class TunnelVpnServiceTest {
             TunnelVpnServiceStopPolicy.shouldEmitStoppedOnActionStop(
                 running = false,
                 hasSetupThread = false,
-                hasEngineThread = true,
+                hasEngine = true,
                 hasTunInterface = false,
                 hasDnsServer = false,
                 hasLocalProxyRuntime = false,
@@ -163,7 +150,7 @@ class TunnelVpnServiceTest {
             TunnelVpnServiceStopPolicy.shouldEmitStoppedOnActionStop(
                 running = false,
                 hasSetupThread = false,
-                hasEngineThread = false,
+                hasEngine = false,
                 hasTunInterface = true,
                 hasDnsServer = false,
                 hasLocalProxyRuntime = false,
@@ -173,7 +160,7 @@ class TunnelVpnServiceTest {
             TunnelVpnServiceStopPolicy.shouldEmitStoppedOnActionStop(
                 running = false,
                 hasSetupThread = true,
-                hasEngineThread = false,
+                hasEngine = false,
                 hasTunInterface = false,
                 hasDnsServer = false,
                 hasLocalProxyRuntime = false,

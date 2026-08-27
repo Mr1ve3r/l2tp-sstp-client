@@ -13,12 +13,13 @@ Flutter UI (lib/)
       ▼
 android/app  ──  CombinedVpnService, platform channels        (planned, phase 7)
       │
-      ├── core-tunnel ── TunnelBuilder, KillSwitchController,  (planned, phase 3)
-      │                  DnsConfigurator, NetworkMonitor,
-      │                  SocketProtectorImpl
+      ├── core-tunnel ── TunnelBuilder, NetworkMonitor,
+      │                  SocketProtectorImpl; DnsConfigurator
+      │                  still in android/app (SPEC В.3)
       │
-      ├── engine-l2tp ── L2tpEngine : VpnEngine                (planned, phase 4)
-      │        └── JNI ── android/app/src/main/cpp (unchanged native engine)
+      ├── engine-l2tp ── L2tpEngine : VpnEngine
+      │        └── L2tpNative ── VpnBridge ── android/app/src/main/cpp
+      │                          (unchanged native engine)
       │
       ├── engine-sstp ── SstpEngine : VpnEngine                (planned, phase 6)
       │        └── core-trust ── trust policies, hostname check,
@@ -105,6 +106,25 @@ Socket protection is the mechanism that must work; the route exclusion is a
 second line that also keeps the traffic off the tunnel interface, and it is
 unavailable below API 33.
 
+## Contract members with no implementation yet
+
+Three things in `engine-api` are declared and unused. They are listed here so
+that "nothing writes this" is a recorded state rather than something the next
+person rediscovers. The decisions on all three are in appendix В of the `SPEC`.
+
+| Member | Status | Lands in |
+|---|---|---|
+| `EngineState.Reconnecting` | nothing emits it; reconnect-on-network-change is not built | phase 7, in the host — the logic is the same for both protocols |
+| `EngineProfile.customDns` | nothing reads it; DNS reaches the service through the `Intent` instead | phase 8, with the profile model |
+| `TunnelParams.searchDomains` | `TunnelBuilder` applies it, no engine fills it | phase 6 from SSTP; the L2TP native layer does not return domains from IPCP |
+
+`EngineProfile.L2tp` additionally carries four fields the native engine cannot
+honour — `ipsecEnabled = false`, `localIdentifier`, `phase1Proposals` and
+`phase2Proposals`. `L2tpEngine` logs a warning for each rather than ignoring it
+silently, because a setting that does nothing is worse than an absent one. What
+happens to them — implemented in C, dropped from the contract, or shown for SSTP
+only — is decided before phase 9 (SPEC В.5).
+
 ## Trust, in `core-trust`
 
 Verification splits into three questions that fail differently, so they are
@@ -145,11 +165,78 @@ without this the fact would never surface at all.
 `EngineError` is the single vocabulary both engines report in. The per-protocol
 mapping tables below are filled in as the engines land.
 
-### Native L2TP layer → `EngineError` (planned, phase 4)
+### Native L2TP layer → `EngineError`
 
-| Native status | `EngineError` |
-|---|---|
-| _to be filled in phase 4_ | |
+The native engine reports one `TUNNEL_EXIT_*` code, defined in
+`android/app/src/main/cpp/engine.h`. `L2tpExitCode.toEngineError` is the
+translation, and `L2tpExitCodeTest` asserts every row below.
+
+| Native status | Code | `EngineError` |
+|---|---|---|
+| `TUNNEL_EXIT_OK` | 0 | none — the tunnel shut down cleanly |
+| `TUNNEL_EXIT_IKE_FAILED` | 1 | `IpsecFailed` |
+| `TUNNEL_EXIT_L2TP_FAILED` | 2 | `PppNegotiationFailed(phase = "L2TP")` |
+| `TUNNEL_EXIT_PPP_FAILED` | 3 | `PppNegotiationFailed(phase = "PPP")` |
+| `TUNNEL_EXIT_POLL_ERROR` | 4 | `NetworkUnreachable` |
+| `TUNNEL_EXIT_BAD_ARGS` | 10 | `Internal` |
+| `TUNNEL_EXIT_PROXY_NOT_IMPLEMENTED` | 11 | `Internal` |
+| `TUNNEL_EXIT_STOPPED` | 12 | none — a deliberate stop |
+| anything else | | `Internal`, with the code in `detail` |
+
+Three rows deserve their reasoning written down.
+
+**`TUNNEL_EXIT_L2TP_FAILED` is not its own variant.** The L2TP control channel
+is neither IPsec nor PPP, and `EngineError` has no variant for it. Adding one
+would push a detail of a single protocol into the vocabulary both engines share,
+for a failure the user can do nothing different about, so the failure is
+reported as the negotiation it belongs to and named by its `phase`. If SSTP ever
+needs the same distinction, that is the point to revisit it.
+
+**Nothing maps to `AuthenticationFailed`.** *Being fixed: SPEC В.2 assigns the
+native change, due before phase 10.* The C layer does not distinguish a
+CHAP/MSCHAPv2 rejection from any other PPP failure: `ppp.c` returns the same
+`-1` for a Failure packet, an I/O error and a timeout, and the caller turns all
+three into `TUNNEL_EXIT_PPP_FAILED`. Mapping code 3 to `AuthenticationFailed`
+would therefore claim wrong credentials whenever LCP or IPCP failed — and a
+failover group **stops** on `AuthenticationFailed` rather than trying the next
+member, so the wrong guess would silently break failover in phase 10. The peer's
+own failure text does reach the log stream, which is where a user looks today.
+Fixing this properly means a new native status code, which phase 4 may not add.
+
+**`TUNNEL_EXIT_POLL_ERROR` maps to `NetworkUnreachable`, not `Internal`.** It is
+only reachable once the tunnel is already carrying packets, so the transport was
+working and has stopped working. That is a lost network from the user's point of
+view, and it is the case reconnection logic should act on.
+
+#### What the user reads
+
+The `detail` strings carry the exact wording the interface showed before phase 4;
+`messageKey` is the localisation key the UI moves to later. Phase 4 changed the
+shape of the L2TP path and deliberately not one character of its user-visible
+text.
+
+#### Where the engine sits
+
+`L2tpEngine` wraps the native layer through `L2tpNative`, an interface with one
+implementation: `VpnBridgeL2tpNative` in the application module, which is pure
+delegation to `VpnBridge`. The engine cannot reference `VpnBridge` directly —
+the JNI methods are registered against a class name the C layer hard-codes, so
+that class has to stay in the application, and a library module may not depend
+on the application containing it.
+
+The C layer also calls *up*, by name, into three static methods it resolves at
+load time. Those stay where they are and forward to the running engine through
+`L2tpNativeCallbacks`:
+
+| Native upcall | Forwards to | Effect |
+|---|---|---|
+| `TunnelVpnService.protectSocketFd` | `SocketProtector.protect` | the socket bypasses the tunnel |
+| `TunnelVpnService.onNativeTunnelReady` | `EngineState.Connected` | the UI shows the tunnel as up |
+| `VpnTunnelEvents.emitEngineLogFromNative` | `EngineLogEvent(protocol = L2TP)` | the line joins the engine's event stream |
+
+When no engine is installed — proxy-only mode, or a teardown already in flight —
+these are no-ops, and `protect` returns `null` so the caller falls back to
+protecting the socket itself rather than leaving it inside the tunnel.
 
 ### SSTP `Where` / `Result` → `EngineError` (planned, phase 6)
 

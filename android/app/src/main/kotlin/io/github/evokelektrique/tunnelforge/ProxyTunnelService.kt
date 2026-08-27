@@ -11,6 +11,7 @@ import android.os.Build
 import android.os.IBinder
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import io.github.mr1ve3r.combined.engine.l2tp.L2tpExitCode
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
@@ -203,7 +204,7 @@ class ProxyTunnelService : Service() {
                     negotiatedSecondaryDns,
                 )
             VpnTunnelEvents.emitEngineLog(Log.DEBUG, TAG, "${prefixAttempt(attemptId)}nativeNegotiate finished with exit code=$negResult")
-            if (negResult == TunnelVpnService.DEFAULT_NATIVE_EXIT_STOPPED && stopRequested) {
+            if (negResult == L2tpExitCode.STOPPED && stopRequested) {
                 VpnTunnelEvents.emitEngineLog(
                     Log.INFO,
                     TAG,

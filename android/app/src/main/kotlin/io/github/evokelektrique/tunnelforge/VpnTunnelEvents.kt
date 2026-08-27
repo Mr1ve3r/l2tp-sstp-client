@@ -5,6 +5,7 @@ import android.os.Looper
 import android.util.Log
 import androidx.annotation.Keep
 import io.flutter.plugin.common.MethodChannel
+import io.github.mr1ve3r.combined.engine.l2tp.L2tpNativeCallbacks
 
 /** Pushes tunnel lifecycle updates to Flutter on the main thread (same [MethodChannel] as [MainActivity]). */
 object VpnTunnelEvents {
@@ -102,9 +103,17 @@ object VpnTunnelEvents {
         )
     }
 
+    /**
+     * Called from JNI by name. The C layer resolves this method at load time,
+     * so its class, name and signature are fixed.
+     */
     @Keep
     @JvmStatic
     fun emitEngineLogFromNative(priority: Int, tag: String, message: String) {
+        // The running engine republishes the line as an EngineLogEvent with
+        // protocol = L2TP (SPEC 4.1.5). Forwarding here rather than from the C
+        // layer keeps the native sources untouched, as phase 4 requires.
+        L2tpNativeCallbacks.nativeLog(priority, tag, message)
         emitEngineLog(priority, tag, message, source = VpnContract.LOG_SOURCE_NATIVE)
     }
 

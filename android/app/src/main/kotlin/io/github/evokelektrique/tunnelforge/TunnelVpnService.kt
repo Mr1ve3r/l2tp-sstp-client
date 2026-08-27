@@ -16,15 +16,25 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import io.github.mr1ve3r.combined.core.tunnel.PackageNotInstalledException
 import io.github.mr1ve3r.combined.core.tunnel.PerAppRouting
+import io.github.mr1ve3r.combined.core.tunnel.SocketProtectorImpl
 import io.github.mr1ve3r.combined.core.tunnel.TunnelBuilder
 import io.github.mr1ve3r.combined.core.tunnel.TunnelConfig
 import io.github.mr1ve3r.combined.core.tunnel.TunnelEstablishFailedException
 import io.github.mr1ve3r.combined.core.tunnel.VpnServiceTunnelInterface
-import io.github.mr1ve3r.combined.engine.Route
-import io.github.mr1ve3r.combined.engine.TunnelParams
+import io.github.mr1ve3r.combined.engine.EngineException
+import io.github.mr1ve3r.combined.engine.EngineProfile
+import io.github.mr1ve3r.combined.engine.EngineState
+import io.github.mr1ve3r.combined.engine.l2tp.L2tpEngine
+import io.github.mr1ve3r.combined.engine.l2tp.L2tpNativeCallbacks
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import java.io.IOException
 import java.net.DatagramSocket
-import java.net.Inet4Address
 import java.net.InetAddress
 import java.net.Socket
 import java.util.concurrent.atomic.AtomicBoolean
@@ -48,7 +58,16 @@ class TunnelVpnService : VpnService() {
     private val connectedEmitted = AtomicBoolean(false)
     private var tunInterface: ParcelFileDescriptor? = null
     private var setupThread: Thread? = null
-    private var engineThread: Thread? = null
+
+    /**
+     * The L2TP engine for the current session, and the scope watching its state.
+     *
+     * Where a `Thread` running the native poll loop used to be. The loop is
+     * still a thread, but it belongs to the engine now; what the service tracks
+     * is the engine itself (SPEC phase 4.1.1).
+     */
+    private var activeEngine: L2tpEngine? = null
+    private var engineWatcher: CoroutineScope? = null
     private var vpnDnsPacketBridge: VpnDnsPacketBridge? = null
     private var localProxyRuntime: ProxyServerRuntime? = null
     private var activeAttemptId: String = ""
@@ -64,29 +83,6 @@ class TunnelVpnService : VpnService() {
         mainHandler.removeCallbacks(pendingStopSelfRunnable)
         mainHandler.postDelayed(pendingStopSelfRunnable, 300L)
     }
-
-    /**
-     * Keeps IKE/L2TP traffic to the VPN gateway off the TUN default route.
-     *
-     * [protect] alone is unreliable on some OEMs when the peer is on the LAN,
-     * which is why the route exclusion exists in addition to it.
-     *
-     * Reported as part of `TunnelParams` so that `core-tunnel` applies it; the
-     * API-33 floor and the "applied / could not apply" logging live there.
-     */
-    private fun vpnServerExclusion(server: String): List<Route> =
-        try {
-            val resolved = InetAddress.getByName(server)
-            if (resolved is Inet4Address) {
-                listOf(Route(resolved, IPV4_HOST_PREFIX_LENGTH))
-            } else {
-                AppLog.w(TAG, "VPN server is not IPv4; excludeRoute not applied")
-                emptyList()
-            }
-        } catch (e: Exception) {
-            AppLog.w(TAG, "Could not resolve VPN server for excludeRoute: ${e.message}")
-            emptyList()
-        }
 
     // This application stays outside the tunnel in every mode (SPEC 3.1).
     // Upstream did the opposite; see effectiveInclusivePackages for the
@@ -200,7 +196,7 @@ class TunnelVpnService : VpnService() {
                 if (TunnelVpnServiceStopPolicy.shouldEmitStoppedOnActionStop(
                         running = running.get(),
                         hasSetupThread = setupThread != null,
-                        hasEngineThread = engineThread != null,
+                        hasEngine = activeEngine != null,
                         hasTunInterface = tunInterface != null,
                         hasDnsServer = vpnDnsPacketBridge != null,
                         hasLocalProxyRuntime = localProxyRuntime != null,
@@ -267,7 +263,7 @@ class TunnelVpnService : VpnService() {
         TunnelVpnServiceStopPolicy.shouldEmitStoppedOnActionStop(
             running = running.get(),
             hasSetupThread = setupThread != null,
-            hasEngineThread = engineThread != null,
+            hasEngine = activeEngine != null,
             hasTunInterface = tunInterface != null,
             hasDnsServer = vpnDnsPacketBridge != null,
             hasLocalProxyRuntime = localProxyRuntime != null,
@@ -309,14 +305,6 @@ class TunnelVpnService : VpnService() {
         }
     }
 
-    private fun clearEngineThreadIfCurrent(thread: Thread) {
-        synchronized(sessionLock) {
-            if (engineThread === thread) {
-                engineThread = null
-            }
-        }
-    }
-
     private fun startTunnel(
         attemptId: String,
         server: String,
@@ -336,6 +324,7 @@ class TunnelVpnService : VpnService() {
         val nativeOwner = nativeOwner(attemptId)
         var nativeOwnerAcquired = false
         var nativeLoopStarted = false
+        var startedEngine: L2tpEngine? = null
         try {
             cancelPendingStopSelf()
             if (running.getAndSet(true)) {
@@ -401,63 +390,53 @@ class TunnelVpnService : VpnService() {
                 stopServiceForAttempt(attemptId)
                 return
             }
-            VpnBridge.nativeSetSocketProtectionEnabled(true)
-            // Phase 1: negotiate IKE+L2TP+PPP on the real network (no VPN tunnel yet).
-            val negotiatedClientIp = IntArray(4)
-            val negotiatedPrimaryDns = IntArray(4)
-            val negotiatedSecondaryDns = IntArray(4)
-            val negResult =
-                VpnBridge.nativeNegotiate(
-                    server,
-                    user,
-                    password,
-                    psk,
-                    tunMtu,
-                    negotiatedClientIp,
-                    negotiatedPrimaryDns,
-                    negotiatedSecondaryDns,
-                )
-            VpnTunnelEvents.emitEngineLog(Log.DEBUG, TAG, "${prefixAttempt(attemptId)}nativeNegotiate finished with exit code=$negResult")
-            if (negResult == DEFAULT_NATIVE_EXIT_STOPPED) {
-                VpnTunnelEvents.emitEngineLog(
-                    Log.INFO,
-                    TAG,
-                    "${prefixAttempt(attemptId)}Negotiation canceled before tunnel establishment",
-                )
-                return
-            }
-            if (negResult != 0) {
-                emitAttemptState(attemptId, VpnContract.TUNNEL_FAILED, tunnelExitDetail(negResult))
-                running.set(false)
-                VpnTunnelEvents.emitEngineLog(Log.ERROR, TAG, "${prefixAttempt(attemptId)}Tunnel failed during negotiation code=$negResult")
-                stopServiceForAttempt(attemptId)
-                return
-            }
+            // Phase 1: negotiate IKE+L2TP+PPP on the real network (no VPN tunnel
+            // yet). The engine owns that path now; what comes back is what the
+            // server agreed to, and the TUN is still this service's to build.
+            val engine = L2tpEngine(VpnBridgeL2tpNative)
+            startedEngine = engine
+            synchronized(sessionLock) { activeEngine = engine }
+            val negotiatedParams =
+                try {
+                    runBlocking {
+                        engine.connect(
+                            profile = l2tpProfile(server, user, password, psk, tunMtu),
+                            protector = engineProtector(attemptId),
+                        )
+                    }
+                } catch (e: CancellationException) {
+                    // The engine reports a stop that arrived before the tunnel
+                    // existed as cancellation. Nothing failed, so nothing is shown.
+                    VpnTunnelEvents.emitEngineLog(
+                        Log.INFO,
+                        TAG,
+                        "${prefixAttempt(attemptId)}Negotiation canceled before tunnel establishment",
+                    )
+                    return
+                } catch (e: EngineException) {
+                    emitAttemptState(attemptId, VpnContract.TUNNEL_FAILED, engineFailureDetail(e))
+                    running.set(false)
+                    VpnTunnelEvents.emitEngineLog(
+                        Log.ERROR,
+                        TAG,
+                        "${prefixAttempt(attemptId)}Tunnel failed during negotiation error=${e.error.messageKey}",
+                    )
+                    stopServiceForAttempt(attemptId)
+                    return
+                }
             if (!shouldHandleAttempt(attemptId, "post-negotiate")) {
                 return
             }
 
             // Phase 2: establish TUN interface now that negotiation succeeded.
             VpnTunnelEvents.emitEngineLog(Log.DEBUG, TAG, "${prefixAttempt(attemptId)}Starting TUN establish()")
-            val tunIpv4 =
-                "${negotiatedClientIp[0]}.${negotiatedClientIp[1]}.${negotiatedClientIp[2]}.${negotiatedClientIp[3]}"
-            val useIpcpAddress =
-                negotiatedClientIp.all { it in 0..255 } &&
-                    negotiatedClientIp.any { it != 0 }
-            val addressForTun = if (useIpcpAddress) tunIpv4 else TUN_LOCAL_IPV4
-            VpnTunnelEvents.emitEngineLog(
-                Log.DEBUG,
-                TAG,
-                "${prefixAttempt(attemptId)}TUN addAddress=$addressForTun (IPCP=$tunIpv4 useIpcp=$useIpcpAddress)",
-            )
-            val automaticDnsServers = DnsConfigSupport.negotiatedServers(negotiatedPrimaryDns, negotiatedSecondaryDns)
             val manualDnsServers =
                 if (dnsAutomatic) {
                     emptyList()
                 } else {
                     DnsConfigSupport.resolveUpstreamServers(dnsServers)
                 }
-            if ((dnsAutomatic && automaticDnsServers.isEmpty()) ||
+            if ((dnsAutomatic && negotiatedParams.dnsServers.isEmpty()) ||
                 (!dnsAutomatic && manualDnsServers.isEmpty())
             ) {
                 emitAttemptState(
@@ -522,15 +501,12 @@ class TunnelVpnService : VpnService() {
             } else {
                 VpnBridge.nativeSetVpnDnsInterceptIpv4(null)
             }
+            // Everything except DNS is what the engine negotiated. DNS is the one
+            // parameter the host is allowed to override, and manual DNS replaces
+            // the server's resolvers with the virtual one the bridge answers on.
             val tunnelParams =
-                TunnelParams(
-                    localAddress = InetAddress.getByName(addressForTun),
-                    prefixLength = IPV4_HOST_PREFIX_LENGTH,
-                    dnsServers =
-                        tunDnsServersForBuilder(dnsAutomatic, automaticDnsServers)
-                            .map { InetAddress.getByName(it) },
-                    mtu = tunMtu,
-                    excludedRoutes = vpnServerExclusion(server),
+                negotiatedParams.copy(
+                    dnsServers = tunDnsServers(dnsAutomatic, negotiatedParams.dnsServers),
                 )
             val tunnelConfig =
                 TunnelConfig(
@@ -544,6 +520,16 @@ class TunnelVpnService : VpnService() {
                         ),
                     ipv4Only = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q,
                     excludeOwnPackage = packageName,
+                    // SPEC 3.1.1 asks for this; upstream never called it. The
+                    // choice was deferred to phase 4 and taken there (SPEC В.1).
+                    //
+                    // On the L2TP path it changes nothing today: tunnel_loop.c
+                    // calls set_nonblock() on this very descriptor when the poll
+                    // loop starts, overriding whatever the builder was told. It
+                    // starts to matter in phase 6, where a Kotlin engine reads
+                    // the descriptor itself, so it is set now rather than left
+                    // as a silent deviation to be discovered then.
+                    blocking = true,
                 )
             val pfd =
                 try {
@@ -565,12 +551,11 @@ class TunnelVpnService : VpnService() {
                 tunInterface = null
                 return
             }
-            val tunFd = pfd.fd
             VpnTunnelEvents.emitEngineLog(
                 Log.INFO,
                 TAG,
-                "${prefixAttempt(attemptId)}TUN established address=$addressForTun/$IPV4_HOST_PREFIX_LENGTH " +
-                    "mtu=$tunMtu dnsServers=${tunnelParams.dnsServers.size} " +
+                "${prefixAttempt(attemptId)}TUN established address=${tunnelParams.localAddress.hostAddress}/${tunnelParams.prefixLength} " +
+                    "mtu=${tunnelParams.mtu} dnsServers=${tunnelParams.dnsServers.size} " +
                     "excludedRoutes=${tunnelParams.excludedRoutes.size} perApp=${tunnelConfig.perAppRouting}",
             )
             VpnTunnelEvents.emitEngineLog(
@@ -579,39 +564,9 @@ class TunnelVpnService : VpnService() {
                 "${prefixAttempt(attemptId)}TUN established; waiting for tunnel loop readiness",
             )
 
-            // Phase 3: run the ESP/L2TP poll loop on a background thread.
-            val loopThread =
-                Thread(
-                    {
-                        val currentEngineThread = Thread.currentThread()
-                        try {
-                            VpnTunnelEvents.emitEngineLog(Log.DEBUG, TAG, "${prefixAttempt(attemptId)}nativeStartLoop(tunFd=$tunFd) thread running")
-                            val code = VpnBridge.nativeStartLoop(tunFd)
-                            VpnTunnelEvents.emitEngineLog(Log.DEBUG, TAG, "${prefixAttempt(attemptId)}nativeStartLoop exited with code=$code")
-                            if (code != 0) {
-                                emitAttemptState(attemptId, VpnContract.TUNNEL_FAILED, tunnelExitDetail(code))
-                            } else {
-                                emitAttemptState(attemptId, VpnContract.TUNNEL_STOPPED, "Tunnel closed normally")
-                            }
-                        } catch (t: Throwable) {
-                            if (shouldHandleAttempt(attemptId, "native-loop-crash")) {
-                                AppLog.e(TAG, "${prefixAttempt(attemptId)}nativeStartLoop failed", t)
-                                emitAttemptState(attemptId, VpnContract.TUNNEL_FAILED, t.message ?: "nativeStartLoop crashed")
-                            } else {
-                                VpnTunnelEvents.emitEngineLog(
-                                    Log.DEBUG,
-                                    TAG,
-                                    "${prefixAttempt(attemptId)}Ignoring stale nativeStartLoop crash ${t.javaClass.simpleName}",
-                                )
-                            }
-                        } finally {
-                            mainHandler.post {
-                                finishTunnelUiOnMain(attemptId, currentEngineThread)
-                            }
-                        }
-                    },
-                    "tunnel-engine",
-                )
+            // Phase 3: hand the descriptor to the engine, which runs the ESP/L2TP
+            // poll loop on its own thread. Everything the loop used to report
+            // inline now arrives as an engine state change.
             synchronized(sessionLock) {
                 if (activeAttemptId != attemptId) {
                     try {
@@ -621,10 +576,10 @@ class TunnelVpnService : VpnService() {
                     tunInterface = null
                     return
                 }
-                engineThread = loopThread
             }
+            watchEngine(attemptId, engine)
             nativeLoopStarted = true
-            loopThread.start()
+            engine.attachTun(pfd)
         } catch (e: Exception) {
             if (shouldHandleAttempt(attemptId, "startTunnel-exception")) {
                 AppLog.e(TAG, "${prefixAttempt(attemptId)}startTunnel", e)
@@ -651,11 +606,62 @@ class TunnelVpnService : VpnService() {
                 )
             }
         } finally {
-            if (nativeOwnerAcquired && !nativeLoopStarted) {
-                NativeTunnelSessions.shared.stopOwner(nativeOwner, reason = "vpn startup ended before loop")
-                NativeTunnelSessions.shared.release(nativeOwner, reason = "vpn startup ended before loop")
+            if (!nativeLoopStarted) {
+                // Every early return above lands here. The engine has to be shut
+                // down on all of them, or it stays registered for the native
+                // upcalls and the next attempt talks to a dead session.
+                startedEngine?.let { engine ->
+                    runBlocking { engine.disconnect() }
+                    synchronized(sessionLock) {
+                        if (activeEngine === engine) {
+                            activeEngine = null
+                        }
+                    }
+                }
+                if (nativeOwnerAcquired) {
+                    NativeTunnelSessions.shared.stopOwner(nativeOwner, reason = "vpn startup ended before loop")
+                    NativeTunnelSessions.shared.release(nativeOwner, reason = "vpn startup ended before loop")
+                }
             }
             clearSetupThreadIfCurrent(currentSetupThread)
+        }
+    }
+
+    /**
+     * Turns the engine's state into the tunnel events the app already speaks.
+     *
+     * This is what the poll-loop thread's own `finally` block used to do. The
+     * engine reaches a terminal state exactly once per session, so the watcher
+     * stops itself as soon as it sees one.
+     */
+    private fun watchEngine(attemptId: String, engine: L2tpEngine) {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        synchronized(sessionLock) {
+            engineWatcher?.cancel()
+            engineWatcher = scope
+        }
+        scope.launch {
+            engine.state.collect { state ->
+                when (state) {
+                    is EngineState.Connected ->
+                        mainHandler.post { handleTunnelReady(attemptId, engine) }
+                    is EngineState.Failed -> {
+                        emitAttemptState(
+                            attemptId,
+                            VpnContract.TUNNEL_FAILED,
+                            state.error.detail ?: "Tunnel engine failed",
+                        )
+                        mainHandler.post { finishTunnelUiOnMain(attemptId) }
+                        scope.cancel()
+                    }
+                    is EngineState.Disconnected -> {
+                        emitAttemptState(attemptId, VpnContract.TUNNEL_STOPPED, "Tunnel closed normally")
+                        mainHandler.post { finishTunnelUiOnMain(attemptId) }
+                        scope.cancel()
+                    }
+                    else -> Unit
+                }
+            }
         }
     }
 
@@ -675,21 +681,20 @@ class TunnelVpnService : VpnService() {
         } catch (e: InterruptedException) {
             Thread.currentThread().interrupt()
         }
-        val capturedEngineThread = engineThread
-        try {
-            if (capturedEngineThread != null && capturedEngineThread !== Thread.currentThread()) {
-                capturedEngineThread.join(8_000)
-            }
-        } catch (e: InterruptedException) {
-            Thread.currentThread().interrupt()
-        }
+        val capturedEngine = synchronized(sessionLock) { activeEngine }
+        // disconnect() stops the native loop, waits for its thread and releases
+        // the TUN descriptor. It is safe in any engine state, including one that
+        // never got as far as attaching a TUN.
+        capturedEngine?.let { engine -> runBlocking { engine.disconnect() } }
         synchronized(sessionLock) {
             if (setupThread === capturedSetupThread) {
                 setupThread = null
             }
-            if (engineThread === capturedEngineThread) {
-                engineThread = null
+            if (activeEngine === capturedEngine) {
+                activeEngine = null
             }
+            engineWatcher?.cancel()
+            engineWatcher = null
         }
         try {
             tunInterface?.close()
@@ -716,13 +721,13 @@ class TunnelVpnService : VpnService() {
         }
     }
 
-    /** Main-thread cleanup after the native worker exits (or from [finally] on the worker). */
-    private fun finishTunnelUiOnMain(attemptId: String, worker: Thread) {
-        if (!shouldHandleAttempt(attemptId, "finish-ui")) {
-            clearEngineThreadIfCurrent(worker)
-            return
+    /** Main-thread cleanup after the engine reached a terminal state. */
+    private fun finishTunnelUiOnMain(attemptId: String) {
+        if (!shouldHandleAttempt(attemptId, "finish-ui")) return
+        synchronized(sessionLock) {
+            activeEngine = null
+            engineWatcher = null
         }
-        clearEngineThreadIfCurrent(worker)
         running.set(false)
         try {
             tunInterface?.close()
@@ -754,16 +759,23 @@ class TunnelVpnService : VpnService() {
         schedulePendingStopSelf()
     }
 
-    private fun handleNativeTunnelReady(detail: String, worker: Thread) {
-        if (engineThread !== worker) {
-            AppLog.w(TAG, "Ignoring native tunnel ready from stale worker")
+    /**
+     * Reacts to [EngineState.Connected]: the tunnel carries packets.
+     *
+     * Reached from the engine watcher rather than straight from JNI, so a
+     * report from a session that has already been replaced is dropped by the
+     * engine identity check rather than by comparing worker threads.
+     */
+    private fun handleTunnelReady(attemptId: String, engine: L2tpEngine) {
+        if (synchronized(sessionLock) { activeEngine } !== engine) {
+            AppLog.w(TAG, "Ignoring tunnel ready from a superseded engine")
             return
         }
         if (!running.get()) {
             AppLog.w(TAG, "Ignoring native tunnel ready after shutdown")
             return
         }
-        val attemptId = currentAttemptId()
+        if (!shouldHandleAttempt(attemptId, "tunnel-ready")) return
         try {
             startLocalProxyRuntime()
         } catch (e: Exception) {
@@ -781,7 +793,7 @@ class TunnelVpnService : VpnService() {
         if (!connectedEmitted.compareAndSet(false, true)) {
             return
         }
-        emitAttemptState(attemptId, VpnContract.TUNNEL_CONNECTED, detail)
+        emitAttemptState(attemptId, VpnContract.TUNNEL_CONNECTED, TUNNEL_READY_DETAIL)
         updateForegroundNotification(connectedNotificationText())
     }
 
@@ -862,6 +874,48 @@ class TunnelVpnService : VpnService() {
             )
         }
     }
+
+    /**
+     * The intent's arguments as the engine contract expects them.
+     *
+     * IPsec is always on for this path: the native engine has no plain-L2TP
+     * mode, and the identity and proposal fields have no native equivalent yet.
+     * The engine logs a warning if a profile ever sets them.
+     */
+    private fun l2tpProfile(
+        server: String,
+        user: String,
+        password: String,
+        psk: String,
+        tunMtu: Int,
+    ): EngineProfile.L2tp =
+        EngineProfile.L2tp(
+            server = server,
+            username = user,
+            password = password,
+            mtu = tunMtu,
+            customDns = emptyList(),
+            ipsecEnabled = true,
+            presharedKey = psk,
+            localIdentifier = null,
+            phase1Proposals = emptyList(),
+            phase2Proposals = emptyList(),
+        )
+
+    /**
+     * The engine's only route to `VpnService.protect()`.
+     *
+     * Handing this over instead of the service is what stops an engine reaching
+     * `VpnService.Builder` and configuring the interface behind the host's back.
+     */
+    private fun engineProtector(attemptId: String): SocketProtectorImpl =
+        SocketProtectorImpl(this) { message ->
+            VpnTunnelEvents.emitEngineLog(Log.WARN, TAG, "${prefixAttempt(attemptId)}$message")
+        }
+
+    /** The text shown for a failed connection attempt. */
+    private fun engineFailureDetail(e: EngineException): String =
+        e.error.detail ?: e.message ?: "Tunnel engine failed"
 
     private fun serviceDnsSocketProtector(): DnsSocketProtector =
         object : DnsSocketProtector {
@@ -951,18 +1005,6 @@ class TunnelVpnService : VpnService() {
         )
     }
 
-    private fun tunnelExitDetail(code: Int): String =
-        when (code) {
-            1 -> "IPsec negotiation failed. Check the PSK and server settings."
-            2 -> "L2TP handshake failed."
-            3 -> "PPP negotiation failed."
-            4 -> "Tunnel poll I/O error."
-            10 -> "Invalid tunnel arguments from the app."
-            11 -> "Proxy transport is not implemented yet."
-            12 -> "Tunnel stopped"
-            else -> "Tunnel engine exited with code $code"
-        }
-
     private fun createChannelIfNeeded() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         val nm = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
@@ -1007,12 +1049,16 @@ class TunnelVpnService : VpnService() {
         private const val MIN_TUN_MTU = 576
         private const val MAX_TUN_MTU = 1500
 
-        private const val TUN_LOCAL_IPV4 = "10.0.0.2"
-
-        /** A /32 covers exactly the one host: the VPN server, or the TUN address. */
-        private const val IPV4_HOST_PREFIX_LENGTH = 32
         internal const val MANUAL_DNS_VIRTUAL_IPV4 = "198.18.0.1"
-        internal const val DEFAULT_NATIVE_EXIT_STOPPED = 12
+
+        /**
+         * Detail shown when the tunnel starts carrying packets.
+         *
+         * The native layer passes its own wording to [onNativeTunnelReady]; the
+         * engine turns that into a log line, and the state change the UI reacts
+         * to no longer carries protocol text.
+         */
+        private const val TUNNEL_READY_DETAIL = "TUN interface ready; tunnel loop active"
 
         fun sanitizeMtu(value: Int): Int = value.coerceIn(MIN_TUN_MTU, MAX_TUN_MTU)
 
@@ -1099,14 +1145,23 @@ class TunnelVpnService : VpnService() {
                 emptyList()
             }
 
-        internal fun tunDnsServersForBuilder(
+        /**
+         * DNS servers to put on the tunnel interface.
+         *
+         * In automatic mode these are the ones the engine negotiated over IPCP.
+         * In manual mode the interface advertises a single virtual resolver, and
+         * [VpnDnsPacketBridge] answers on it from the user's upstream servers —
+         * which is what keeps DoT and DoH working inside a tunnel whose
+         * interface can only advertise plain IPv4 resolvers.
+         */
+        internal fun tunDnsServers(
             dnsAutomatic: Boolean,
-            automaticDnsServers: List<ResolvedDnsServerConfig>,
-        ): List<String> =
+            negotiatedDnsServers: List<InetAddress>,
+        ): List<InetAddress> =
             if (dnsAutomatic) {
-                automaticDnsServers.map { it.resolvedIpv4 }
+                negotiatedDnsServers
             } else {
-                listOf(MANUAL_DNS_VIRTUAL_IPV4)
+                listOf(InetAddress.getByName(MANUAL_DNS_VIRTUAL_IPV4))
             }
 
         internal fun manualDnsServersFromIntent(intent: Intent): List<DnsServerConfig> {
@@ -1156,8 +1211,18 @@ class TunnelVpnService : VpnService() {
             return true
         }
 
+        /**
+         * Called from JNI by name; keeps a native socket outside the tunnel.
+         *
+         * The C layer resolves this method on this class at load time, so it
+         * stays here. What changed in phase 4 is where it goes: a running engine
+         * protects the socket through the [SocketProtectorImpl] it was handed,
+         * which is the single `protect()` call site the SPEC asks for. The
+         * direct fall-back covers proxy-only mode, where no engine is installed.
+         */
         @JvmStatic
         fun protectSocketFd(fd: Int): Boolean {
+            L2tpNativeCallbacks.protect(fd)?.let { return it }
             val svc = instance ?: return false
             return try {
                 svc.protect(fd)
@@ -1167,15 +1232,16 @@ class TunnelVpnService : VpnService() {
             }
         }
 
+        /**
+         * Called from JNI by name once the poll loop is moving packets.
+         *
+         * The engine turns this into [EngineState.Connected]; the service reacts
+         * to that state rather than to this call, so a report from a session
+         * that has already been torn down cannot reach the UI.
+         */
         @JvmStatic
         fun onNativeTunnelReady(detail: String?) {
-            val svc = instance ?: return
-            val readyDetail =
-                detail
-                    ?.takeIf { it.isNotBlank() }
-                    ?: "TUN interface ready; tunnel loop active"
-            val worker = Thread.currentThread()
-            svc.mainHandler.post { svc.handleNativeTunnelReady(readyDetail, worker) }
+            L2tpNativeCallbacks.tunnelReady(detail)
         }
 
         @JvmStatic
@@ -1219,11 +1285,11 @@ internal object TunnelVpnServiceStopPolicy {
     fun shouldEmitStoppedOnActionStop(
         running: Boolean,
         hasSetupThread: Boolean,
-        hasEngineThread: Boolean,
+        hasEngine: Boolean,
         hasTunInterface: Boolean,
         hasDnsServer: Boolean,
         hasLocalProxyRuntime: Boolean,
-    ): Boolean = running || hasSetupThread || hasEngineThread || hasTunInterface || hasDnsServer || hasLocalProxyRuntime
+    ): Boolean = running || hasSetupThread || hasEngine || hasTunInterface || hasDnsServer || hasLocalProxyRuntime
 }
 
 internal object VpnStopAttemptPolicy {

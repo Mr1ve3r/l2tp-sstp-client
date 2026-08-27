@@ -19,10 +19,15 @@ import android.net.Network
  * @property blocking whether reads from the tunnel descriptor block.
  *
  *   `null` means *do not call* `setBlocking` at all, which is what upstream
- *   does and therefore the default. The SPEC asks for `setBlocking(true)`, but
- *   flipping it changes the read semantics of the descriptor handed to the
- *   native L2TP loop, and phase 4 is supposed to be behaviour-preserving. Make
- *   it an explicit choice at the call site rather than a silent default.
+ *   does and therefore the default here: this module takes no position, the
+ *   host decides. The SPEC asks for `setBlocking(true)` and the Android
+ *   application now passes it; the phase 4 device test checks that the L2TP
+ *   tunnel is unaffected (SPEC В.1).
+ *
+ *   It is unaffected because `tunnel_loop.c` calls `set_nonblock()` on the
+ *   descriptor when the poll loop starts, which overrides the builder either
+ *   way. The flag becomes load-bearing for an engine that reads the descriptor
+ *   from Kotlin instead — which is what phase 6 brings.
  * @property underlyingNetworks which networks the tunnel runs over.
  * @property excludeOwnPackage this application's package name, to be kept out
  *   of the tunnel, or `null` to leave it in.
