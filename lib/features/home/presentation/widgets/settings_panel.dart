@@ -28,6 +28,7 @@ class SettingsPanel extends StatefulWidget {
     required this.onRequestBatteryOptimization,
     required this.onChooseApps,
     this.onOpenL2tpSecurityNotice,
+    this.onOpenServerCertificates,
     this.installedVersion,
     this.installedVersionError,
     required this.updateCheckConsentGranted,
@@ -63,6 +64,9 @@ class SettingsPanel extends StatefulWidget {
   final VoidCallback onRequestBatteryOptimization;
   final VoidCallback onChooseApps;
   final VoidCallback? onOpenL2tpSecurityNotice;
+
+  /// Opens the server certificate store (SPEC 5.9).
+  final VoidCallback? onOpenServerCertificates;
   final String? installedVersion;
   final String? installedVersionError;
   final bool updateCheckConsentGranted;
@@ -592,6 +596,28 @@ class _SettingsPanelState extends State<SettingsPanel> {
             ),
           ),
         ),
+        if (widget.onOpenServerCertificates != null) ...[
+          const SizedBox(height: _kSectionGap),
+          _sectionTitle(t.serverCertificates),
+          const SizedBox(height: _kSectionHeaderGap),
+          Card(
+            margin: EdgeInsets.zero,
+            child: ListTile(
+              key: const Key('server_certificates_tile'),
+              contentPadding: _kCardTilePadding,
+              title: _cardTitle(t.serverCertificates),
+              subtitle: _cardText(
+                t.serverCertificatesSubtitle,
+                color: widget.colorScheme.onSurfaceVariant,
+              ),
+              trailing: Icon(
+                Icons.chevron_right,
+                color: widget.colorScheme.onSurfaceVariant,
+              ),
+              onTap: widget.onOpenServerCertificates,
+            ),
+          ),
+        ],
         if (widget.onOpenL2tpSecurityNotice != null) ...[
           const SizedBox(height: _kSectionGap),
           _sectionTitle(t.notice),

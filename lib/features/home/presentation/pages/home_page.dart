@@ -18,6 +18,8 @@ import 'package:tunnel_forge/core/logging/log_entry.dart';
 import 'package:tunnel_forge/features/home/presentation/widgets/connection_panel.dart';
 import 'package:tunnel_forge/features/home/presentation/widgets/logs_panel.dart';
 import 'package:tunnel_forge/features/home/presentation/widgets/settings_panel.dart';
+import 'package:tunnel_forge/features/trust/presentation/bloc/certificates_bloc.dart';
+import 'package:tunnel_forge/features/trust/presentation/pages/certificates_page.dart';
 import '../../../app_theme/presentation/bloc/app_theme_bloc.dart';
 import '../../../home/domain/home_models.dart';
 import '../../../home/domain/home_repositories.dart';
@@ -249,6 +251,20 @@ class _VpnHomePageViewState extends State<_VpnHomePageView>
         : splitTunnelSettings.copyWith(exclusivePackages: picked.toList());
     context.read<SettingsBloc>().add(
       SettingsSplitTunnelSettingsChanged(nextSettings),
+    );
+  }
+
+  /// Opens the server certificate store (SPEC 5.9).
+  Future<void> _openServerCertificates() async {
+    await Navigator.of(context, rootNavigator: true).push(
+      MaterialPageRoute<void>(
+        builder: (_) => BlocProvider<CertificatesBloc>(
+          create: (_) =>
+              widget.locator<CertificatesBloc>()
+                ..add(const CertificatesStarted()),
+          child: const CertificatesPage(),
+        ),
+      ),
     );
   }
 
@@ -794,6 +810,7 @@ class _VpnHomePageViewState extends State<_VpnHomePageView>
                         .add(const SettingsBatteryOptimizationRequestPressed()),
                     onChooseApps: _pickAppsForVpn,
                     onOpenL2tpSecurityNotice: _openL2tpSecurityNotice,
+                    onOpenServerCertificates: _openServerCertificates,
                     installedVersion: settingsState.installedVersion,
                     installedVersionError: settingsState.installedVersionError,
                     updateCheckConsentGranted:

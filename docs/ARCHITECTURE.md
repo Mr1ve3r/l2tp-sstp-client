@@ -160,6 +160,64 @@ asks about an expired certificate, since a router serving one is common and the
 user may know why. `PIN_LEAF` never checks expiry during the handshake, so
 without this the fact would never surface at all.
 
+## The certificate store
+
+The store answers one question the trust managers cannot: which certificates
+does this device trust, and where are they.
+
+Metadata lives in Room (`server_certificates`, and `profile_certificate_ref`
+for the many-to-many with profiles); the certificates themselves live as PEM
+files under `filesDir/trust`, owner-only. Splitting them is deliberate. A trust
+decision is made from a certificate's bytes and the user can export them
+unchanged, which a blob column makes awkward for no gain. The file name is the
+SHA-256 fingerprint and so is the primary key, so a row and its file cannot
+drift apart, and re-importing the same certificate updates the alias instead of
+creating a second entry.
+
+Nothing outside the application is referenced. A document the user picks is
+copied in, never remembered as a `Uri`: an always-on VPN starts before the
+device is unlocked, and at that moment no document provider is there to answer.
+A certificate the tunnel cannot read is a tunnel that cannot start.
+
+`TrustStore` is the only thing that writes to both halves, and it writes the
+file first — a failure there means no row, and the import simply did not
+happen. Deleting cascades the profile references away; a profile that trusted
+the deleted certificate is not quietly repaired, because `TrustPreflight` is
+where the user finds out, at the moment they can act on it.
+
+### Importing
+
+Three paths (SPEC 5.3), converging on one type. `CertificateParser` reads PEM,
+DER and bundles; `ServerChainFetcher` covers the third path by opening a TLS
+connection that accepts anything, capturing the chain during the handshake, and
+closing without sending a byte. All three end at a list of `ImportCandidate`,
+each carrying its fields, the PEM that would be stored, and the warnings from
+`CertificateValidator`. Nothing reaches the store until the user picks from
+that list.
+
+The warnings are attached to the candidate rather than computed afterwards
+because the point of SPEC 5.4 is that the user decides with them on screen. All
+of them are warnings: an expired certificate or a short key may be exactly what
+the user's router presents, and blocking the import would leave them unable to
+connect to their own server. Only a file that does not parse is refused.
+
+The download-from-server path is the weakest and the UI says so. It accepts any
+certificate, so an attacker in the middle can hand over their own and it will
+be displayed as the server's. Comparing the SHA-256 fingerprint against the one
+the router shows is what provides the security; the download only saves typing.
+
+### Reaching it from Flutter
+
+The store stays on the Kotlin side. `TrustChannel` exposes the operations, and
+`TrustPayloads` maps store types onto the channel's maps — separately, and
+tested, because the Dart side reads those keys by hand. Certificates cross as
+fields and identifiers; PEM travels in exactly two directions, out when a
+candidate is offered for import and back when the user exports one.
+
+Which trust policies exist is answered by the host rather than decided in Dart:
+`INSECURE` is absent from a release build entirely, and a list hardcoded in the
+UI would be one `kDebugMode` check away from offering it anyway.
+
 ## Error mapping
 
 `EngineError` is the single vocabulary both engines report in. The per-protocol

@@ -576,4 +576,127 @@ extension AppStrings on AppLocalizations {
     'Selected apps will bypass the VPN and use the normal network.',
     'برنامه‌های انتخاب‌شده وی‌پی‌ان را دور می‌زنند و از شبکه عادی استفاده می‌کنند.',
   );
+
+  // Server certificate store (SPEC phase 5).
+  String get serverCertificates =>
+      AppText.pick('Server certificates', 'گواهی‌های سرور');
+  String get serverCertificatesSubtitle => AppText.pick(
+    'Certificates SSTP profiles trust',
+    'گواهی‌هایی که پروفایل‌های SSTP به آن‌ها اعتماد می‌کنند',
+  );
+  String get noCertificatesStored => AppText.pick(
+    'No certificates yet. Add one to let an SSTP profile trust a server whose certificate no public authority issued.',
+    'هنوز گواهی‌ای وجود ندارد. برای اینکه یک پروفایل SSTP به سروری با گواهی غیرعمومی اعتماد کند، یکی اضافه کنید.',
+  );
+  String get addCertificate => AppText.pick('Add certificate', 'افزودن گواهی');
+  String get importCertificateFromFile =>
+      AppText.pick('From a file', 'از یک فایل');
+  String get importCertificateFromFileHelp => AppText.pick(
+    'Pick a .pem, .crt or .der file. A file holding several certificates lets you choose which to keep.',
+    'یک فایل .pem یا .crt یا .der انتخاب کنید. اگر فایل چند گواهی داشته باشد، می‌توانید انتخاب کنید کدام بماند.',
+  );
+  String get importFromText =>
+      AppText.pick('Paste PEM text', 'چسباندن متن PEM');
+  String get importFromTextHelp => AppText.pick(
+    'Paste everything between BEGIN CERTIFICATE and END CERTIFICATE.',
+    'همه چیز میان BEGIN CERTIFICATE و END CERTIFICATE را بچسبانید.',
+  );
+  String get importFromServer =>
+      AppText.pick('Download from server', 'دریافت از سرور');
+  String get importFromServerHelp => AppText.pick(
+    'Connect to the server and show what it presents. Nothing is sent and the connection closes immediately.',
+    'به سرور وصل می‌شود و آنچه ارائه می‌دهد نمایش داده می‌شود. چیزی ارسال نمی‌شود و اتصال بی‌درنگ بسته می‌شود.',
+  );
+  String get importFromServerWarning => AppText.pick(
+    'This does not protect you from an attacker in the middle right now. Compare the SHA-256 fingerprint against the one shown on the server itself before you keep it.',
+    'این کار شما را از حمله‌کننده میانی در همین لحظه محافظت نمی‌کند. پیش از نگه داشتن، اثر انگشت SHA-256 را با آنچه روی خود سرور نمایش داده می‌شود مقایسه کنید.',
+  );
+  String get certificateHost => AppText.pick('Host', 'میزبان');
+  String get certificatePort => AppText.pick('Port', 'درگاه');
+  String get certificateAlias => AppText.pick('Name', 'نام');
+  String get certificateChainLeaf =>
+      AppText.pick('Server certificate', 'گواهی سرور');
+  String certificateChainIssuer(int level) =>
+      AppText.pick('Issuer, level $level', 'صادرکننده، سطح $level');
+  String get keepSelectedCertificates =>
+      AppText.pick('Keep selected', 'نگه داشتن انتخاب‌شده‌ها');
+  String certificatesImported(int count) => AppText.pick(
+    count == 1 ? '1 certificate stored' : '$count certificates stored',
+    '$count گواهی ذخیره شد',
+  );
+  String get certificateSubject => AppText.pick('Subject', 'موضوع');
+  String get certificateIssuer => AppText.pick('Issuer', 'صادرکننده');
+  String get certificateSerial => AppText.pick('Serial number', 'شماره سریال');
+  String get certificateValidFrom => AppText.pick('Valid from', 'معتبر از');
+  String get certificateValidUntil => AppText.pick('Valid until', 'معتبر تا');
+  String get certificateFingerprintSha256 =>
+      AppText.pick('SHA-256 fingerprint', 'اثر انگشت SHA-256');
+  String get certificateFingerprintSha1 =>
+      AppText.pick('SHA-1 fingerprint', 'اثر انگشت SHA-1');
+  String get certificateKeyUsage => AppText.pick('Key usage', 'کاربرد کلید');
+  String get certificateAltNames =>
+      AppText.pick('Alternative names', 'نام‌های جایگزین');
+  String get certificateSignature =>
+      AppText.pick('Signature algorithm', 'الگوریتم امضا');
+  String get certificatePublicKey => AppText.pick('Public key', 'کلید عمومی');
+  String certificateKeyBits(int bits) =>
+      AppText.pick('$bits bits', '$bits بیت');
+  String get certificateIsCa =>
+      AppText.pick('Certificate authority', 'مرجع صدور گواهی');
+  String get certificateIsSelfSigned => AppText.pick('Self-signed', 'خودامضا');
+  String get certificateCopyFingerprint =>
+      AppText.pick('Copy fingerprint', 'کپی اثر انگشت');
+  String get certificateExportPem => AppText.pick('Export PEM', 'خروجی PEM');
+  String get certificateCopied => AppText.pick('Copied', 'کپی شد');
+  String get certificateExpired => AppText.pick('Expired', 'منقضی شده');
+  String get certificateNotYetValid =>
+      AppText.pick('Not valid yet', 'هنوز معتبر نیست');
+  String certificateExpiresInDays(int days) =>
+      AppText.pick('Expires in $days days', 'تا $days روز دیگر منقضی می‌شود');
+  String certificateUsedByProfiles(int count) => AppText.pick(
+    count == 1 ? 'Used by 1 profile' : 'Used by $count profiles',
+    'استفاده شده در $count پروفایل',
+  );
+  String get certificateUnused =>
+      AppText.pick('Not used by any profile', 'در هیچ پروفایلی استفاده نشده');
+  String certificateDeleteConfirm(String name) => AppText.pick(
+    'Delete "$name"? Profiles that trust it will stop connecting until you fix them.',
+    'حذف «$name»؟ پروفایل‌هایی که به آن اعتماد دارند تا اصلاح نشوند وصل نمی‌شوند.',
+  );
+  String get certificateWarningExpired =>
+      AppText.pick('This certificate has expired.', 'این گواهی منقضی شده است.');
+  String certificateWarningExpiringSoon(int days) => AppText.pick(
+    'This certificate expires in $days days.',
+    'این گواهی تا $days روز دیگر منقضی می‌شود.',
+  );
+  String get certificateWarningNotYetValid => AppText.pick(
+    'This certificate is not valid yet. Check the clock on both ends.',
+    'این گواهی هنوز معتبر نیست. ساعت هر دو طرف را بررسی کنید.',
+  );
+  String get certificateWarningNotACa => AppText.pick(
+    'This is not a certificate authority. For a single self-signed certificate, pin it instead.',
+    'این یک مرجع صدور گواهی نیست. برای یک گواهی خودامضا، به جای آن از پین کردن استفاده کنید.',
+  );
+  String certificateWarningWeakKey(int bits) => AppText.pick(
+    'The key is $bits bits, shorter than the 2048 bits considered safe.',
+    'کلید $bits بیت است، کوتاه‌تر از ۲۰۴۸ بیتی که ایمن شمرده می‌شود.',
+  );
+  String certificateWarningWeakSignature(String algorithm) => AppText.pick(
+    'Signed with $algorithm, which is no longer considered safe.',
+    'با $algorithm امضا شده که دیگر ایمن شمرده نمی‌شود.',
+  );
+  String get certificateWarningAlreadyImported => AppText.pick(
+    'Already in the store. Importing again only changes the name.',
+    'از پیش در مخزن است. وارد کردن دوباره فقط نام را تغییر می‌دهد.',
+  );
+  String get certificateNothingFound => AppText.pick(
+    'No certificate could be read from that.',
+    'هیچ گواهی‌ای از آن خوانده نشد.',
+  );
+  String get certificateStoreFailed =>
+      AppText.pick('The certificate could not be stored.', 'گواهی ذخیره نشد.');
+  String certificateFetchFailed(String host) => AppText.pick(
+    'Could not read a certificate from $host.',
+    'خواندن گواهی از $host ممکن نشد.',
+  );
 }
