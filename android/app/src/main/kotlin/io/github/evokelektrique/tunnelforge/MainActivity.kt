@@ -23,7 +23,12 @@ import androidx.core.content.IntentCompat
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
+import io.github.mr1ve3r.combined.core.trust.store.TrustStore
 import java.io.ByteArrayOutputStream
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 
 class MainActivity : FlutterActivity() {
 
@@ -32,6 +37,13 @@ class MainActivity : FlutterActivity() {
     private var pendingConnectIntent: Intent? = null
     private var profileTransferChannel: MethodChannel? = null
     private val pendingProfileTransfers = mutableListOf<Map<String, String?>>()
+    private var certificateDocumentResult: ((Uri?) -> Unit)? = null
+
+    // The certificate store answers from a coroutine, and a method channel
+    // reply has to be made on the main thread. Cancelled in onDestroy, so an
+    // answer that arrives after the activity is gone is dropped rather than
+    // delivered into a dead engine.
+    private val trustScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -70,6 +82,7 @@ class MainActivity : FlutterActivity() {
                 else -> result.notImplemented()
             }
         }
+        configureTrustChannel(flutterEngine)
         handleProfileTransferIntent(intent, deliverImmediately = false)
         VpnTunnelEvents.attach(vpnChannel)
         vpnChannel.setMethodCallHandler { call, result ->
@@ -352,7 +365,67 @@ class MainActivity : FlutterActivity() {
         )
     }
 
+    /**
+     * Wires the certificate store (SPEC phase 5).
+     *
+     * The store's work is suspending and touches storage, so it runs on
+     * [trustScope] rather than the calling thread.
+     */
+    private fun configureTrustChannel(flutterEngine: FlutterEngine) {
+        val channel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, TrustContract.METHOD_CHANNEL)
+        val trustChannel =
+            TrustChannel(
+                context = applicationContext,
+                store = TrustStore.get(applicationContext),
+                scope = trustScope,
+                picker = ::pickCertificateDocument,
+                // The INSECURE policy exists for debugging a server whose
+                // certificate is not yet in order. A release build must not
+                // offer it at all (SPEC 5.5).
+                allowInsecurePolicy = (applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0,
+            )
+        channel.setMethodCallHandler { call, result ->
+            trustChannel.handle(
+                call.method,
+                call.arguments,
+                object : TrustChannel.Reply {
+                    override fun success(value: Any?) = result.success(value)
+
+                    override fun error(code: String, message: String) = result.error(code, message, null)
+
+                    override fun notImplemented() = result.notImplemented()
+                },
+            )
+        }
+    }
+
+    /** Opens the system document picker for a certificate file (SPEC 5.3 A). */
+    private fun pickCertificateDocument(onResult: (Uri?) -> Unit) {
+        val previous = certificateDocumentResult
+        certificateDocumentResult = onResult
+        // A second pick while one is open replaces the first. Answering the
+        // abandoned call keeps the Flutter side from waiting on a future that
+        // will never complete.
+        previous?.invoke(null)
+        val intent =
+            Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                addCategory(Intent.CATEGORY_OPENABLE)
+                type = "*/*"
+                putExtra(Intent.EXTRA_MIME_TYPES, TrustContract.CERTIFICATE_MIME_TYPES)
+            }
+        try {
+            startActivityForResult(intent, REQUEST_PICK_CERTIFICATE)
+        } catch (e: ActivityNotFoundException) {
+            AppLog.e(TAG, "trust_call pickCertificateFile has no document picker", e)
+            certificateDocumentResult = null
+            onResult(null)
+        }
+    }
+
     override fun onDestroy() {
+        certificateDocumentResult?.invoke(null)
+        certificateDocumentResult = null
+        trustScope.cancel()
         profileTransferChannel = null
         VpnTunnelEvents.detach()
         super.onDestroy()
@@ -367,6 +440,12 @@ class MainActivity : FlutterActivity() {
     @Deprecated("Deprecated in Java")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == REQUEST_PICK_CERTIFICATE) {
+            val pending = certificateDocumentResult ?: return
+            certificateDocumentResult = null
+            pending(data?.data.takeIf { resultCode == Activity.RESULT_OK })
+            return
+        }
         if (requestCode != REQUEST_VPN_PERMISSION) return
         val pending = vpnPermissionResult ?: return
         vpnPermissionResult = null
@@ -836,6 +915,7 @@ class MainActivity : FlutterActivity() {
         private const val TAG = "MainActivity"
         private const val REQUEST_VPN_PERMISSION = 0x4E50
         private const val REQUEST_POST_NOTIFICATIONS = 0x4E51
+        private const val REQUEST_PICK_CERTIFICATE = 0x4E52
         private const val ProfileTransferMimeType = "application/vnd.tunnelforge.profile+json"
         private const val BATTERY_STATE_UNSUPPORTED = "unsupported"
         private const val BATTERY_STATE_ALLOWED = "allowed"

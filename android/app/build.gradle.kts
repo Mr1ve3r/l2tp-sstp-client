@@ -236,8 +236,11 @@ android {
 dependencies {
     // core-tunnel brings engine-api transitively through its api() dependency.
     implementation(project(":core-tunnel"))
+    implementation(project(":core-trust"))
     implementation(project(":engine-l2tp"))
     implementation(libs.androidx.annotation)
+    implementation(libs.kotlinx.coroutines.core)
+    implementation(libs.kotlinx.coroutines.android)
     implementation(libs.androidx.core.ktx)
     implementation(libs.netty.codec.http)
     implementation(libs.netty.codec.socks)

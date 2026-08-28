@@ -14,7 +14,7 @@ present and under what licence, not which version is current.
 | Dependency | Licence | GPL-3.0 compatible | Used by | Purpose |
 |---|---|---|---|---|
 | `org.jetbrains.kotlinx:kotlinx-coroutines-core` | Apache-2.0 | Yes | all Kotlin modules | Structured concurrency; `StateFlow`/`SharedFlow` in the engine contract |
-| `org.jetbrains.kotlinx:kotlinx-coroutines-android` | Apache-2.0 | Yes | `core-tunnel`, `engine-l2tp`, `engine-sstp` | Android main-thread dispatcher |
+| `org.jetbrains.kotlinx:kotlinx-coroutines-android` | Apache-2.0 | Yes | `:app`, `core-tunnel`, `engine-l2tp`, `engine-sstp` | Android main-thread dispatcher |
 | `org.jetbrains.kotlinx:kotlinx-coroutines-test` | Apache-2.0 | Yes | tests | Deterministic coroutine tests |
 | `androidx.annotation:annotation` | Apache-2.0 | Yes | `:app` and library modules | Nullability and threading annotations |
 | `androidx.core:core-ktx` | Apache-2.0 | Yes | `:app`, `core-tunnel` | Android platform helpers |
