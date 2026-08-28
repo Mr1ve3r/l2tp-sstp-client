@@ -60,6 +60,13 @@ reason to credit it, and the cost of over-attributing is zero.
 
 ## 1. Files imported into `engine-sstp`
 
+Upstream spells its acronyms in full capitals — `LCPConfigureRequest`,
+`PAPFrame`, `MSCHAPV2Client` — and carries a few typos in identifiers
+(`ChapValueNameFiled`, `idFiled`). Both are normalised here: `LcpConfigureRequest`,
+`PapFrame`, `MsChapV2Client`, `ChapValueNameField`. The renames are mechanical
+and apply to every row below, so they are recorded once here rather than in
+thirty notes.
+
 ### 1.1. SSTP protocol units
 
 | Upstream path | Destination | Level | Notes |
@@ -77,10 +84,10 @@ reason to credit it, and the cost of over-attributing is zero.
 | `unit/ppp/IpcpFrame.kt` | `engine-sstp/.../unit/ppp/IpcpFrame.kt` | MINOR | |
 | `unit/ppp/Ipv6cpFrame.kt` | `engine-sstp/.../unit/ppp/Ipv6cpFrame.kt` | MINOR | |
 | `unit/ppp/option/Option.kt` | `engine-sstp/.../unit/ppp/option/Option.kt` | MINOR | |
-| `unit/ppp/option/lcp.kt` | `engine-sstp/.../unit/ppp/option/lcp.kt` | MINOR | |
-| `unit/ppp/option/ipcp.kt` | `engine-sstp/.../unit/ppp/option/ipcp.kt` | MINOR | |
-| `unit/ppp/option/ipv6cp.kt` | `engine-sstp/.../unit/ppp/option/ipv6cp.kt` | MINOR | |
-| `unit/ppp/auth/PAPFrame.kt` | `engine-sstp/.../unit/ppp/auth/PapFrame.kt` | MINOR | |
+| `unit/ppp/option/lcp.kt` | `engine-sstp/.../unit/ppp/option/LcpOptions.kt` | MINOR | Renamed: ktlint requires PascalCase file names |
+| `unit/ppp/option/ipcp.kt` | `engine-sstp/.../unit/ppp/option/IpcpOptions.kt` | MINOR | Renamed for the same reason |
+| `unit/ppp/option/ipv6cp.kt` | `engine-sstp/.../unit/ppp/option/Ipv6cpOptions.kt` | MINOR | Renamed for the same reason |
+| `unit/ppp/auth/PAPFrame.kt` | `engine-sstp/.../unit/ppp/auth/PapFrame.kt` | ADAPTED | **Bug fixed:** the acknowledgement read its message length from its own (empty) contents rather than from the length the peer claimed, so the message was never read and its bytes were left in the buffer for the next packet boundary to trip over. Upstream typos `idFiled`/`passwordFiled` corrected |
 | `unit/ppp/auth/ChapFrame.kt` | `engine-sstp/.../unit/ppp/auth/ChapFrame.kt` | MINOR | |
 | `unit/ppp/auth/ChapField.kt` | `engine-sstp/.../unit/ppp/auth/ChapField.kt` | MINOR | |
 | `unit/ppp/auth/EAPFrame.kt` | `engine-sstp/.../unit/ppp/auth/EapFrame.kt` | MINOR | See §4 on EAP scope |
@@ -122,13 +129,13 @@ reason to credit it, and the cost of over-attributing is zero.
 
 | Upstream path | Destination | Level | Notes |
 |---|---|---|---|
-| `cipher/hash.kt` | `engine-sstp/.../cipher/hash.kt` | VERBATIM | MSCHAPv2 hashing, CMAC |
+| `cipher/hash.kt` | `engine-sstp/.../cipher/Md4.kt` | MINOR | MD4 for MSCHAPv2, which no JCA provider offers. Body byte-identical; renamed for ktlint and given a `:Suppress` so the RFC 1320 register names A/B/C/D survive the naming rule |
 | `extension/Byte.kt` | `engine-sstp/.../extension/Byte.kt` | VERBATIM | |
-| `extension/ByteArray.kt` | `engine-sstp/.../extension/ByteArray.kt` | VERBATIM | |
+| `extension/ByteArray.kt` | `engine-sstp/.../extension/ByteArray.kt` | MINOR | The `parse` argument of `toHexString` only served `debug/Capture.kt`, which is not imported |
 | `extension/ByteBuffer.kt` | `engine-sstp/.../extension/ByteBuffer.kt` | VERBATIM | |
 | `extension/Short.kt` | `engine-sstp/.../extension/Short.kt` | VERBATIM | |
-| `extension/String.kt` | `engine-sstp/.../extension/String.kt` | MINOR | Drop UI-only helpers |
-| `debug/exception.kt` | `engine-sstp/.../debug/exception.kt` | MINOR | |
+| `extension/String.kt` | `engine-sstp/.../extension/String.kt` | MINOR | `toUri()` dropped: UI-only |
+| `debug/exception.kt` | `engine-sstp/.../debug/Exceptions.kt` | MINOR | Renamed for ktlint |
 
 ### 1.7. Coordination layer
 
