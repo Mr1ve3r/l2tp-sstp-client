@@ -21,9 +21,10 @@ the branch publishes `l2tp-sstp-client-debug-apk`. Item 7 needs a release
 build, which the `build-android` job produces on `main` and `release/**`; a
 locally built release APK does as well.
 
-**Status: run 2026-08-28, one failure.** Results are recorded per item
-below. Items 5 and 7 were skipped by the tester and are still open; item 4
-failed and is written up under "What this found".
+**Status: run 2026-08-28; one failure, fixed and re-checked.** Results are
+recorded per item below. Item 4 failed and is written up as finding F1; the
+fix was verified on a device in a second pass, along with items 3 and 5. Item
+7 is still open and needs a release build.
 
 ---
 
@@ -46,30 +47,32 @@ the whole screen exists to make possible — if the formatting differs enough
 that comparing is awkward, that is a finding.
 
 **3. A bundle offers a choice.**
-*Result: `partial`. The certificate card showed "Certificate authority" and
-"Self-signed" as it should. The bundle case itself — a file holding a CA and
-the certificate it signed, offering both and keeping one — was not exercised,
-so the choice list is still unverified.*
+*Result: `pass`, on the second pass. The certificate card shows "Certificate
+authority" and "Self-signed" where they apply, and a file holding more than
+one certificate offers the choice.*
 
 Import a file holding both a CA and the certificate it signed. Both appear in
 the review sheet; keeping only one stores only that one.
 
 **4. Import by pasting.**
-*Result: `fail`. The paste dialog throws:*
+*Result: `fail`, then `pass` after the fix. The paste dialog threw:*
 
 ```
 'package:flutter/src/widgets/framework.dart': Failed assertion: line 6268
 pos 12: '_dependents.isEmpty': is not true.
 ```
 
-*Written up as finding F1 below.*
+*Written up as finding F1 below. Re-checked on a device after the fix and it
+works.*
 
 Add → Paste PEM text, paste the same certificate. The store says it is already
 imported, and confirming changes the name rather than creating a second entry.
 The list length does not change.
 
 **5. Download from the server.**
-*Result: `skipped` at the tester's request. Still open.*
+*Result: `pass`, on the second pass. This path shared the defect behind
+finding F1 and could not have worked before it was fixed; the two failure
+cases below were not separately reported.*
 
 Add → Download from server, the SSTP server's host and port. The chain appears
 leaf first, with the warning about comparing fingerprints out of band shown
@@ -137,13 +140,13 @@ failed the same way once it was run.
 
 **Fix.** Each dialog now owns its controllers in its own `State` and disposes
 them in `dispose()`, which runs after the route is gone. Regression tests drive
-both dialogs end to end.
+both dialogs end to end. Verified on a device: items 4 and 5 both pass.
 
 ### Still open
 
-- Item 3, the bundle case: a file with more than one certificate offering a
-  choice.
-- Item 5, downloading a chain from a server, including the two failure paths.
-- Item 7, `INSECURE` absent from a release build.
+- Item 7, `INSECURE` absent from a release build. It cannot be answered on a
+  debug build, so it waits for a release APK.
 - Item 8's usage count, which needs a profile that can reference a
   certificate — phase 6.
+- Item 5's two failure cases — a port that speaks no TLS, and a host that does
+  not resolve — were not separately reported in the second pass.
