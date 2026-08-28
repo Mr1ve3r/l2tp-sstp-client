@@ -275,15 +275,15 @@ Decision, date, and rationale go here once made:
 
 Run before every release; a failure here is a licence violation, not a nit.
 
-- [ ] `third_party/open-sstp-client/LICENSE` is a byte-exact copy of upstream's
+- [x] `third_party/open-sstp-client/LICENSE` is a byte-exact copy of upstream's
       `LICENSE` at the recorded commit.
-- [ ] Every file listed in §1 carries the header from the "Licensing" section.
-- [ ] No file outside §1 carries that header (over-attribution confuses provenance).
-- [ ] The commit hash in this document matches the upstream state actually imported.
-- [ ] Every §1 destination path exists; every §1 upstream path existed at that commit.
-- [ ] `NOTICE` lists Open SSTP Client with its MIT licence and a link.
-- [ ] `README.md` credits both upstream projects above the fold.
-- [ ] The §4 decision table has no `pending` rows.
+- [x] Every file listed in §1 carries the header from the "Licensing" section.
+- [x] No file outside §1 carries that header (over-attribution confuses provenance).
+- [x] The commit hash in this document matches the upstream state actually imported.
+- [x] Every §1 destination path exists; every §1 upstream path existed at that commit.
+- [x] `NOTICE` lists Open SSTP Client with its MIT licence and a link.
+- [x] `README.md` credits both upstream projects above the fold.
+- [x] The §4 decision table has no `pending` rows.
 
 A one-shot audit for the first three items:
 

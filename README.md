@@ -69,8 +69,8 @@ store shared by both. Work follows the phased plan in [`SPEC`](SPEC):
 - [x] Phase 2 — `engine-api` contract
 - [x] Phase 3 — `core-tunnel`
 - [x] Phase 4 — `engine-l2tp`
-- [ ] Phase 5 — `core-trust`
-- [ ] Phase 6 — `engine-sstp`
+- [x] Phase 5 — `core-trust`
+- [x] Phase 6 — `engine-sstp`
 - [ ] Phase 7 — single `VpnService` and protocol dispatcher
 - [ ] Phase 8 — profile model, storage, migration
 - [ ] Phase 9 — UI

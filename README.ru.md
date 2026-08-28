@@ -38,8 +38,8 @@ Android 12 убрал встроенную поддержку L2TP и PPTP, пр
 - [x] Фаза 2 — контракт `engine-api`
 - [x] Фаза 3 — `core-tunnel`
 - [x] Фаза 4 — `engine-l2tp`
-- [ ] Фаза 5 — `core-trust`
-- [ ] Фаза 6 — `engine-sstp`
+- [x] Фаза 5 — `core-trust`
+- [x] Фаза 6 — `engine-sstp`
 - [ ] Фаза 7 — единый `VpnService` и диспетчер протокола
 - [ ] Фаза 8 — профили, хранилище, миграция
 - [ ] Фаза 9 — UI

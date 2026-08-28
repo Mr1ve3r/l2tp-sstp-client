@@ -21,9 +21,9 @@ android/app  ──  CombinedVpnService, platform channels        (planned, phas
       │        └── L2tpNative ── VpnBridge ── android/app/src/main/cpp
       │                          (unchanged native engine)
       │
-      ├── engine-sstp ── SstpEngine : VpnEngine                (planned, phase 6)
+      ├── engine-sstp ── SstpEngine : VpnEngine
       │        └── core-trust ── trust policies, hostname check,
-      │                          pre-flight; store still to come
+      │                          pre-flight, certificate store
       │
       └── engine-api ─── VpnEngine, EngineProfile, EngineState,
                          EngineError, TunnelParams, SocketProtector
@@ -218,6 +218,56 @@ Which trust policies exist is answered by the host rather than decided in Dart:
 `INSECURE` is absent from a release build entirely, and a list hardcoded in the
 UI would be one `kDebugMode` check away from offering it anyway.
 
+## The SSTP engine
+
+`engine-sstp` is the protocol code of Open SSTP Client, carried across at the
+commit recorded in `third_party/open-sstp-client/PROVENANCE.md`, with the parts
+that bound it to its own application removed. Every derived file carries the MIT
+attribution header; the two greps in that document's verification list check
+that nothing is missing it and nothing outside the module carries it.
+
+`SstpEngine.connect()` runs the same sequence upstream's `Controller` did:
+
+```
+TCP socket  ──▶ protect() ──▶ connect() ──▶ [HTTP CONNECT proxy]
+   ──▶ TLS handshake (core-trust TrustManager, SNI = expectedHostname ?: server)
+   ──▶ hostname check (core-trust) ──▶ SSTP_DUPLEX_POST
+   ──▶ SSTP Call Connect ──▶ LCP ──▶ authentication ──▶ crypto binding
+   ──▶ IPCP ──▶ TunnelParams
+```
+
+The host then builds the TUN through `core-tunnel`'s `TunnelBuilder` and hands
+the descriptor back through `attachTun()`, at which point the outgoing pipeline
+starts. The engine never sees a `VpnService`.
+
+Three details are worth knowing before changing anything here.
+
+**Upstream's `SharedBridge` is gone.** It held the preferences, a live
+`VpnService.Builder`, both terminals and the whole negotiation state, and every
+client reached into it. It is now `SstpEngineConfig` (immutable, read once from
+the profile), `SstpSessionState` (what the negotiation has agreed) and
+`ControlMailbox` (progress and failure). `SstpBridge` is the holder that passes
+those three and the coroutine scope to a client. Nothing below the engine can
+reach a `VpnService.Builder`, which is what lets phase 7 own the single service.
+
+**`protect()` covers every socket, before `connect()`.** Upstream called it once,
+after the HTTP exchange. Here it is applied to the direct socket, to the socket
+to an HTTP proxy, and to the socket of every fresh attempt; a socket it refuses
+is not connected at all. The failure this prevents is not an error but a hang,
+so it has tests rather than a comment.
+
+**Certificates never come from the filesystem.** Upstream's
+`SSLTerminal.createTrustManagers()` loaded every file in a user-picked directory
+into a `KeyStore`. `core-trust` replaces it entirely: the trust manager is built
+for the profile's policy, the pre-flight refuses a configuration that cannot
+work before a socket is opened, and the hostname is checked separately so a name
+mismatch can tell the user which names the certificate actually carries.
+
+The MTU default for SSTP profiles is 1400, below the L2TP default. SSTP carries
+IP over TCP and the tunnelled traffic is usually TCP too; when the link loses
+packets the inner and outer retransmission timers fight each other, and a
+smaller MTU makes that rarer (SPEC 6.5).
+
 ## Error mapping
 
 `EngineError` is the single vocabulary both engines report in. The per-protocol
@@ -296,7 +346,7 @@ When no engine is installed — proxy-only mode, or a teardown already in flight
 these are no-ops, and `protect` returns `null` so the caller falls back to
 protecting the socket itself rather than leaving it inside the tunnel.
 
-### SSTP `Where` / `Result` → `EngineError` (planned, phase 6)
+### SSTP `Where` / `Result` → `EngineError`
 
 Upstream Open SSTP Client reports failures as a `Where` (which component failed)
 plus a `Result` (why). The granularity is good and is carried over verbatim; the
@@ -304,7 +354,12 @@ table below maps it onto `EngineError`.
 
 | `Where` | `Result` | `EngineError` |
 |---|---|---|
-| _to be filled in phase 6_ | | |
+| any | `ERR_AUTHENTICATION_FAILED` | `AuthenticationFailed` |
+| `PAP`, `CHAP`, `MSCHAPV2`, `EAP` | `ERR_VERIFICATION_FAILED` | `AuthenticationFailed` — the server failed the mutual check; a dead end for the same reason |
+| `CERT`, `CERT_PATH` | `ERR_VERIFICATION_FAILED` | `CertificateRejected` |
+| any | `ERR_TIMEOUT` | `TimedOut(stage = where)` |
+| `INCOMING`, `OUTGOING`, `ROUTE` | `ERR_PARSING_FAILED`, `ERR_UNKNOWN_TYPE`, `ERR_INVALID_PACKET_SIZE` | `Internal` — a bug here, not a configuration problem |
+| any other | any other | `PppNegotiationFailed(phase = where)` |
 
 ## Native code
 
