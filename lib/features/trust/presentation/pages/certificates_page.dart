@@ -184,7 +184,7 @@ class CertificatesPage extends StatelessWidget {
               subtitle: Text(l10n.importFromTextHelp),
               onTap: () {
                 Navigator.of(sheetContext).pop();
-                _askForPemText(context, l10n, bloc);
+                _askForPemText(context, bloc);
               },
             ),
             ListTile(
@@ -193,7 +193,7 @@ class CertificatesPage extends StatelessWidget {
               subtitle: Text(l10n.importFromServerHelp),
               onTap: () {
                 Navigator.of(sheetContext).pop();
-                _askForServer(context, l10n, bloc);
+                _askForServer(context, bloc);
               },
             ),
           ],
@@ -204,90 +204,24 @@ class CertificatesPage extends StatelessWidget {
 
   Future<void> _askForPemText(
     BuildContext context,
-    AppLocalizations l10n,
     CertificatesBloc bloc,
   ) async {
-    final controller = TextEditingController();
     final text = await showDialog<String>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: Text(l10n.importFromText),
-        content: TextField(
-          controller: controller,
-          maxLines: 8,
-          minLines: 4,
-          autofocus: true,
-          decoration: InputDecoration(hintText: l10n.importFromTextHelp),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(),
-            child: Text(l10n.cancel),
-          ),
-          TextButton(
-            onPressed: () =>
-                Navigator.of(dialogContext).pop(controller.text.trim()),
-            child: Text(l10n.continueLabel),
-          ),
-        ],
-      ),
+      builder: (_) => const _PemTextDialog(),
     );
-    controller.dispose();
     if (text == null || text.isEmpty) return;
     bloc.add(CertificatesPemTextSubmitted(text));
   }
 
   Future<void> _askForServer(
     BuildContext context,
-    AppLocalizations l10n,
     CertificatesBloc bloc,
   ) async {
-    final hostController = TextEditingController();
-    final portController = TextEditingController(text: '443');
     final target = await showDialog<({String host, int port})>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: Text(l10n.importFromServer),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: hostController,
-              autofocus: true,
-              decoration: InputDecoration(labelText: l10n.certificateHost),
-            ),
-            const SizedBox(height: 8),
-            TextField(
-              controller: portController,
-              keyboardType: TextInputType.number,
-              decoration: InputDecoration(labelText: l10n.certificatePort),
-            ),
-            const SizedBox(height: 12),
-            Text(
-              l10n.importFromServerWarning,
-              style: Theme.of(dialogContext).textTheme.bodySmall,
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(),
-            child: Text(l10n.cancel),
-          ),
-          TextButton(
-            onPressed: () {
-              final host = hostController.text.trim();
-              final port = int.tryParse(portController.text.trim());
-              if (host.isEmpty || port == null) return;
-              Navigator.of(dialogContext).pop((host: host, port: port));
-            },
-            child: Text(l10n.continueLabel),
-          ),
-        ],
-      ),
+      builder: (_) => const _ServerAddressDialog(),
     );
-    hostController.dispose();
-    portController.dispose();
     if (target == null) return;
     bloc.add(
       CertificatesServerChainRequested(host: target.host, port: target.port),
@@ -370,5 +304,118 @@ class CertificatesPage extends StatelessWidget {
         ],
       ),
     );
+  }
+}
+
+/// Asks for PEM text (SPEC 5.3 B).
+///
+/// A widget of its own so the controller outlives the pop: a dialog route
+/// animates out over several frames with its field still mounted, and
+/// disposing the controller as soon as `showDialog` returns leaves the field
+/// using a dead one.
+class _PemTextDialog extends StatefulWidget {
+  const _PemTextDialog();
+
+  @override
+  State<_PemTextDialog> createState() => _PemTextDialogState();
+}
+
+class _PemTextDialogState extends State<_PemTextDialog> {
+  final TextEditingController _controller = TextEditingController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    return AlertDialog(
+      title: Text(l10n.importFromText),
+      content: TextField(
+        controller: _controller,
+        maxLines: 8,
+        minLines: 4,
+        autofocus: true,
+        decoration: InputDecoration(hintText: l10n.importFromTextHelp),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: Text(l10n.cancel),
+        ),
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(_controller.text.trim()),
+          child: Text(l10n.continueLabel),
+        ),
+      ],
+    );
+  }
+}
+
+/// Asks which server to read a certificate chain from (SPEC 5.3 C).
+///
+/// Owns its controllers for the same reason as [_PemTextDialog].
+class _ServerAddressDialog extends StatefulWidget {
+  const _ServerAddressDialog();
+
+  @override
+  State<_ServerAddressDialog> createState() => _ServerAddressDialogState();
+}
+
+class _ServerAddressDialogState extends State<_ServerAddressDialog> {
+  final TextEditingController _host = TextEditingController();
+  final TextEditingController _port = TextEditingController(text: '443');
+
+  @override
+  void dispose() {
+    _host.dispose();
+    _port.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    return AlertDialog(
+      title: Text(l10n.importFromServer),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          TextField(
+            controller: _host,
+            autofocus: true,
+            decoration: InputDecoration(labelText: l10n.certificateHost),
+          ),
+          const SizedBox(height: 8),
+          TextField(
+            controller: _port,
+            keyboardType: TextInputType.number,
+            decoration: InputDecoration(labelText: l10n.certificatePort),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            l10n.importFromServerWarning,
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: Text(l10n.cancel),
+        ),
+        TextButton(onPressed: _submit, child: Text(l10n.continueLabel)),
+      ],
+    );
+  }
+
+  void _submit() {
+    final host = _host.text.trim();
+    final port = int.tryParse(_port.text.trim());
+    if (host.isEmpty || port == null || port < 1 || port > 65535) return;
+    Navigator.of(context).pop((host: host, port: port));
   }
 }

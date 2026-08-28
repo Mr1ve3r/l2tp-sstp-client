@@ -141,4 +141,78 @@ void main() {
     expect(find.text(AppText.current.importFromServerWarning), findsOneWidget);
     unawaited(bloc.close());
   });
+
+  // Both dialogs used to create their controllers in the page and dispose them
+  // on the line after `Navigator.pop`, while the route was still animating out
+  // with its field mounted. That threw "A TextEditingController was used after
+  // being disposed" and then tripped an assertion inside the framework
+  // (docs/MANUAL_TEST_PHASE5.md, finding F1). Driving each dialog end to end is
+  // what catches it.
+  testWidgets('pasting PEM text reaches the review sheet', (tester) async {
+    final repository = FakeCertificatesRepository(
+      pickResult: [
+        CertificateCandidate.fromMap(CertificateFixtures.candidate()),
+      ],
+    );
+    final bloc = CertificatesBloc(repository)..add(const CertificatesStarted());
+    await tester.pumpWidget(host(bloc));
+    await settle(tester);
+
+    final l10n = AppText.current;
+    await tester.tap(find.text(l10n.addCertificate));
+    await settle(tester);
+    await tester.tap(find.text(l10n.importFromText));
+    await settle(tester);
+    await tester.enterText(find.byType(TextField), 'pasted-pem');
+    await settle(tester);
+    await tester.tap(find.text(l10n.continueLabel));
+    await settle(tester);
+
+    expect(find.byType(CertificateImportSheet), findsOneWidget);
+    unawaited(bloc.close());
+  });
+
+  testWidgets('a server address reaches the review sheet', (tester) async {
+    final repository = FakeCertificatesRepository(
+      pickResult: [
+        CertificateCandidate.fromMap(
+          CertificateFixtures.candidate(chainPosition: 0),
+        ),
+      ],
+    );
+    final bloc = CertificatesBloc(repository)..add(const CertificatesStarted());
+    await tester.pumpWidget(host(bloc));
+    await settle(tester);
+
+    final l10n = AppText.current;
+    await tester.tap(find.text(l10n.addCertificate));
+    await settle(tester);
+    await tester.tap(find.text(l10n.importFromServer));
+    await settle(tester);
+    await tester.enterText(find.byType(TextField).first, 'vpn.example.com');
+    await settle(tester);
+    await tester.tap(find.text(l10n.continueLabel));
+    await settle(tester);
+
+    expect(find.byType(CertificateImportSheet), findsOneWidget);
+    unawaited(bloc.close());
+  });
+
+  testWidgets('a server dialog with no host stays open', (tester) async {
+    final bloc = CertificatesBloc(FakeCertificatesRepository())
+      ..add(const CertificatesStarted());
+    await tester.pumpWidget(host(bloc));
+    await settle(tester);
+
+    final l10n = AppText.current;
+    await tester.tap(find.text(l10n.addCertificate));
+    await settle(tester);
+    await tester.tap(find.text(l10n.importFromServer));
+    await settle(tester);
+    await tester.tap(find.text(l10n.continueLabel));
+    await settle(tester);
+
+    expect(find.text(l10n.certificateHost), findsOneWidget);
+    unawaited(bloc.close());
+  });
 }
