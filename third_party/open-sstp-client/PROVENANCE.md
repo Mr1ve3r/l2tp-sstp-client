@@ -123,7 +123,7 @@ thirty notes.
 | Upstream path | Destination | Level | Notes |
 |---|---|---|---|
 | `terminal/SSLTerminal.kt` | `engine-sstp/.../terminal/SslTerminal.kt` | **ADAPTED (heavy)** | Largest upstream file (483 lines) and the main integration point. See §3 |
-| `terminal/IPTerminal.kt` | `engine-sstp/.../terminal/IpTerminal.kt` | **ADAPTED (heavy)** | Upstream writes directly to `VpnService.Builder`; here it only produces `TunnelParams` and consumes a TUN fd handed in via `attachTun()`. See §3 |
+| `terminal/IPTerminal.kt` | `engine-sstp/.../terminal/IpTerminal.kt` | **ADAPTED (heavy)** | Reduced to the two streams. The address, the routes, the DNS servers and the per-app rules all left with the `VpnService.Builder`; what IPCP agreed now leaves as `TunnelParams` and the descriptor arrives through `attachTun()`. See §3.3 |
 
 ### 1.6. Utilities
 
@@ -141,7 +141,7 @@ thirty notes.
 
 | Upstream path | Destination | Level | Notes |
 |---|---|---|---|
-| `SharedBridge.kt` | `engine-sstp/.../SstpBridge.kt` | **REWRITTEN** | See §3.1 — this is the file that must change most |
+| `SharedBridge.kt` | `engine-sstp/.../SstpBridge.kt`, `SstpEngineConfig.kt`, `SstpSessionState.kt`, `ControlMailbox.kt` | **REWRITTEN** | See §3.1. `SstpBridge` is what is left once the settings, the negotiation state and the control channel are their own types: a holder that hands a client those three and the scope it runs in |
 | `control/Controller.kt` | `engine-sstp/.../SstpEngine.kt` | **REWRITTEN** | Becomes the `VpnEngine` implementation |
 | `control/LogWriter.kt` | — | **REWRITTEN** | Replaced by `EngineLogEvent` flow in `engine-api`; upstream design informed the event taxonomy |
 | `control/NetworkObserver.kt` | — | **NOT IMPORTED** | Superseded by `core-tunnel/NetworkMonitor`, which serves both engines |
