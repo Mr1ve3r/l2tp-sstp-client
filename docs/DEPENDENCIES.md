@@ -20,6 +20,9 @@ present and under what licence, not which version is current.
 | `androidx.core:core-ktx` | Apache-2.0 | Yes | `:app`, `core-tunnel` | Android platform helpers |
 | `io.netty:netty-codec-http` | Apache-2.0 | Yes | `:app` | Local HTTP CONNECT proxy frontend (inherited from TunnelForge) |
 | `io.netty:netty-codec-socks` | Apache-2.0 | Yes | `:app` | Local SOCKS5 proxy frontend (inherited from TunnelForge) |
+| `androidx.room:room-runtime` | Apache-2.0 | Yes | `core-trust` | Certificate store metadata (SPEC 5.1) |
+| `androidx.room:room-compiler` | Apache-2.0 | Yes (build scope only, not distributed) | `core-trust` | Generates the Room DAO implementations |
+| `androidx.room:room-testing` | Apache-2.0 | Yes (test scope only) | `core-trust` instrumented tests | Migration test helpers |
 | `junit:junit` | EPL-1.0 | Yes (test scope only, not distributed) | tests | Unit tests |
 | `androidx.test.ext:junit`, `androidx.test:runner` | Apache-2.0 | Yes (test scope only) | instrumented tests | Instrumented tests |
 
@@ -39,6 +42,7 @@ Build-time only; not linked into the shipped artifact.
 | Android Gradle Plugin | Apache-2.0 | Android builds |
 | Kotlin Gradle Plugin | Apache-2.0 | Kotlin compilation |
 | `org.jlleitschuh.gradle.ktlint` | Apache-2.0 | Kotlin style checks on the modules added by this fork |
+| `com.google.devtools.ksp` | Apache-2.0 | Runs the Room annotation processor. Its version is bound to the Kotlin version and moves with it |
 | CMake / Android NDK | BSD-3-Clause / NDK licence | Native L2TP engine |
 | Go toolchain | BSD-3-Clause | `android/gvisor` userspace networking module |
 

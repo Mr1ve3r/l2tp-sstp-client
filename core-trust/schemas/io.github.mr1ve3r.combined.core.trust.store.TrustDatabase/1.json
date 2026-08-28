@@ -1,0 +1,173 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 1,
+    "identityHash": "9b29a1d742a743b2fae75adaa5c1cd54",
+    "entities": [
+      {
+        "tableName": "server_certificates",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `alias` TEXT NOT NULL, `subjectCn` TEXT, `subjectDn` TEXT NOT NULL, `issuerDn` TEXT NOT NULL, `serialNumber` TEXT NOT NULL, `notBefore` INTEGER NOT NULL, `notAfter` INTEGER NOT NULL, `sha256Fingerprint` TEXT NOT NULL, `sha1Fingerprint` TEXT NOT NULL, `isCa` INTEGER NOT NULL, `keyUsage` TEXT, `subjectAltNames` TEXT NOT NULL, `publicKeyBits` INTEGER, `signatureAlgorithm` TEXT NOT NULL, `importedAt` INTEGER NOT NULL, `fileName` TEXT NOT NULL, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "alias",
+            "columnName": "alias",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "subjectCn",
+            "columnName": "subjectCn",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "subjectDn",
+            "columnName": "subjectDn",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "issuerDn",
+            "columnName": "issuerDn",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "serialNumber",
+            "columnName": "serialNumber",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "notBefore",
+            "columnName": "notBefore",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "notAfter",
+            "columnName": "notAfter",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sha256Fingerprint",
+            "columnName": "sha256Fingerprint",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sha1Fingerprint",
+            "columnName": "sha1Fingerprint",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "isCa",
+            "columnName": "isCa",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "keyUsage",
+            "columnName": "keyUsage",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "subjectAltNames",
+            "columnName": "subjectAltNames",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "publicKeyBits",
+            "columnName": "publicKeyBits",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "signatureAlgorithm",
+            "columnName": "signatureAlgorithm",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "importedAt",
+            "columnName": "importedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "fileName",
+            "columnName": "fileName",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        }
+      },
+      {
+        "tableName": "profile_certificate_ref",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`profileId` TEXT NOT NULL, `certificateId` TEXT NOT NULL, PRIMARY KEY(`profileId`, `certificateId`), FOREIGN KEY(`certificateId`) REFERENCES `server_certificates`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "profileId",
+            "columnName": "profileId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "certificateId",
+            "columnName": "certificateId",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "profileId",
+            "certificateId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_profile_certificate_ref_certificateId",
+            "unique": false,
+            "columnNames": [
+              "certificateId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_profile_certificate_ref_certificateId` ON `${TABLE_NAME}` (`certificateId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "server_certificates",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "certificateId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '9b29a1d742a743b2fae75adaa5c1cd54')"
+    ]
+  }
+}
