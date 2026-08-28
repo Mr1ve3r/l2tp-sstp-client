@@ -138,7 +138,7 @@ reason to credit it, and the cost of over-attributing is zero.
 | `control/Controller.kt` | `engine-sstp/.../SstpEngine.kt` | **REWRITTEN** | Becomes the `VpnEngine` implementation |
 | `control/LogWriter.kt` | — | **REWRITTEN** | Replaced by `EngineLogEvent` flow in `engine-api`; upstream design informed the event taxonomy |
 | `control/NetworkObserver.kt` | — | **NOT IMPORTED** | Superseded by `core-tunnel/NetworkMonitor`, which serves both engines |
-| `debug/Capture.kt` | `engine-sstp/.../debug/Capture.kt` | MINOR | Optional; debug builds only. May be dropped — decide in Phase 6 and record the decision here |
+| `debug/Capture.kt` | — | **NOT IMPORTED** | Decided in phase 6; see §4 |
 
 ---
 
@@ -258,9 +258,9 @@ Decision, date, and rationale go here once made:
 
 | Feature | Decision | Date | Rationale |
 |---|---|---|---|
-| EAP / EAP-MSCHAPv2 | _pending_ | | |
-| HTTP proxy | _pending_ | | |
-| `debug/Capture.kt` | _pending_ | | |
+| EAP / EAP-MSCHAPv2 | Imported, disabled by default | 2026-08-28 | Carried behind `PppAuthMethod.EAP_MSCHAPV2`, which `EngineProfile.Sstp.DEFAULT_AUTH_METHODS` leaves out. The code is written and tested upstream and some Windows RRAS deployments need it; dropping it and re-adding it later would cost more than carrying it. |
+| HTTP proxy | Imported | 2026-08-28 | `EngineProfile.Sstp.proxy` and `ProxyConfig` already exist in the phase 2 contract, so the code ships reachable rather than dead. SSTP on 443 through a CONNECT proxy is the restrictive-network case this fork adds SSTP for. TLS is still terminated at the target server (SPEC 6.4.1). |
+| `debug/Capture.kt` | Not imported | 2026-08-28 | It hex-dumps whole frames to `Log.d`: for a PAP `AuthenticateRequest` that is the password in the clear, for MSCHAPv2 the whole challenge/response. SPEC appendix А forbids secrets in logs, and `EngineLogEvent` already carries the redacted trace a bug report needs. |
 
 ---
 
