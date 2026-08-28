@@ -68,7 +68,7 @@ store shared by both. Work follows the phased plan in [`SPEC`](SPEC):
 - [x] Phase 1 — module layout, version catalog, ktlint, CI
 - [x] Phase 2 — `engine-api` contract
 - [x] Phase 3 — `core-tunnel`
-- [ ] Phase 4 — `engine-l2tp`
+- [x] Phase 4 — `engine-l2tp`
 - [ ] Phase 5 — `core-trust`
 - [ ] Phase 6 — `engine-sstp`
 - [ ] Phase 7 — single `VpnService` and protocol dispatcher

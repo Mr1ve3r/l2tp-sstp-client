@@ -21,7 +21,7 @@ import android.net.Network
  *   `null` means *do not call* `setBlocking` at all, which is what upstream
  *   does and therefore the default here: this module takes no position, the
  *   host decides. The SPEC asks for `setBlocking(true)` and the Android
- *   application now passes it; the phase 4 device test checks that the L2TP
+ *   application now passes it, having confirmed on a device that the L2TP
  *   tunnel is unaffected (SPEC В.1).
  *
  *   It is unaffected because `tunnel_loop.c` calls `set_nonblock()` on the
