@@ -99,8 +99,8 @@ thirty notes.
 | `client/SstpClietnt.kt` | `engine-sstp/.../client/SstpClient.kt` | ADAPTED | **Upstream filename contains a typo (`Clietnt`); corrected here. Recorded so the mapping stays traceable.** Reads config from `SstpEngineConfig` instead of `SharedBridge` prefs |
 | `client/ppp/PPPClient.kt` | `engine-sstp/.../client/ppp/PppClient.kt` | ADAPTED | |
 | `client/ppp/ConfigClient.kt` | `engine-sstp/.../client/ppp/ConfigClient.kt` | MINOR | |
-| `client/ppp/LCPClient.kt` | `engine-sstp/.../client/ppp/LcpClient.kt` | ADAPTED | MRU/MTU from profile |
-| `client/ppp/IpcpClient.kt` | `engine-sstp/.../client/ppp/IpcpClient.kt` | ADAPTED | Result feeds `TunnelParams` instead of `VpnService.Builder` |
+| `client/ppp/LCPClient.kt` | `engine-sstp/.../client/ppp/LcpClient.kt` | ADAPTED | MRU and the offered methods come from the profile. A CHAP option with an unexpected algorithm field is answered with a NAK naming what this client supports, where upstream threw and took the connection down |
+| `client/ppp/IpcpClient.kt` | `engine-sstp/.../client/ppp/IpcpClient.kt` | ADAPTED | Result feeds `TunnelParams` instead of `VpnService.Builder`. Upstream's static-address preference has no field in `EngineProfile.Sstp`, so the client always asks the server to choose |
 | `client/ppp/Ipv6cpClient.kt` | `engine-sstp/.../client/ppp/Ipv6cpClient.kt` | ADAPTED | Same |
 | `client/ppp/auth/PAPClient.kt` | `engine-sstp/.../client/ppp/auth/PapClient.kt` | ADAPTED | Credentials from profile |
 | `client/ppp/auth/ChapClient.kt` | `engine-sstp/.../client/ppp/auth/ChapClient.kt` | ADAPTED | Same |
@@ -114,9 +114,9 @@ thirty notes.
 | Upstream path | Destination | Level | Notes |
 |---|---|---|---|
 | `io/incoming/IncomingManager.kt` | `engine-sstp/.../io/IncomingManager.kt` | MINOR | |
-| `io/incoming/process.kt` | `engine-sstp/.../io/process.kt` | MINOR | |
-| `io/incoming/EchoTimer.kt` | `engine-sstp/.../io/EchoTimer.kt` | MINOR | Keepalive |
-| `io/OutgoingManager.kt` | `engine-sstp/.../io/OutgoingManager.kt` | MINOR | |
+| `io/incoming/process.kt` | `engine-sstp/.../io/IncomingProcessing.kt` | ADAPTED | Renamed for ktlint. An IP packet that arrives before the host has built the TUN is dropped rather than dereferenced: upstream could not reach that window, because there the interface was built inside the negotiation |
+| `io/incoming/EchoTimer.kt` | `engine-sstp/.../io/EchoTimer.kt` | VERBATIM | Keepalive; only the package line differs |
+| `io/OutgoingManager.kt` | `engine-sstp/.../io/OutgoingManager.kt` | MINOR | Takes the `IpTerminal` directly instead of reaching for it through the bridge: it is only ever started after `attachTun()` |
 
 ### 1.5. Terminals
 
