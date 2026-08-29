@@ -867,7 +867,10 @@ class UserspaceTunnelStackTest {
                 bridge = ProxyPacketBridge(backend = backend),
                 clientIpv4 = "10.0.0.2",
                 logger = { _, _ -> },
-                tcpPersistProbeDelaysMs = listOf(20L),
+                // One probe after 20ms, then back off past the end of the test: the packet
+                // indices below are absolute, and a second probe at a fixed 20ms would race
+                // the 25ms poll in waitForOutboundCount and shift them.
+                tcpPersistProbeDelaysMs = listOf(20L, 10_000L),
                 tcpFinDrainTimeoutMs = 50,
             )
         assertTrue(stack.waitUntilReady(timeoutMs = 50, pollIntervalMs = 5))
