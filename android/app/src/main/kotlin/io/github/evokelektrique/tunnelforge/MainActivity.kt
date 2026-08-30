@@ -23,6 +23,7 @@ import androidx.core.content.IntentCompat
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
+import io.github.mr1ve3r.combined.engine.EngineProfile
 import io.github.mr1ve3r.combined.core.trust.store.TrustStore
 import java.io.ByteArrayOutputStream
 import kotlinx.coroutines.CoroutineScope
@@ -37,6 +38,7 @@ class MainActivity : FlutterActivity() {
     private var pendingConnectIntent: Intent? = null
     private var profileTransferChannel: MethodChannel? = null
     private val pendingProfileTransfers = mutableListOf<Map<String, String?>>()
+
     private var certificateDocumentResult: ((Uri?) -> Unit)? = null
 
     // The certificate store answers from a coroutine, and a method channel
@@ -265,6 +267,7 @@ class MainActivity : FlutterActivity() {
                                     TunnelVpnService.EXTRA_SPLIT_TUNNEL_EXCLUSIVE_PACKAGES,
                                     ArrayList(exclusivePackages),
                                 )
+                                putProtocolExtras(this, args)
                             }
                         }
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !hasPostNotificationsPermission()) {
@@ -806,6 +809,56 @@ class MainActivity : FlutterActivity() {
     private fun hasPostNotificationsPermission(): Boolean {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return true
         return checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+    }
+
+    /**
+     * Copies the protocol selector and the SSTP fields onto the start intent.
+     *
+     * A request that names no protocol, or names one this build does not know,
+     * carries no SSTP fields either and starts an L2TP session — which is what
+     * every request written before phase 7 meant (SPEC 7.1.1).
+     */
+    private fun putProtocolExtras(intent: Intent, args: Map<*, *>) {
+        val protocol = TunnelProtocol.fromWireValue(args[VpnContract.ARG_PROTOCOL] as? String)
+        intent.putExtra(TunnelVpnService.EXTRA_PROTOCOL, protocol.wireValue)
+        if (protocol != TunnelProtocol.SSTP) return
+        intent.putExtra(
+            TunnelVpnService.EXTRA_SSTP_PORT,
+            sanitizePort(args[VpnContract.ARG_SSTP_PORT], EngineProfile.Sstp.DEFAULT_PORT),
+        )
+        intent.putExtra(TunnelVpnService.EXTRA_SSTP_TRUST_POLICY, args[VpnContract.ARG_SSTP_TRUST_POLICY] as? String)
+        intent.putStringArrayListExtra(
+            TunnelVpnService.EXTRA_SSTP_CERTIFICATE_IDS,
+            stringListArg(args[VpnContract.ARG_SSTP_CERTIFICATE_IDS]),
+        )
+        intent.putStringArrayListExtra(
+            TunnelVpnService.EXTRA_SSTP_PINNED_FINGERPRINTS,
+            stringListArg(args[VpnContract.ARG_SSTP_PINNED_FINGERPRINTS]),
+        )
+        intent.putExtra(TunnelVpnService.EXTRA_SSTP_EXPECTED_HOSTNAME, args[VpnContract.ARG_SSTP_EXPECTED_HOSTNAME] as? String)
+        intent.putExtra(TunnelVpnService.EXTRA_SSTP_MIN_TLS_VERSION, args[VpnContract.ARG_SSTP_MIN_TLS_VERSION] as? String)
+        intent.putStringArrayListExtra(
+            TunnelVpnService.EXTRA_SSTP_AUTH_METHODS,
+            stringListArg(args[VpnContract.ARG_SSTP_AUTH_METHODS]),
+        )
+        intent.putExtra(TunnelVpnService.EXTRA_SSTP_PROXY_HOST, args[VpnContract.ARG_SSTP_PROXY_HOST] as? String)
+        intent.putExtra(
+            TunnelVpnService.EXTRA_SSTP_PROXY_PORT,
+            sanitizePort(args[VpnContract.ARG_SSTP_PROXY_PORT], EngineProfiles.DEFAULT_PROXY_PORT),
+        )
+        intent.putExtra(TunnelVpnService.EXTRA_SSTP_PROXY_USERNAME, args[VpnContract.ARG_SSTP_PROXY_USERNAME] as? String)
+        intent.putExtra(TunnelVpnService.EXTRA_SSTP_PROXY_PASSWORD, args[VpnContract.ARG_SSTP_PROXY_PASSWORD] as? String)
+    }
+
+    private fun stringListArg(raw: Any?): ArrayList<String> {
+        val out = ArrayList<String>()
+        if (raw is List<*>) {
+            raw.forEach { entry ->
+                val value = (entry as? String)?.trim()
+                if (!value.isNullOrEmpty()) out.add(value)
+            }
+        }
+        return out
     }
 
     private fun handleProfileTransferIntent(intent: Intent?, deliverImmediately: Boolean) {

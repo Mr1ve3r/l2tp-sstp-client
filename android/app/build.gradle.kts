@@ -238,6 +238,7 @@ dependencies {
     implementation(project(":core-tunnel"))
     implementation(project(":core-trust"))
     implementation(project(":engine-l2tp"))
+    implementation(project(":engine-sstp"))
     implementation(libs.androidx.annotation)
     implementation(libs.kotlinx.coroutines.core)
     implementation(libs.kotlinx.coroutines.android)

@@ -105,6 +105,7 @@ class TunnelVpnServiceTest {
         val dnsServers =
             TunnelVpnService.tunDnsServers(
                 dnsAutomatic = false,
+                protocol = TunnelProtocol.L2TP,
                 negotiatedDnsServers = listOf(InetAddress.getByName("172.20.21.22")),
             )
 
@@ -115,9 +116,59 @@ class TunnelVpnServiceTest {
     fun automaticVpnDnsAdvertisesNegotiatedResolvers() {
         val negotiated = listOf(InetAddress.getByName("172.20.21.22"))
 
-        val dnsServers = TunnelVpnService.tunDnsServers(dnsAutomatic = true, negotiatedDnsServers = negotiated)
+        val dnsServers =
+            TunnelVpnService.tunDnsServers(
+                dnsAutomatic = true,
+                protocol = TunnelProtocol.L2TP,
+                negotiatedDnsServers = negotiated,
+            )
 
         assertEquals(negotiated, dnsServers)
+    }
+
+    // SSTP has no native poll loop to divert packets to a virtual resolver, so
+    // manual DNS goes on the interface as the user's own servers (SPEC В.12).
+    @Test
+    fun manualSstpDnsAdvertisesTheUpstreamServersThemselves() {
+        val dnsServers =
+            TunnelVpnService.tunDnsServers(
+                dnsAutomatic = false,
+                protocol = TunnelProtocol.SSTP,
+                negotiatedDnsServers = listOf(InetAddress.getByName("172.20.21.22")),
+                manualDnsServers =
+                    listOf(
+                        ResolvedDnsServerConfig(
+                            host = "9.9.9.9",
+                            protocol = DnsProtocol.dnsOverUdp,
+                            resolvedIpv4 = "9.9.9.9",
+                        ),
+                    ),
+            )
+
+        assertEquals(listOf(InetAddress.getByName("9.9.9.9")), dnsServers)
+    }
+
+    @Test
+    fun reconnectBackoffDoublesAndThenStops() {
+        val delays = (1..6).map { TunnelVpnService.reconnectDelayMs(it) }
+
+        assertEquals(listOf(1_000L, 2_000L, 4_000L, 8_000L, 8_000L, 8_000L), delays)
+    }
+
+    @Test
+    fun connectedNotificationNamesTheProtocolAndTheProfile() {
+        assertEquals(
+            "SSTP · Office",
+            TunnelVpnService.notificationLabel(TunnelProtocol.SSTP, "Office", "vpn.example.org"),
+        )
+    }
+
+    @Test
+    fun connectedNotificationFallsBackToTheServer() {
+        assertEquals(
+            "L2TP/IPsec · vpn.example.org",
+            TunnelVpnService.notificationLabel(TunnelProtocol.L2TP, null, "vpn.example.org"),
+        )
     }
 
     @Test

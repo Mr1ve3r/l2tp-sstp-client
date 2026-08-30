@@ -6,7 +6,10 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Intent
+import android.content.pm.ApplicationInfo
 import android.content.pm.ServiceInfo
+import android.net.ConnectivityManager
+import android.net.Network
 import android.net.VpnService
 import android.os.Build
 import android.os.Handler
@@ -14,6 +17,9 @@ import android.os.Looper
 import android.os.ParcelFileDescriptor
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import io.github.mr1ve3r.combined.core.trust.store.TrustStore
+import io.github.mr1ve3r.combined.core.tunnel.NetworkEvent
+import io.github.mr1ve3r.combined.core.tunnel.NetworkMonitor
 import io.github.mr1ve3r.combined.core.tunnel.PackageNotInstalledException
 import io.github.mr1ve3r.combined.core.tunnel.PerAppRouting
 import io.github.mr1ve3r.combined.core.tunnel.SocketProtectorImpl
@@ -24,8 +30,13 @@ import io.github.mr1ve3r.combined.core.tunnel.VpnServiceTunnelInterface
 import io.github.mr1ve3r.combined.engine.EngineException
 import io.github.mr1ve3r.combined.engine.EngineProfile
 import io.github.mr1ve3r.combined.engine.EngineState
+import io.github.mr1ve3r.combined.engine.LogLevel
+import io.github.mr1ve3r.combined.engine.Protocol
+import io.github.mr1ve3r.combined.engine.VpnEngine
 import io.github.mr1ve3r.combined.engine.l2tp.L2tpEngine
 import io.github.mr1ve3r.combined.engine.l2tp.L2tpNativeCallbacks
+import io.github.mr1ve3r.combined.engine.sstp.SstpEngine
+import io.github.mr1ve3r.combined.engine.sstp.TrustStoreCertificateSource
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -38,6 +49,7 @@ import java.net.DatagramSocket
 import java.net.InetAddress
 import java.net.Socket
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 
 /** Foreground [VpnService]: TUN, notification, native tunnel thread. */
 @Keep
@@ -66,14 +78,26 @@ class TunnelVpnService : VpnService() {
      * still a thread, but it belongs to the engine now; what the service tracks
      * is the engine itself (SPEC phase 4.1.1).
      */
-    private var activeEngine: L2tpEngine? = null
+    private var activeEngine: VpnEngine? = null
     private var engineWatcher: CoroutineScope? = null
+
+    /**
+     * The request the current session was started from, kept so a reconnect can
+     * repeat it without the app being involved (SPEC 7.1, В.4).
+     */
+    private var activeRequest: TunnelStartRequest? = null
+    private var eventWatcher: CoroutineScope? = null
+    private var networkWatcher: CoroutineScope? = null
+    private var connectedNetwork: Network? = null
+    private val reconnectAttempts = AtomicInteger(0)
     private var vpnDnsPacketBridge: VpnDnsPacketBridge? = null
     private var localProxyRuntime: ProxyServerRuntime? = null
     private var activeAttemptId: String = ""
     private var activeProxyConfig: ProxyRuntimeConfig? = null
     private var activeServer: String = ""
     private var activeProfileName: String? = null
+    private var activeProtocol: TunnelProtocol = TunnelProtocol.L2TP
+    private var connectedSince: Long = 0L
 
     private fun cancelPendingStopSelf() {
         mainHandler.removeCallbacks(pendingStopSelfRunnable)
@@ -112,6 +136,35 @@ class TunnelVpnService : VpnService() {
         }
         instance = null
         super.onDestroy()
+    }
+
+    /**
+     * The user revoked the VPN permission, or another VPN replaced this one.
+     *
+     * Android has already torn the interface down by the time this runs; what
+     * is left is to stop the engine, release everything and tell the UI, which
+     * upstream never did — the app went on showing a connected tunnel that no
+     * longer existed (SPEC 7.1.6).
+     */
+    override fun onRevoke() {
+        val attemptId = currentAttemptId()
+        VpnTunnelEvents.emitEngineLog(
+            Log.WARN,
+            TAG,
+            "${prefixAttempt(attemptId)}VPN permission revoked; stopping the tunnel",
+        )
+        cancelPendingStopSelf()
+        if (hasActiveSession()) {
+            stopTunnelInternal()
+        }
+        VpnTunnelEvents.emit(VpnContract.TUNNEL_STOPPED, "VPN permission was revoked.", attemptId)
+        try {
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            stopSelf()
+        } catch (e: Exception) {
+            AppLog.w(TAG, "stopSelf after revoke", e)
+        }
+        super.onRevoke()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -209,42 +262,30 @@ class TunnelVpnService : VpnService() {
                     )
                     stopTunnelInternal()
                 }
-                activeAttemptId = attemptId
-                activeProxyConfig = proxyConfig
-                activeServer = server
-                activeProfileName = profileName.ifEmpty { null }
+                val protocol = TunnelProtocol.fromWireValue(intent.getStringExtra(EXTRA_PROTOCOL))
+                val request =
+                    TunnelStartRequest(
+                        attemptId = attemptId,
+                        protocol = protocol,
+                        profile = engineProfileFrom(intent, protocol, server, user, password, psk, tunMtu),
+                        profileName = profileName.ifEmpty { null },
+                        dnsAutomatic = dnsAutomatic,
+                        dnsServers = dnsServers,
+                        splitTunnelEnabled = splitTunnelEnabled,
+                        splitTunnelMode = splitTunnelMode,
+                        inclusivePackages = inclusivePackages,
+                        exclusivePackages = exclusivePackages,
+                        proxyConfig = proxyConfig,
+                    )
+                beginSession(request)
                 RuntimeEnvironmentInfo.emit(this, TAG, prefixAttempt(attemptId), mode = VpnContract.MODE_VPN_TUNNEL)
                 VpnTunnelEvents.emitEngineLog(
                     Log.DEBUG,
                     TAG,
-                    "${prefixAttempt(attemptId)}ACTION_START accepted server=$server userPresent=${user.isNotEmpty()} pskPresent=${psk.isNotEmpty()} dnsMode=${if (dnsAutomatic) "automatic" else "manual"} dns=${dnsServers.joinToString(",") { "${it.host}[${it.protocol.shortLabel}]" }} mtu=$tunMtu splitTunnelEnabled=$splitTunnelEnabled splitTunnelMode=$splitTunnelMode inclusiveApps=${inclusivePackages?.size ?: 0} exclusiveApps=${exclusivePackages?.size ?: 0} http=${proxyConfig.httpPort} socks=${proxyConfig.socksPort} lan=${if (proxyAllowLan) "on" else "off"}",
+                    "${prefixAttempt(attemptId)}ACTION_START accepted protocol=${protocol.wireValue} server=$server userPresent=${user.isNotEmpty()} pskPresent=${psk.isNotEmpty()} dnsMode=${if (dnsAutomatic) "automatic" else "manual"} dns=${dnsServers.joinToString(",") { "${it.host}[${it.protocol.shortLabel}]" }} mtu=$tunMtu splitTunnelEnabled=$splitTunnelEnabled splitTunnelMode=$splitTunnelMode inclusiveApps=${inclusivePackages?.size ?: 0} exclusiveApps=${exclusivePackages?.size ?: 0} http=${proxyConfig.httpPort} socks=${proxyConfig.socksPort} lan=${if (proxyAllowLan) "on" else "off"}",
                 )
                 // TUN establish() can block; do not hold up onStartCommand after startForeground.
-                val startupThread =
-                    Thread(
-                        {
-                            startTunnel(
-                                attemptId,
-                                server,
-                                user,
-                                password,
-                                psk,
-                                dnsAutomatic,
-                                dnsServers,
-                                tunMtu,
-                                splitTunnelEnabled,
-                                splitTunnelMode,
-                                inclusivePackages,
-                                exclusivePackages,
-                                proxyConfig,
-                            )
-                        },
-                        "tun-setup",
-                    )
-                synchronized(sessionLock) {
-                    setupThread = startupThread
-                }
-                startupThread.start()
+                startSetupThread(request)
                 return START_STICKY
             }
             else -> {
@@ -305,26 +346,21 @@ class TunnelVpnService : VpnService() {
         }
     }
 
-    private fun startTunnel(
-        attemptId: String,
-        server: String,
-        user: String,
-        password: String,
-        psk: String,
-        dnsAutomatic: Boolean,
-        dnsServers: List<DnsServerConfig>,
-        tunMtu: Int,
-        splitTunnelEnabled: Boolean,
-        splitTunnelMode: String,
-        inclusivePackages: ArrayList<String>?,
-        exclusivePackages: ArrayList<String>?,
-        proxyConfig: ProxyRuntimeConfig,
-    ) {
+    private fun startTunnel(request: TunnelStartRequest) {
+        val attemptId = request.attemptId
+        val protocol = request.protocol
+        val dnsAutomatic = request.dnsAutomatic
+        val dnsServers = request.dnsServers
+        val splitTunnelEnabled = request.splitTunnelEnabled
+        val splitTunnelMode = request.splitTunnelMode
+        val inclusivePackages = request.inclusivePackages
+        val exclusivePackages = request.exclusivePackages
+        val proxyConfig = request.proxyConfig
         val currentSetupThread = Thread.currentThread()
         val nativeOwner = nativeOwner(attemptId)
         var nativeOwnerAcquired = false
         var nativeLoopStarted = false
-        var startedEngine: L2tpEngine? = null
+        var startedEngine: VpnEngine? = null
         try {
             cancelPendingStopSelf()
             if (running.getAndSet(true)) {
@@ -379,11 +415,15 @@ class TunnelVpnService : VpnService() {
                 TAG,
                 "${prefixAttempt(attemptId)}Starting native negotiation (IKE/L2TP/PPP)",
             )
+            // Only the L2TP engine drives the native poll loop, and only one
+            // owner of it may exist. An SSTP session never touches it, so it
+            // must not queue behind it either.
             nativeOwnerAcquired =
-                NativeTunnelSessions.shared.acquire(
-                    nativeOwner,
-                    reason = "vpn negotiation start",
-                )
+                protocol != TunnelProtocol.L2TP ||
+                    NativeTunnelSessions.shared.acquire(
+                        nativeOwner,
+                        reason = "vpn negotiation start",
+                    )
             if (!nativeOwnerAcquired) {
                 emitAttemptState(attemptId, VpnContract.TUNNEL_FAILED, "Tunnel engine is still stopping; try again.")
                 running.set(false)
@@ -393,14 +433,15 @@ class TunnelVpnService : VpnService() {
             // Phase 1: negotiate IKE+L2TP+PPP on the real network (no VPN tunnel
             // yet). The engine owns that path now; what comes back is what the
             // server agreed to, and the TUN is still this service's to build.
-            val engine = L2tpEngine(VpnBridgeL2tpNative)
+            val engine = createEngine(request.profile)
             startedEngine = engine
             synchronized(sessionLock) { activeEngine = engine }
+            watchEngineEvents(engine)
             val negotiatedParams =
                 try {
                     runBlocking {
                         engine.connect(
-                            profile = l2tpProfile(server, user, password, psk, tunMtu),
+                            profile = request.profile,
                             protector = engineProtector(attemptId),
                         )
                     }
@@ -460,7 +501,30 @@ class TunnelVpnService : VpnService() {
             if (!shouldHandleAttempt(attemptId, "pre-tun-establish")) {
                 return
             }
-            if (!dnsAutomatic) {
+            // The manual-DNS bridge answers packets the *native* loop diverts to
+            // a virtual resolver, so it exists only on the L2TP path. An SSTP
+            // session has no native loop to divert anything, and puts the user's
+            // resolvers on the interface directly (SPEC В.12).
+            if (!dnsAutomatic && protocol != TunnelProtocol.L2TP) {
+                val unsupported = manualDnsServers.filter { it.protocol != DnsProtocol.dnsOverUdp }
+                if (unsupported.isNotEmpty()) {
+                    emitAttemptState(
+                        attemptId,
+                        VpnContract.TUNNEL_FAILED,
+                        "This protocol supports plain UDP DNS servers only; " +
+                            "${unsupported.joinToString(", ") { it.protocol.displayLabel }} cannot be used yet.",
+                    )
+                    VpnTunnelEvents.emitEngineLog(
+                        Log.ERROR,
+                        TAG,
+                        "${prefixAttempt(attemptId)}Rejected start: manual DNS protocol not supported on ${protocol.wireValue} " +
+                            "protocols=${unsupported.joinToString(",") { it.protocol.shortLabel }}",
+                    )
+                    running.set(false)
+                    stopServiceForAttempt(attemptId)
+                    return
+                }
+            } else if (!dnsAutomatic) {
                 val dnsLogger = { level: Int, message: String ->
                     VpnTunnelEvents.emitEngineLog(level, TAG, "${prefixAttempt(attemptId)}$message")
                 }
@@ -498,7 +562,7 @@ class TunnelVpnService : VpnService() {
                     TAG,
                     "${prefixAttempt(attemptId)}Manual DNS upstream sockets are protected and routed outside the VPN to avoid DNS routing loops.",
                 )
-            } else {
+            } else if (protocol == TunnelProtocol.L2TP) {
                 VpnBridge.nativeSetVpnDnsInterceptIpv4(null)
             }
             // Everything except DNS is what the engine negotiated. DNS is the one
@@ -506,7 +570,13 @@ class TunnelVpnService : VpnService() {
             // the server's resolvers with the virtual one the bridge answers on.
             val tunnelParams =
                 negotiatedParams.copy(
-                    dnsServers = tunDnsServers(dnsAutomatic, negotiatedParams.dnsServers),
+                    dnsServers =
+                        tunDnsServers(
+                            dnsAutomatic = dnsAutomatic,
+                            protocol = protocol,
+                            negotiatedDnsServers = negotiatedParams.dnsServers,
+                            manualDnsServers = manualDnsServers,
+                        ),
                 )
             val tunnelConfig =
                 TunnelConfig(
@@ -618,7 +688,7 @@ class TunnelVpnService : VpnService() {
                         }
                     }
                 }
-                if (nativeOwnerAcquired) {
+                if (nativeOwnerAcquired && protocol == TunnelProtocol.L2TP) {
                     NativeTunnelSessions.shared.stopOwner(nativeOwner, reason = "vpn startup ended before loop")
                     NativeTunnelSessions.shared.release(nativeOwner, reason = "vpn startup ended before loop")
                 }
@@ -628,13 +698,207 @@ class TunnelVpnService : VpnService() {
     }
 
     /**
+     * Records a session's parameters before its setup thread starts.
+     *
+     * Called from `ACTION_START` and again from a reconnect, which is why it is
+     * one function: a reconnect that forgot one of these fields would leave the
+     * notification or the runtime snapshot describing the previous session.
+     */
+    private fun beginSession(request: TunnelStartRequest) {
+        synchronized(sessionLock) {
+            activeAttemptId = request.attemptId
+            activeRequest = request
+        }
+        activeProxyConfig = request.proxyConfig
+        activeServer = request.profile.server
+        activeProfileName = request.profileName
+        activeProtocol = request.protocol
+        VpnTunnelEvents.sessionProtocol = request.protocol.engineProtocol
+    }
+
+    /** TUN establish() can block; keep it off the thread that called us. */
+    private fun startSetupThread(request: TunnelStartRequest) {
+        val thread = Thread({ startTunnel(request) }, "tun-setup")
+        synchronized(sessionLock) {
+            setupThread = thread
+        }
+        thread.start()
+    }
+
+    /**
+     * The engine for [profile] — the whole protocol dispatch of this service
+     * (SPEC 7.1.1).
+     *
+     * Everything after this point is written against [VpnEngine], which is what
+     * lets one host serve both protocols.
+     */
+    private fun createEngine(profile: EngineProfile): VpnEngine =
+        when (profile) {
+            is EngineProfile.L2tp -> L2tpEngine(VpnBridgeL2tpNative)
+            is EngineProfile.Sstp ->
+                SstpEngine(
+                    certificates = TrustStoreCertificateSource(TrustStore.get(applicationContext)),
+                    // The INSECURE policy must not be honoured by a release
+                    // build (SPEC 5.5).
+                    allowInsecureTrust = (applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0,
+                )
+        }
+
+    /**
+     * The profile the start intent describes.
+     *
+     * Unknown protocols read as L2TP, because that is what every request
+     * written before this field existed meant.
+     */
+    private fun engineProfileFrom(
+        intent: Intent,
+        protocol: TunnelProtocol,
+        server: String,
+        user: String,
+        password: String,
+        psk: String,
+        tunMtu: Int,
+    ): EngineProfile =
+        when (protocol) {
+            TunnelProtocol.L2TP -> EngineProfiles.l2tp(server, user, password, psk, tunMtu)
+            TunnelProtocol.SSTP ->
+                EngineProfiles.sstp(
+                    server = server,
+                    username = user,
+                    password = password,
+                    mtu = tunMtu,
+                    port = intent.getIntExtra(EXTRA_SSTP_PORT, EngineProfile.Sstp.DEFAULT_PORT),
+                    trustPolicy = intent.getStringExtra(EXTRA_SSTP_TRUST_POLICY),
+                    trustedCertificateIds = intent.getStringArrayListExtra(EXTRA_SSTP_CERTIFICATE_IDS),
+                    pinnedFingerprints = intent.getStringArrayListExtra(EXTRA_SSTP_PINNED_FINGERPRINTS),
+                    expectedHostname = intent.getStringExtra(EXTRA_SSTP_EXPECTED_HOSTNAME),
+                    minTlsVersion = intent.getStringExtra(EXTRA_SSTP_MIN_TLS_VERSION),
+                    pppAuthMethods = intent.getStringArrayListExtra(EXTRA_SSTP_AUTH_METHODS),
+                    proxy =
+                        EngineProfiles.proxy(
+                            host = intent.getStringExtra(EXTRA_SSTP_PROXY_HOST),
+                            port = intent.getIntExtra(EXTRA_SSTP_PROXY_PORT, EngineProfiles.DEFAULT_PROXY_PORT),
+                            username = intent.getStringExtra(EXTRA_SSTP_PROXY_USERNAME),
+                            password = intent.getStringExtra(EXTRA_SSTP_PROXY_PASSWORD),
+                        ),
+                )
+        }
+
+    /**
+     * Copies the engine's own log stream into the single buffer the UI reads
+     * (SPEC 7.1.7).
+     *
+     * L2TP is deliberately not copied: its lines already reach the buffer from
+     * the JNI bridge, which forwards them whether or not an engine is
+     * registered, and copying them here would double every native line.
+     */
+    private fun watchEngineEvents(engine: VpnEngine) {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        synchronized(sessionLock) {
+            eventWatcher?.cancel()
+            eventWatcher = scope
+        }
+        scope.launch {
+            engine.events.collect { event ->
+                if (event.protocol == Protocol.L2TP) return@collect
+                VpnTunnelEvents.emitEngineLog(
+                    priority = androidPriorityOf(event.level),
+                    tag = event.tag,
+                    message = event.message,
+                    protocol = event.protocol,
+                )
+            }
+        }
+    }
+
+    /**
+     * Reconnects the session when the active network is replaced.
+     *
+     * This lives in the host rather than in an engine because the answer is the
+     * same for both protocols, and because the engine that was talking over the
+     * old network is exactly the thing that has to be thrown away (SPEC В.4).
+     * Before this existed, a Wi-Fi to LTE switch left the L2TP engine sending
+     * ESP through a socket bound to a route that no longer resolved, which is
+     * finding В.7.
+     */
+    private fun watchNetwork(attemptId: String) {
+        val manager = getSystemService(ConnectivityManager::class.java) ?: return
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        synchronized(sessionLock) {
+            networkWatcher?.cancel()
+            networkWatcher = scope
+            connectedNetwork = manager.activeNetwork
+        }
+        val triggered = AtomicBoolean(false)
+        scope.launch {
+            NetworkMonitor(manager).events().collect { event ->
+                if (event !is NetworkEvent.Available) return@collect
+                val previous = synchronized(sessionLock) { connectedNetwork }
+                if (previous == null) {
+                    synchronized(sessionLock) { connectedNetwork = event.network }
+                    return@collect
+                }
+                if (event.network == previous) return@collect
+                if (!triggered.compareAndSet(false, true)) return@collect
+                mainHandler.post { requestReconnect(attemptId, "network changed to ${event.transport}") }
+            }
+        }
+    }
+
+    /** Tears the session down and starts it again from the stored request. */
+    private fun requestReconnect(attemptId: String, reason: String) {
+        val request =
+            synchronized(sessionLock) {
+                if (activeAttemptId == attemptId) activeRequest else null
+            } ?: return
+        val attempt = reconnectAttempts.incrementAndGet()
+        VpnTunnelEvents.emitEngineLog(
+            Log.WARN,
+            TAG,
+            "${prefixAttempt(attemptId)}Reconnecting attempt=$attempt reason=$reason",
+        )
+        if (attempt > MAX_RECONNECT_ATTEMPTS) {
+            emitAttemptState(
+                attemptId,
+                VpnContract.TUNNEL_FAILED,
+                "The network kept changing; gave up after $MAX_RECONNECT_ATTEMPTS reconnect attempts.",
+            )
+            stopTunnelInternal()
+            stopServiceForAttempt(attemptId)
+            return
+        }
+        emitAttemptState(
+            attemptId,
+            VpnContract.TUNNEL_RECONNECTING,
+            "Network changed; reconnecting (attempt $attempt)...",
+        )
+        updateForegroundNotification(getString(R.string.vpn_notification_connecting))
+        Thread(
+            {
+                stopTunnelInternal(preserveSession = true)
+                try {
+                    Thread.sleep(reconnectDelayMs(attempt))
+                } catch (e: InterruptedException) {
+                    Thread.currentThread().interrupt()
+                    return@Thread
+                }
+                val stillCurrent = synchronized(sessionLock) { activeRequest === request }
+                if (!stillCurrent) return@Thread
+                beginSession(request)
+                startSetupThread(request)
+            },
+            "tun-reconnect",
+        ).start()
+    }
+
+    /**
      * Turns the engine's state into the tunnel events the app already speaks.
      *
      * This is what the poll-loop thread's own `finally` block used to do. The
      * engine reaches a terminal state exactly once per session, so the watcher
      * stops itself as soon as it sees one.
      */
-    private fun watchEngine(attemptId: String, engine: L2tpEngine) {
+    private fun watchEngine(attemptId: String, engine: VpnEngine) {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         synchronized(sessionLock) {
             engineWatcher?.cancel()
@@ -669,10 +933,13 @@ class TunnelVpnService : VpnService() {
      * Always release TUN + worker state. Safe when the engine thread already cleared [running]
      * (otherwise [onDestroy] would return early and leak the VPN fd).
      */
-    private fun stopTunnelInternal() {
+    private fun stopTunnelInternal(preserveSession: Boolean = false) {
         val capturedSetupThread = setupThread
         val capturedAttemptId = synchronized(sessionLock) { activeAttemptId }
-        val owner = capturedAttemptId.takeIf { it.isNotEmpty() }?.let(::nativeOwner)
+        val owner =
+            capturedAttemptId
+                .takeIf { it.isNotEmpty() && activeProtocol == TunnelProtocol.L2TP }
+                ?.let(::nativeOwner)
         NativeTunnelSessions.shared.stopOwner(owner, reason = "vpn service stop")
         try {
             if (capturedSetupThread != null && capturedSetupThread !== Thread.currentThread()) {
@@ -695,6 +962,11 @@ class TunnelVpnService : VpnService() {
             }
             engineWatcher?.cancel()
             engineWatcher = null
+            eventWatcher?.cancel()
+            eventWatcher = null
+            networkWatcher?.cancel()
+            networkWatcher = null
+            connectedNetwork = null
         }
         try {
             tunInterface?.close()
@@ -708,12 +980,20 @@ class TunnelVpnService : VpnService() {
         vpnDnsPacketBridge = null
         VpnBridge.nativeSetVpnDnsInterceptIpv4(null)
         stopLocalProxyRuntime()
-        synchronized(sessionLock) {
-            activeAttemptId = ""
+        // A reconnect keeps the session: same attempt id, same request, same
+        // notification. Only the engine and the interface are thrown away.
+        if (!preserveSession) {
+            synchronized(sessionLock) {
+                activeAttemptId = ""
+                activeRequest = null
+            }
+            activeProxyConfig = null
+            activeServer = ""
+            activeProfileName = null
+            reconnectAttempts.set(0)
+            connectedSince = 0L
+            VpnTunnelEvents.sessionProtocol = null
         }
-        activeProxyConfig = null
-        activeServer = ""
-        activeProfileName = null
         connectedEmitted.set(false)
         running.set(false)
         owner?.let {
@@ -727,6 +1007,11 @@ class TunnelVpnService : VpnService() {
         synchronized(sessionLock) {
             activeEngine = null
             engineWatcher = null
+            eventWatcher?.cancel()
+            eventWatcher = null
+            networkWatcher?.cancel()
+            networkWatcher = null
+            connectedNetwork = null
         }
         running.set(false)
         try {
@@ -755,7 +1040,13 @@ class TunnelVpnService : VpnService() {
         activeServer = ""
         activeProfileName = null
         connectedEmitted.set(false)
-        NativeTunnelSessions.shared.release(nativeOwner(attemptId), reason = "vpn loop finished")
+        reconnectAttempts.set(0)
+        connectedSince = 0L
+        VpnTunnelEvents.sessionProtocol = null
+        synchronized(sessionLock) { activeRequest = null }
+        if (activeProtocol == TunnelProtocol.L2TP) {
+            NativeTunnelSessions.shared.release(nativeOwner(attemptId), reason = "vpn loop finished")
+        }
         schedulePendingStopSelf()
     }
 
@@ -766,7 +1057,7 @@ class TunnelVpnService : VpnService() {
      * report from a session that has already been replaced is dropped by the
      * engine identity check rather than by comparing worker threads.
      */
-    private fun handleTunnelReady(attemptId: String, engine: L2tpEngine) {
+    private fun handleTunnelReady(attemptId: String, engine: VpnEngine) {
         if (synchronized(sessionLock) { activeEngine } !== engine) {
             AppLog.w(TAG, "Ignoring tunnel ready from a superseded engine")
             return
@@ -793,6 +1084,9 @@ class TunnelVpnService : VpnService() {
         if (!connectedEmitted.compareAndSet(false, true)) {
             return
         }
+        connectedSince = System.currentTimeMillis()
+        reconnectAttempts.set(0)
+        watchNetwork(attemptId)
         emitAttemptState(attemptId, VpnContract.TUNNEL_CONNECTED, TUNNEL_READY_DETAIL)
         updateForegroundNotification(connectedNotificationText())
     }
@@ -876,33 +1170,6 @@ class TunnelVpnService : VpnService() {
     }
 
     /**
-     * The intent's arguments as the engine contract expects them.
-     *
-     * IPsec is always on for this path: the native engine has no plain-L2TP
-     * mode, and the identity and proposal fields have no native equivalent yet.
-     * The engine logs a warning if a profile ever sets them.
-     */
-    private fun l2tpProfile(
-        server: String,
-        user: String,
-        password: String,
-        psk: String,
-        tunMtu: Int,
-    ): EngineProfile.L2tp =
-        EngineProfile.L2tp(
-            server = server,
-            username = user,
-            password = password,
-            mtu = tunMtu,
-            customDns = emptyList(),
-            ipsecEnabled = true,
-            presharedKey = psk,
-            localIdentifier = null,
-            phase1Proposals = emptyList(),
-            phase2Proposals = emptyList(),
-        )
-
-    /**
      * The engine's only route to `VpnService.protect()`.
      *
      * Handing this over instead of the service is what stops an engine reaching
@@ -943,7 +1210,16 @@ class TunnelVpnService : VpnService() {
         )
     }
 
-    private fun buildNotification(text: String): Notification {
+    private fun buildNotification(text: String): Notification = buildNotification(text, showTimer = false)
+
+    /**
+     * The one notification both protocols share (SPEC 7.1.3).
+     *
+     * @param showTimer whether to run the session timer. The platform's own
+     *   chronometer is used rather than a ticking update, so the elapsed time
+     *   stays right without the service waking up once a second.
+     */
+    private fun buildNotification(text: String, showTimer: Boolean): Notification {
         createChannelIfNeeded()
         val launchIntent = packageManager.getLaunchIntentForPackage(packageName)
         val pending = PendingIntent.getActivity(
@@ -957,6 +1233,9 @@ class TunnelVpnService : VpnService() {
             .setContentText(text)
             .setSmallIcon(android.R.drawable.ic_lock_lock)
             .setContentIntent(pending)
+            .setShowWhen(showTimer)
+            .setUsesChronometer(showTimer)
+            .apply { if (showTimer && connectedSince > 0L) setWhen(connectedSince) }
             .addAction(
                 0,
                 getString(R.string.vpn_notification_action_disconnect),
@@ -981,11 +1260,15 @@ class TunnelVpnService : VpnService() {
     }
 
     private fun updateForegroundNotification(text: String) {
-        startForegroundWithType(buildNotification(text))
+        startForegroundWithType(buildNotification(text, showTimer = connectedSince > 0L))
     }
 
+    /**
+     * What the notification says while connected: protocol, then the profile
+     * name or the server it is talking to.
+     */
     private fun connectedNotificationText(): String {
-        val label = activeProfileName?.takeIf { it.isNotEmpty() } ?: activeServer
+        val label = notificationLabel(activeProtocol, activeProfileName, activeServer)
         return if (label.isEmpty()) {
             getString(R.string.vpn_notification_connected)
         } else {
@@ -1039,6 +1322,18 @@ class TunnelVpnService : VpnService() {
         const val EXTRA_PROXY_HTTP_PORT = "proxyHttpPort"
         const val EXTRA_PROXY_SOCKS_PORT = "proxySocksPort"
         const val EXTRA_PROXY_ALLOW_LAN = "proxyAllowLan"
+        const val EXTRA_PROTOCOL = "protocol"
+        const val EXTRA_SSTP_PORT = "sstpPort"
+        const val EXTRA_SSTP_TRUST_POLICY = "sstpTrustPolicy"
+        const val EXTRA_SSTP_CERTIFICATE_IDS = "sstpCertificateIds"
+        const val EXTRA_SSTP_PINNED_FINGERPRINTS = "sstpPinnedFingerprints"
+        const val EXTRA_SSTP_EXPECTED_HOSTNAME = "sstpExpectedHostname"
+        const val EXTRA_SSTP_MIN_TLS_VERSION = "sstpMinTlsVersion"
+        const val EXTRA_SSTP_AUTH_METHODS = "sstpAuthMethods"
+        const val EXTRA_SSTP_PROXY_HOST = "sstpProxyHost"
+        const val EXTRA_SSTP_PROXY_PORT = "sstpProxyPort"
+        const val EXTRA_SSTP_PROXY_USERNAME = "sstpProxyUsername"
+        const val EXTRA_SSTP_PROXY_PASSWORD = "sstpProxyPassword"
 
         private const val CHANNEL_ID = "tunnel_forge_vpn"
         private const val NOTIFICATION_ID = 7101
@@ -1060,7 +1355,49 @@ class TunnelVpnService : VpnService() {
          */
         private const val TUNNEL_READY_DETAIL = "TUN interface ready; tunnel loop active"
 
+        /**
+         * How many times a session may rebuild itself after a network change
+         * before it gives up.
+         *
+         * A handful, not forever: a device wandering between two access points
+         * would otherwise reconnect in a loop the user cannot see the end of.
+         */
+        internal const val MAX_RECONNECT_ATTEMPTS = 5
+
         fun sanitizeMtu(value: Int): Int = value.coerceIn(MIN_TUN_MTU, MAX_TUN_MTU)
+
+        /**
+         * How long to wait before reconnect [attempt].
+         *
+         * Doubling, capped: the first switch is usually usable immediately, and
+         * the cases that are not are the ones where the new network needs a
+         * moment to finish coming up.
+         */
+        internal fun reconnectDelayMs(attempt: Int): Long =
+            (1_000L shl (attempt - 1).coerceIn(0, 3)).coerceAtMost(8_000L)
+
+        /** An engine's severity as the Android log levels the UI already speaks. */
+        internal fun androidPriorityOf(level: LogLevel): Int =
+            when (level) {
+                LogLevel.DEBUG -> Log.DEBUG
+                LogLevel.INFO -> Log.INFO
+                LogLevel.WARN -> Log.WARN
+                LogLevel.ERROR -> Log.ERROR
+            }
+
+        /**
+         * The connected notification's subject: the protocol, and the profile
+         * name when there is one, otherwise the server.
+         */
+        internal fun notificationLabel(
+            protocol: TunnelProtocol,
+            profileName: String?,
+            server: String,
+        ): String {
+            val subject = profileName?.takeIf { it.isNotEmpty() } ?: server
+            if (subject.isEmpty()) return ""
+            return "${protocol.displayLabel} · $subject"
+        }
 
         private fun normalizedPackages(packages: List<String>?): List<String> =
             packages
@@ -1156,12 +1493,14 @@ class TunnelVpnService : VpnService() {
          */
         internal fun tunDnsServers(
             dnsAutomatic: Boolean,
+            protocol: TunnelProtocol,
             negotiatedDnsServers: List<InetAddress>,
+            manualDnsServers: List<ResolvedDnsServerConfig> = emptyList(),
         ): List<InetAddress> =
-            if (dnsAutomatic) {
-                negotiatedDnsServers
-            } else {
-                listOf(InetAddress.getByName(MANUAL_DNS_VIRTUAL_IPV4))
+            when {
+                dnsAutomatic -> negotiatedDnsServers
+                protocol == TunnelProtocol.L2TP -> listOf(InetAddress.getByName(MANUAL_DNS_VIRTUAL_IPV4))
+                else -> manualDnsServers.map { InetAddress.getByName(it.resolvedIpv4) }
             }
 
         internal fun manualDnsServersFromIntent(intent: Intent): List<DnsServerConfig> {
@@ -1190,6 +1529,10 @@ class TunnelVpnService : VpnService() {
 
         @Volatile
         private var instance: TunnelVpnService? = null
+
+        /** Whether a tunnel session is up or coming up. Read by the tile. */
+        @JvmStatic
+        fun isSessionActive(): Boolean = instance?.hasActiveSession() == true
 
         @JvmStatic
         fun stopActiveSessionForModeSwitch(reason: String): Boolean {

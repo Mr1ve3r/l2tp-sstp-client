@@ -33,6 +33,18 @@ object VpnContract {
     const val ARG_DNS_SERVER_HOST = "host"
     const val ARG_DNS_SERVER_PROTOCOL = "protocol"
     const val ARG_MTU = "mtu"
+    const val ARG_PROTOCOL = "protocol"
+    const val ARG_SSTP_PORT = "sstpPort"
+    const val ARG_SSTP_TRUST_POLICY = "sstpTrustPolicy"
+    const val ARG_SSTP_CERTIFICATE_IDS = "sstpCertificateIds"
+    const val ARG_SSTP_PINNED_FINGERPRINTS = "sstpPinnedFingerprints"
+    const val ARG_SSTP_EXPECTED_HOSTNAME = "sstpExpectedHostname"
+    const val ARG_SSTP_MIN_TLS_VERSION = "sstpMinTlsVersion"
+    const val ARG_SSTP_AUTH_METHODS = "sstpAuthMethods"
+    const val ARG_SSTP_PROXY_HOST = "sstpProxyHost"
+    const val ARG_SSTP_PROXY_PORT = "sstpProxyPort"
+    const val ARG_SSTP_PROXY_USERNAME = "sstpProxyUsername"
+    const val ARG_SSTP_PROXY_PASSWORD = "sstpProxyPassword"
     const val ARG_PROFILE_NAME = "profileName"
     const val ARG_CONNECTION_MODE = "connectionMode"
     const val ARG_PROXY_HTTP_PORT = "proxyHttpPort"
@@ -66,6 +78,9 @@ object VpnContract {
     const val ARG_ENGINE_LOG_TAG = "engineLogTag"
     const val ARG_ENGINE_LOG_MESSAGE = "engineLogMessage"
 
+    /** `l2tp`, `sstp`, or absent for a line that belongs to neither. */
+    const val ARG_ENGINE_LOG_PROTOCOL = "engineLogProtocol"
+
     const val ON_PROXY_EXPOSURE_CHANGED = "onProxyExposureChanged"
 
     const val ARG_PROXY_EXPOSURE_ACTIVE = "proxyExposureActive"
@@ -83,6 +98,7 @@ object VpnContract {
 
     const val TUNNEL_CONNECTING = "connecting"
     const val TUNNEL_CONNECTED = "connected"
+    const val TUNNEL_RECONNECTING = "reconnecting"
     const val TUNNEL_FAILED = "failed"
     const val TUNNEL_STOPPED = "stopped"
 }
