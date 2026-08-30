@@ -469,16 +469,16 @@ String? _portValidationMessage(String value) {
 String? _mtuValidationMessage(String value) {
   final normalized = value.trim();
   if (normalized.isEmpty) {
-    return AppText.pick('Enter an MTU value', 'مقدار MTU را وارد کنید');
+    return AppText.current.enterMtuValue;
   }
   final mtuParsed = int.tryParse(normalized);
   if (mtuParsed == null) {
-    return AppText.pick('MTU must be a whole number', 'MTU باید عدد صحیح باشد');
+    return AppText.current.mtuMustBeWholeNumber;
   }
   if (mtuParsed < Profile.minVpnMtu || mtuParsed > Profile.maxVpnMtu) {
-    return AppText.pick(
-      'MTU must be between ${Profile.minVpnMtu} and ${Profile.maxVpnMtu}',
-      'MTU باید بین ${Profile.minVpnMtu} و ${Profile.maxVpnMtu} باشد',
+    return AppText.current.mtuMustBeBetween(
+      Profile.minVpnMtu,
+      Profile.maxVpnMtu,
     );
   }
   return null;
@@ -609,7 +609,7 @@ class ProfileFormBloc extends Bloc<ProfileFormEvent, ProfileFormState> {
           profileId: id,
           loading: false,
           clearLoadError: true,
-          displayName: AppText.pick('New profile', 'پروفایل جدید'),
+          displayName: AppText.current.newProfile,
           server: 'vpn.example.com',
           user: '',
           password: '',
@@ -643,10 +643,7 @@ class ProfileFormBloc extends Bloc<ProfileFormEvent, ProfileFormState> {
         state.copyWith(
           profileId: profileId,
           loading: false,
-          loadError: AppText.pick(
-            'This profile no longer exists.',
-            'این پروفایل دیگر وجود ندارد.',
-          ),
+          loadError: AppText.current.profileNoLongerExists,
         ),
       );
       return;
@@ -703,11 +700,7 @@ class ProfileFormBloc extends Bloc<ProfileFormEvent, ProfileFormState> {
   ) async {
     final serverTrim = state.server.trim();
     if (serverTrim.isEmpty) {
-      emit(
-        _messageState(
-          AppText.pick('Enter a server address', 'نشانی سرور را وارد کنید'),
-        ),
-      );
+      emit(_messageState(AppText.current.enterServerAddress));
       return;
     }
     final mtuErrorText = state.mtuErrorText;
@@ -781,14 +774,7 @@ class ProfileFormBloc extends Bloc<ProfileFormEvent, ProfileFormState> {
         dns2Host: state.dns2,
         dns2Protocol: state.dns2Protocol,
       ).isEmpty) {
-        emit(
-          _messageState(
-            AppText.pick(
-              'Enter at least one DNS server or enable Automatic',
-              'حداقل یک سرور DNS وارد کنید یا حالت خودکار را فعال کنید',
-            ),
-          ),
-        );
+        emit(_messageState(AppText.current.enterAtLeastOneDnsServer));
         return;
       }
     }
@@ -844,12 +830,7 @@ class ProfileFormBloc extends Bloc<ProfileFormEvent, ProfileFormState> {
       );
       emit(state.copyWith(saving: false, saved: true));
     } catch (_) {
-      emit(
-        _messageState(
-          AppText.pick('Could not save changes', 'تغییرات ذخیره نشد'),
-          saving: false,
-        ),
-      );
+      emit(_messageState(AppText.current.couldNotSaveChanges, saving: false));
     }
   }
 

@@ -304,27 +304,15 @@ class _VpnHomePageViewState extends State<_VpnHomePageView>
   Future<void> _openReleasePage(String url) {
     return _openExternalUrl(
       url,
-      invalidMessage: AppText.pick(
-        'Release page URL is invalid.',
-        'نشانی صفحه انتشار معتبر نیست.',
-      ),
-      failureMessage: AppText.pick(
-        'Could not open the release page.',
-        'صفحه انتشار باز نشد.',
-      ),
+      invalidMessage: AppText.current.releasePageUrlInvalid,
+      failureMessage: AppText.current.couldNotOpenReleasePage,
     );
   }
 
   void _handleMissingProfileTap(ProfilesState profilesState) {
     final message = profilesState.profiles.isEmpty
-        ? AppText.pick(
-            'Create a profile first. You will need a server, username, and tunnel settings before connecting.',
-            'ابتدا یک پروفایل بسازید. پیش از اتصال به سرور، نام کاربری و تنظیمات تونل نیاز دارید.',
-          )
-        : AppText.pick(
-            'Choose one of your saved profiles before connecting.',
-            'پیش از اتصال یکی از پروفایل‌های ذخیره‌شده را انتخاب کنید.',
-          );
+        ? AppText.current.createProfileFirst
+        : AppText.current.chooseSavedProfileBeforeConnecting;
     _toast(message, error: true);
     widget.locator<LogsRepository>().append(
       LogEntry(
@@ -395,11 +383,8 @@ class _VpnHomePageViewState extends State<_VpnHomePageView>
     if (visibleLogs.isEmpty) {
       _toast(
         logsState.entries.isEmpty
-            ? AppText.pick('No logs to copy', 'گزارشی برای کپی نیست')
-            : AppText.pick(
-                'No visible logs to copy',
-                'گزارش نمایانی برای کپی نیست',
-              ),
+            ? AppText.current.noLogsToCopy
+            : AppText.current.noVisibleLogsToCopy,
       );
       return;
     }
@@ -409,24 +394,14 @@ class _VpnHomePageViewState extends State<_VpnHomePageView>
       ),
     );
     final count = visibleLogs.length;
-    _toast(
-      AppText.pick(
-        'Copied $count ${count == 1 ? 'line' : 'lines'} to clipboard',
-        '$count خط در کلیپ‌بورد کپی شد',
-      ),
-    );
+    _toast(AppText.current.copiedLinesToClipboard(count));
   }
 
   Future<void> _shareDebugLogs(LogsState logsState) async {
     // Debug display level includes all severities, so export all buffered logs.
     final debugLevelLogs = logsState.entries;
     if (debugLevelLogs.isEmpty) {
-      _toast(
-        AppText.pick(
-          'No debug logs to share',
-          'گزارش دیباگی برای اشتراک‌گذاری نیست',
-        ),
-      );
+      _toast(AppText.current.noDebugLogsToShare);
       return;
     }
     final content = debugLevelLogs
@@ -450,27 +425,16 @@ class _VpnHomePageViewState extends State<_VpnHomePageView>
         ),
       );
       final count = debugLevelLogs.length;
-      _toast(
-        AppText.pick(
-          'Prepared $count ${count == 1 ? 'debug line' : 'debug lines'} for sharing',
-          '$count خط دیباگ برای اشتراک‌گذاری آماده شد',
-        ),
-      );
+      _toast(AppText.current.preparedDebugLinesForSharing(count));
     } catch (_) {
-      _toast(
-        AppText.pick(
-          'Could not share debug logs',
-          'اشتراک‌گذاری گزارش‌های دیباگ انجام نشد',
-        ),
-        error: true,
-      );
+      _toast(AppText.current.couldNotShareDebugLogs, error: true);
     }
   }
 
   void _clearLogs() {
     context.read<LogsBloc>().add(const LogsCleared());
     setState(() => _logsStickToBottom = true);
-    _toast(AppText.pick('Logs cleared', 'گزارش‌ها پاک شد'));
+    _toast(AppText.current.logsCleared);
   }
 
   String _connectButtonLabel(
@@ -876,25 +840,13 @@ class _VpnHomePageViewState extends State<_VpnHomePageView>
                     ),
                     onOpenTelegram: () => _openExternalUrl(
                       _kTelegramUrl,
-                      invalidMessage: AppText.pick(
-                        'Telegram link is invalid.',
-                        'پیوند تلگرام معتبر نیست.',
-                      ),
-                      failureMessage: AppText.pick(
-                        'Could not open Telegram.',
-                        'تلگرام باز نشد.',
-                      ),
+                      invalidMessage: AppText.current.telegramLinkInvalid,
+                      failureMessage: AppText.current.couldNotOpenTelegram,
                     ),
                     onOpenGithub: () => _openExternalUrl(
                       _kProjectGithubUrl,
-                      invalidMessage: AppText.pick(
-                        'GitHub link is invalid.',
-                        'پیوند GitHub معتبر نیست.',
-                      ),
-                      failureMessage: AppText.pick(
-                        'Could not open GitHub.',
-                        'GitHub باز نشد.',
-                      ),
+                      invalidMessage: AppText.current.githubLinkInvalid,
+                      failureMessage: AppText.current.couldNotOpenGithub,
                     ),
                     routingLocked:
                         profilesState.loading ||

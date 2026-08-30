@@ -169,7 +169,9 @@ class AppSemanticColors extends ThemeExtension<AppSemanticColors> {
 const Color _kSeedColor = AppPalette.lightPrimary;
 
 /// Shared light/dark [ThemeData] for [MaterialApp] (Material 3, neutral base).
-ThemeData appTheme(Brightness brightness, {String fontFamily = 'Estedad'}) {
+/// [fontFamily] `null` leaves the platform font in place, which is what the
+/// Russian locale needs: Estedad carries no Cyrillic (SPEC 9.1.10).
+ThemeData appTheme(Brightness brightness, {String? fontFamily = 'Estedad'}) {
   final baseTheme = ThemeData(
     brightness: brightness,
     fontFamily: fontFamily,

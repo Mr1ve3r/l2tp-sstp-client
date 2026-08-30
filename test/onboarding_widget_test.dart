@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:tunnel_forge/l10n/app_localizations.dart';
 import 'package:tunnel_forge/features/onboarding/domain/app_exit_controller.dart';
 import 'package:tunnel_forge/features/onboarding/domain/onboarding_repository.dart';
 import 'package:tunnel_forge/features/onboarding/presentation/bloc/onboarding_bloc.dart';
@@ -216,6 +217,8 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
         navigatorKey: navigatorKey,
         home: const Scaffold(body: Text('Home placeholder')),
       ),

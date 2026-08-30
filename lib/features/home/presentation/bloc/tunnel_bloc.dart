@@ -242,26 +242,12 @@ class TunnelBloc extends Bloc<TunnelEvent, TunnelState> {
     final proxyMode = request.connectionMode == ConnectionMode.proxyOnly;
     final host = request.server.trim();
     if (!proxyMode && host.isEmpty) {
-      _toast(
-        emit,
-        AppText.pick(
-          'Enter a server hostname or address',
-          'نام میزبان یا نشانی سرور را وارد کنید',
-        ),
-        error: true,
-      );
+      _toast(emit, AppText.current.enterServerHostnameOrAddress, error: true);
       _logWarning('Connect blocked: empty server', tag: 'tunnel');
       return;
     }
     if (proxyMode && request.activeProfileId == null) {
-      _toast(
-        emit,
-        AppText.pick(
-          'Select a saved profile to start local proxy',
-          'برای شروع پروکسی محلی یک پروفایل ذخیره‌شده انتخاب کنید',
-        ),
-        error: true,
-      );
+      _toast(emit, AppText.current.selectSavedProfileForProxy, error: true);
       _logWarning(
         'Connect blocked: proxy mode requires a saved profile',
         tag: 'tunnel',
@@ -269,14 +255,7 @@ class TunnelBloc extends Bloc<TunnelEvent, TunnelState> {
       return;
     }
     if (request.proxySettings.httpPort == request.proxySettings.socksPort) {
-      _toast(
-        emit,
-        AppText.pick(
-          'HTTP and SOCKS5 ports must be different',
-          'درگاه‌های HTTP و SOCKS5 باید متفاوت باشند',
-        ),
-        error: true,
-      );
+      _toast(emit, AppText.current.httpAndSocksPortsMustDiffer, error: true);
       _logWarning(
         'Connect blocked: proxy ports collide http=${request.proxySettings.httpPort} socks=${request.proxySettings.socksPort}',
         tag: 'tunnel',
@@ -290,10 +269,7 @@ class TunnelBloc extends Bloc<TunnelEvent, TunnelState> {
         splitTunnelSettings.inclusivePackages.isEmpty) {
       _toast(
         emit,
-        AppText.pick(
-          'Open "Select apps" and choose at least one app for inclusive split tunneling.',
-          '«انتخاب برنامه‌ها» را باز کنید و حداقل یک برنامه برای تونل‌سازی شامل انتخاب کنید.',
-        ),
+        AppText.current.selectAppsForInclusiveSplitTunnel,
         error: true,
       );
       _logWarning(
@@ -329,14 +305,7 @@ class TunnelBloc extends Bloc<TunnelEvent, TunnelState> {
             'VPN permission denied or cancelled attempt=$attemptId',
             tag: 'tunnel',
           );
-          _toast(
-            emit,
-            AppText.pick(
-              'VPN permission is required',
-              'مجوز وی‌پی‌ان لازم است',
-            ),
-            error: true,
-          );
+          _toast(emit, AppText.current.vpnPermissionRequired, error: true);
           emit(
             state.copyWith(
               busy: false,
@@ -402,9 +371,7 @@ class TunnelBloc extends Bloc<TunnelEvent, TunnelState> {
       _scheduleAwaitTimeout(attemptId);
       _toast(
         emit,
-        proxyMode
-            ? AppText.pick('Starting proxy...', 'در حال شروع پروکسی...')
-            : AppText.pick('Connecting...', 'در حال اتصال...'),
+        proxyMode ? AppText.current.startingProxy : AppText.current.connecting,
       );
     } on PlatformException catch (error) {
       _logError(
@@ -551,7 +518,7 @@ class TunnelBloc extends Bloc<TunnelEvent, TunnelState> {
                 ? update.detail
                 : proxyMode
                 ? t.proxyReady
-                : AppText.pick('VPN connected', 'وی‌پی‌ان متصل شد'),
+                : AppText.current.vpnConnected,
           );
         }
         break;
@@ -618,10 +585,7 @@ class TunnelBloc extends Bloc<TunnelEvent, TunnelState> {
           emit,
           engineErrorText(t, update.errorKey) ??
               (update.detail.isEmpty
-                  ? AppText.pick(
-                      'Couldn\'t establish the tunnel',
-                      'تونل برقرار نشد',
-                    )
+                  ? AppText.current.couldNotEstablishTunnel
                   : update.detail),
           error: true,
         );

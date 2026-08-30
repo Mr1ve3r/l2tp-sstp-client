@@ -39,6 +39,8 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  # Compiles lib/l10n/*.arb through l10n.yaml (SPEC 9.1.10).
+  generate: true
   fonts:
     - family: Estedad
       fonts:

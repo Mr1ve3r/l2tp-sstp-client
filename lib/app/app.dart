@@ -94,8 +94,14 @@ class _TunnelForgeAppState extends State<TunnelForgeApp> {
                     GlobalWidgetsLocalizations.delegate,
                     GlobalCupertinoLocalizations.delegate,
                   ],
-                  theme: appTheme(Brightness.light),
-                  darkTheme: appTheme(Brightness.dark),
+                  theme: appTheme(
+                    Brightness.light,
+                    fontFamily: language.fontFamily,
+                  ),
+                  darkTheme: appTheme(
+                    Brightness.dark,
+                    fontFamily: language.fontFamily,
+                  ),
                   themeMode: state.themeMode,
                   home: BlocProvider<OnboardingBloc>(
                     create: (_) =>
