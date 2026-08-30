@@ -8,4 +8,7 @@
     <string name="vpn_notification_connected_profile">Connected: %1$s</string>
     <string name="vpn_notification_action_disconnect">Disconnect</string>
     <string name="vpn_notification_channel_name">VPN</string>
+    <string name="vpn_tile_label">TunnelForge VPN</string>
+    <string name="vpn_tile_subtitle_connected">Connected</string>
+    <string name="vpn_tile_subtitle_disconnected">Tap to connect</string>
 </resources>
