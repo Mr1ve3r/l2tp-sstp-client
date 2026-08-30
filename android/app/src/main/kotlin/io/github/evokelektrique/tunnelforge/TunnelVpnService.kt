@@ -10,11 +10,13 @@ import android.content.pm.ApplicationInfo
 import android.content.pm.ServiceInfo
 import android.net.ConnectivityManager
 import android.net.Network
+import android.net.TrafficStats
 import android.net.VpnService
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.ParcelFileDescriptor
+import android.os.Process
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import io.github.mr1ve3r.combined.core.profile.ProfileStore
@@ -33,6 +35,7 @@ import io.github.mr1ve3r.combined.engine.EngineProfile
 import io.github.mr1ve3r.combined.engine.EngineState
 import io.github.mr1ve3r.combined.engine.LogLevel
 import io.github.mr1ve3r.combined.engine.Protocol
+import io.github.mr1ve3r.combined.engine.TunnelParams
 import io.github.mr1ve3r.combined.engine.VpnEngine
 import io.github.mr1ve3r.combined.engine.l2tp.L2tpEngine
 import io.github.mr1ve3r.combined.engine.l2tp.L2tpNativeCallbacks
@@ -99,6 +102,20 @@ class TunnelVpnService : VpnService() {
     private var activeProfileName: String? = null
     private var activeProtocol: TunnelProtocol = TunnelProtocol.L2TP
     private var connectedSince: Long = 0L
+
+    /** What the engine negotiated for the live session, or `null` between sessions. */
+    private var activeTunnelParams: TunnelParams? = null
+
+    /**
+     * UID traffic counters when the tunnel came up, subtracted from the current
+     * ones so the status screen shows this session rather than this boot.
+     *
+     * ponytail: counts every socket this application opens, which outside the
+     * tunnel is a connectivity check now and then. Per-interface counters would
+     * need the TUN device name, which the platform does not hand back.
+     */
+    private var trafficBaselineRx: Long = 0L
+    private var trafficBaselineTx: Long = 0L
 
     /**
      * Where a start with no arguments reads the profile store (SPEC В.13).
@@ -347,9 +364,14 @@ class TunnelVpnService : VpnService() {
         return matches
     }
 
-    private fun emitAttemptState(attemptId: String, state: String, detail: String): Boolean {
+    private fun emitAttemptState(
+        attemptId: String,
+        state: String,
+        detail: String,
+        errorKey: String? = null,
+    ): Boolean {
         if (!shouldHandleAttempt(attemptId, "state:$state")) return false
-        VpnTunnelEvents.emit(state, detail, attemptId)
+        VpnTunnelEvents.emit(state, detail, attemptId, errorKey)
         return true
     }
 
@@ -476,7 +498,12 @@ class TunnelVpnService : VpnService() {
                     )
                     return
                 } catch (e: EngineException) {
-                    emitAttemptState(attemptId, VpnContract.TUNNEL_FAILED, engineFailureDetail(e))
+                    emitAttemptState(
+                        attemptId,
+                        VpnContract.TUNNEL_FAILED,
+                        engineFailureDetail(e),
+                        errorKey = e.error.messageKey,
+                    )
                     running.set(false)
                     VpnTunnelEvents.emitEngineLog(
                         Log.ERROR,
@@ -654,6 +681,7 @@ class TunnelVpnService : VpnService() {
                 TAG,
                 "${prefixAttempt(attemptId)}TUN established; waiting for tunnel loop readiness",
             )
+            synchronized(sessionLock) { activeTunnelParams = tunnelParams }
 
             // Phase 3: hand the descriptor to the engine, which runs the ESP/L2TP
             // poll loop on its own thread. Everything the loop used to report
@@ -994,6 +1022,7 @@ class TunnelVpnService : VpnService() {
                             attemptId,
                             VpnContract.TUNNEL_FAILED,
                             state.error.detail ?: "Tunnel engine failed",
+                            errorKey = state.error.messageKey,
                         )
                         mainHandler.post { finishTunnelUiOnMain(attemptId) }
                         scope.cancel()
@@ -1047,6 +1076,7 @@ class TunnelVpnService : VpnService() {
             networkWatcher?.cancel()
             networkWatcher = null
             connectedNetwork = null
+            activeTunnelParams = null
         }
         try {
             tunInterface?.close()
@@ -1165,6 +1195,8 @@ class TunnelVpnService : VpnService() {
             return
         }
         connectedSince = System.currentTimeMillis()
+        trafficBaselineRx = TrafficStats.getUidRxBytes(Process.myUid())
+        trafficBaselineTx = TrafficStats.getUidTxBytes(Process.myUid())
         reconnectAttempts.set(0)
         watchNetwork(attemptId)
         emitAttemptState(attemptId, VpnContract.TUNNEL_CONNECTED, TUNNEL_READY_DETAIL)
@@ -1261,6 +1293,25 @@ class TunnelVpnService : VpnService() {
         }
 
     /** The text shown for a failed connection attempt. */
+    /**
+     * The live session as the status screen reads it, or `null` when the TUN
+     * interface is not up yet.
+     */
+    private fun sessionInfo(): TunnelSessionInfo? {
+        val params = synchronized(sessionLock) { activeTunnelParams } ?: return null
+        val proxyHost = (synchronized(sessionLock) { activeRequest }?.profile as? EngineProfile.Sstp)?.proxy?.host
+        return TunnelSessionInfo(
+            protocol = activeProtocol.name.lowercase(),
+            address = params.localAddress.hostAddress.orEmpty(),
+            dnsServers = params.dnsServers.mapNotNull { it.hostAddress },
+            mtu = params.mtu,
+            since = connectedSince,
+            rxBytes = (TrafficStats.getUidRxBytes(Process.myUid()) - trafficBaselineRx).coerceAtLeast(0L),
+            txBytes = (TrafficStats.getUidTxBytes(Process.myUid()) - trafficBaselineTx).coerceAtLeast(0L),
+            proxyHost = proxyHost,
+        )
+    }
+
     private fun engineFailureDetail(e: EngineException): String =
         e.error.detail ?: e.message ?: "Tunnel engine failed"
 
@@ -1693,6 +1744,7 @@ class TunnelVpnService : VpnService() {
                 attemptId = attemptId,
                 connectionMode = VpnContract.MODE_VPN_TUNNEL,
                 proxyExposure = proxyExposure,
+                session = if (connected) svc.sessionInfo() else null,
             )
         }
     }

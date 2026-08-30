@@ -699,4 +699,147 @@ extension AppStrings on AppLocalizations {
     'Could not read a certificate from $host.',
     'خواندن گواهی از $host ممکن نشد.',
   );
+
+  // Profile editor: protocol and the SSTP section (SPEC phase 9.1).
+  String get protocolLabel => AppText.pick('Protocol', 'پروتکل');
+  String get l2tpSection => 'L2TP/IPsec';
+  String get sstpSection => 'SSTP';
+  String get sstpPortLabel => AppText.pick('Port', 'درگاه');
+  String get trustPolicyLabel =>
+      AppText.pick('Certificate trust', 'اعتماد به گواهی');
+  String get trustPolicySystem =>
+      AppText.pick('System store only', 'فقط مخزن سیستم');
+  String get trustPolicySystemHelp => AppText.pick(
+    'For a certificate issued by a public authority.',
+    'برای گواهی صادرشده توسط یک مرجع عمومی.',
+  );
+  String get trustPolicySystemPlusCustom =>
+      AppText.pick('System, then selected', 'سیستم، سپس انتخاب‌شده‌ها');
+  String get trustPolicySystemPlusCustomHelp => AppText.pick(
+    'System store first; if that fails, the certificates selected below.',
+    'ابتدا مخزن سیستم؛ اگر نشد، گواهی‌های انتخاب‌شده در زیر.',
+  );
+  String get trustPolicyCustomOnly =>
+      AppText.pick('Selected only', 'فقط انتخاب‌شده‌ها');
+  String get trustPolicyCustomOnlyHelp => AppText.pick(
+    'Only the certificates selected below — a private authority of your own.',
+    'فقط گواهی‌های انتخاب‌شده در زیر — یک مرجع خصوصی خودتان.',
+  );
+  String get trustPolicyPinLeaf =>
+      AppText.pick('Pin this certificate', 'پین کردن همین گواهی');
+  String get trustPolicyPinLeafHelp => AppText.pick(
+    'Accept exactly the selected certificate by fingerprint, ignoring the chain. For a self-signed server.',
+    'دقیقا همان گواهی انتخاب‌شده را با اثر انگشت بپذیر و زنجیره را نادیده بگیر. برای سرور خودامضا.',
+  );
+  String get trustPolicyInsecure =>
+      AppText.pick('No verification', 'بدون بررسی');
+  String get trustPolicyInsecureHelp => AppText.pick(
+    'Debug builds only. Anyone on the path can read this connection.',
+    'فقط در نسخه اشکال‌زدایی. هر کسی در مسیر می‌تواند این اتصال را بخواند.',
+  );
+  String get trustedCertificates =>
+      AppText.pick('Trusted certificates', 'گواهی‌های مورد اعتماد');
+  String get trustedCertificatesEmpty => AppText.pick(
+    'No certificates in the store yet. Add one on the Server certificates screen in Settings.',
+    'هنوز گواهی‌ای در مخزن نیست. از صفحه گواهی‌های سرور در تنظیمات یکی اضافه کنید.',
+  );
+  String get expectedHostnameLabel =>
+      AppText.pick('Expected hostname', 'نام میزبان مورد انتظار');
+  String get expectedHostnameHelp => AppText.pick(
+    'Verify the certificate against this name instead of the server address. Leave empty to use the address.',
+    'گواهی به جای نشانی سرور با این نام بررسی شود. برای استفاده از نشانی، خالی بگذارید.',
+  );
+  String get minTlsVersionLabel =>
+      AppText.pick('Minimum TLS version', 'کمترین نسخه TLS');
+  String get pppAuthMethodsLabel =>
+      AppText.pick('PPP authentication', 'احراز هویت PPP');
+  String get pppAuthMethodsHelp => AppText.pick(
+    'Methods offered to the server, strongest first. EAP-MSCHAPv2 is only needed by some Windows RRAS servers.',
+    'روش‌هایی که به سرور پیشنهاد می‌شود، قوی‌ترین اول. EAP-MSCHAPv2 فقط برای برخی سرورهای RRAS ویندوز لازم است.',
+  );
+  String get httpProxySection => AppText.pick('HTTP proxy', 'پراکسی HTTP');
+  String get httpProxyHelp => AppText.pick(
+    'Reach the SSTP server through an HTTP CONNECT proxy.',
+    'رسیدن به سرور SSTP از طریق پراکسی HTTP CONNECT.',
+  );
+  String get proxyHostLabel => AppText.pick('Proxy host', 'میزبان پراکسی');
+  String get proxyPortLabel => AppText.pick('Proxy port', 'درگاه پراکسی');
+  String get proxyUsernameLabel => AppText.pick(
+    'Proxy username (optional)',
+    'نام کاربری پراکسی (اختیاری)',
+  );
+  String get proxyPasswordLabel => AppText.pick(
+    'Proxy password (optional)',
+    'گذرواژه پراکسی (اختیاری)',
+  );
+  String get showProxyPassword =>
+      AppText.pick('Show proxy password', 'نمایش گذرواژه پراکسی');
+  String get hideProxyPassword =>
+      AppText.pick('Hide proxy password', 'پنهان کردن گذرواژه پراکسی');
+  String portRangeError(int min, int max) => AppText.pick(
+    'Port must be between $min and $max',
+    'درگاه باید بین $min و $max باشد',
+  );
+  String get selectOneAuthMethod => AppText.pick(
+    'Select at least one PPP authentication method',
+    'حداقل یک روش احراز هویت PPP انتخاب کنید',
+  );
+  String get selectOneCertificate => AppText.pick(
+    'This trust setting needs at least one selected certificate',
+    'این تنظیم اعتماد به حداقل یک گواهی انتخاب‌شده نیاز دارد',
+  );
+  String get enterProxyHost =>
+      AppText.pick('Enter the proxy host', 'میزبان پراکسی را وارد کنید');
+
+  // Status screen (SPEC phase 9.7).
+  String get sessionDetails => AppText.pick('Session', 'نشست');
+  String get sessionAddress => AppText.pick('IP address', 'نشانی IP');
+  String get sessionDns => 'DNS';
+  String get sessionMtu => 'MTU';
+  String get sessionDuration => AppText.pick('Connected for', 'مدت اتصال');
+  String get sessionReceived => AppText.pick('Received', 'دریافت');
+  String get sessionSent => AppText.pick('Sent', 'ارسال');
+  String get sessionViaProxy => AppText.pick('Through proxy', 'از طریق پراکسی');
+
+  // Engine failures, keyed by EngineError.messageKey (SPEC phase 9.2).
+  String get engineErrorNetworkUnreachable => AppText.pick(
+    'The server could not be reached. Check the network and the address.',
+    'سرور در دسترس نبود. شبکه و نشانی را بررسی کنید.',
+  );
+  String get engineErrorAuthenticationFailed => AppText.pick(
+    'The server rejected the username or password.',
+    'سرور نام کاربری یا گذرواژه را نپذیرفت.',
+  );
+  String get engineErrorTlsHandshakeFailed => AppText.pick(
+    'The TLS handshake failed. The server may not speak SSTP on this port.',
+    'دست‌دهی TLS ناموفق بود. شاید سرور روی این درگاه SSTP ارائه نمی‌دهد.',
+  );
+  String get engineErrorCertificateRejected => AppText.pick(
+    'The server certificate is not trusted by this profile.',
+    'گواهی سرور مورد اعتماد این پروفایل نیست.',
+  );
+  String get engineErrorCertificateExpired => AppText.pick(
+    'The server certificate is outside its validity window.',
+    'گواهی سرور خارج از بازه اعتبار است.',
+  );
+  String get engineErrorHostnameMismatch => AppText.pick(
+    'The certificate was issued to a different name. Set the expected hostname in the profile.',
+    'گواهی برای نام دیگری صادر شده است. نام میزبان مورد انتظار را در پروفایل تنظیم کنید.',
+  );
+  String get engineErrorIpsecFailed => AppText.pick(
+    'IPsec negotiation failed. Check the pre-shared key.',
+    'مذاکره IPsec ناموفق بود. کلید از پیش اشتراکی را بررسی کنید.',
+  );
+  String get engineErrorPppNegotiationFailed => AppText.pick(
+    'PPP negotiation failed. The server may not accept the selected authentication methods.',
+    'مذاکره PPP ناموفق بود. شاید سرور روش‌های احراز هویت انتخاب‌شده را نمی‌پذیرد.',
+  );
+  String get engineErrorTimedOut => AppText.pick(
+    'The connection attempt timed out.',
+    'زمان تلاش برای اتصال به پایان رسید.',
+  );
+  String get engineErrorInternal => AppText.pick(
+    'The tunnel engine failed unexpectedly.',
+    'موتور تونل به‌طور غیرمنتظره شکست خورد.',
+  );
 }

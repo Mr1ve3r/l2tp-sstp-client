@@ -68,13 +68,20 @@ object VpnTunnelEvents {
         }
     }
 
-    fun emit(state: String, detail: String?, attemptId: String? = null) {
+    fun emit(
+        state: String,
+        detail: String?,
+        attemptId: String? = null,
+        errorKey: String? = null,
+    ) {
         invokeOnMain(
             VpnContract.ON_TUNNEL_STATE,
             mapOf(
                 VpnContract.ARG_ATTEMPT_ID to (attemptId ?: ""),
                 VpnContract.ARG_TUNNEL_STATE to state,
                 VpnContract.ARG_TUNNEL_DETAIL to (detail ?: ""),
+                VpnContract.ARG_TUNNEL_PROTOCOL to sessionProtocol?.name?.lowercase(),
+                VpnContract.ARG_TUNNEL_ERROR_KEY to errorKey,
             ),
         )
     }

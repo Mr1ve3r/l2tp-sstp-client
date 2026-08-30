@@ -10,7 +10,12 @@ import 'package:tunnel_forge/features/tunnel/domain/tunnel_runtime_state.dart';
 
 /// Host -> Dart: [VpnTunnelState] value, a human-readable [detail], and the originating [attemptId].
 typedef VpnTunnelHostCallback =
-    void Function(String state, String detail, String attemptId);
+    void Function(
+      String state,
+      String detail,
+      String attemptId, {
+      String? errorKey,
+    });
 
 /// Host -> Dart: one engine log line ([VpnContract.argEngineLogLevel] is an Android log priority).
 typedef VpnEngineLogCallback =
@@ -50,7 +55,13 @@ class VpnClient {
         final state = raw[VpnContract.argTunnelState]?.toString() ?? '';
         final detail = raw[VpnContract.argTunnelDetail]?.toString() ?? '';
         final attemptId = raw[VpnContract.argAttemptId]?.toString() ?? '';
-        _onTunnelState?.call(state, detail, attemptId);
+        final errorKey = raw[VpnContract.argTunnelErrorKey]?.toString();
+        _onTunnelState?.call(
+          state,
+          detail,
+          attemptId,
+          errorKey: errorKey == null || errorKey.isEmpty ? null : errorKey,
+        );
       }
       return;
     }
@@ -135,6 +146,7 @@ class VpnClient {
         connectionMode: mode,
         attemptId: attemptId,
         proxyExposure: exposure,
+        session: TunnelSession.tryFromMap(raw),
       );
     } on PlatformException {
       return const TunnelRuntimeState.idle();

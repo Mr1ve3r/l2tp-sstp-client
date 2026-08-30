@@ -1,6 +1,7 @@
 import 'package:equatable/equatable.dart';
 
 import 'package:tunnel_forge/features/profiles/domain/profile_models.dart';
+import 'package:tunnel_forge/features/trust/domain/trust_models.dart';
 import 'package:tunnel_forge/features/profiles/domain/profile_transfer.dart';
 import 'package:tunnel_forge/core/logging/log_entry.dart';
 import 'package:tunnel_forge/core/vpn_protocol.dart';
@@ -21,14 +22,34 @@ class ProfileSecretRow extends Equatable {
     required this.profile,
     required this.password,
     required this.psk,
+    this.proxyPassword = '',
   });
 
   final Profile profile;
   final String password;
   final String psk;
 
+  /// The HTTP proxy password of an SSTP profile (SPEC 9.1.3).
+  final String proxyPassword;
+
   @override
-  List<Object?> get props => [profile, password, psk];
+  List<Object?> get props => [profile, password, psk, proxyPassword];
+}
+
+/// The certificate store as the profile editor needs it (SPEC 9.1.2).
+class TrustOptions extends Equatable {
+  const TrustOptions({
+    this.certificates = const <ServerCertificate>[],
+    this.policies = const <TrustPolicy>[],
+  });
+
+  final List<ServerCertificate> certificates;
+
+  /// The policies this build offers; a release build omits INSECURE.
+  final List<TrustPolicy> policies;
+
+  @override
+  List<Object?> get props => [certificates, policies];
 }
 
 class TunnelHostUpdate extends Equatable {
@@ -36,14 +57,19 @@ class TunnelHostUpdate extends Equatable {
     required this.state,
     required this.detail,
     this.attemptId = '',
+    this.errorKey,
   });
 
   final String state;
   final String detail;
   final String attemptId;
 
+  /// `EngineError.messageKey` when the host reported a failure, so the message
+  /// the user reads is phrased here rather than by the engine (SPEC 9.2).
+  final String? errorKey;
+
   @override
-  List<Object?> get props => [state, detail, attemptId];
+  List<Object?> get props => [state, detail, attemptId, errorKey];
 }
 
 class EngineLogMessage extends Equatable {

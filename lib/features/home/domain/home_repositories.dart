@@ -23,6 +23,10 @@ abstract class ProfilesRepository {
     bool selectAsLastProfile = true,
   });
   Future<void> deleteProfile(String id);
+
+  /// What the SSTP section of the editor offers: the certificates in the
+  /// store, and the trust policies this build allows (SPEC 5.5, 9.1.2).
+  Future<TrustOptions> loadTrustOptions();
   Future<void> copyProfileShareLink(String id);
 
   /// Writes the profile out. Without [password] the file carries no secret;

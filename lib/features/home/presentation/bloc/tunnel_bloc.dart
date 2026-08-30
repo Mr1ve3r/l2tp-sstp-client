@@ -8,6 +8,8 @@ import 'package:tunnel_forge/features/profiles/domain/profile_models.dart';
 import 'package:tunnel_forge/l10n/app_localizations.dart';
 import 'package:tunnel_forge/core/logging/log_entry.dart';
 import 'package:tunnel_forge/features/tunnel/data/vpn_contract.dart';
+import 'package:tunnel_forge/features/tunnel/domain/engine_error_text.dart';
+import 'package:tunnel_forge/features/tunnel/domain/tunnel_runtime_state.dart';
 import '../../../home/domain/home_models.dart';
 import '../../../home/domain/home_repositories.dart';
 import '../../../home/domain/log_redaction.dart';
@@ -81,6 +83,11 @@ final class TunnelDisconnectTimedOut extends TunnelEvent {
   List<Object?> get props => [attemptId];
 }
 
+/// One reading of the live session, taken while the tunnel is up.
+final class TunnelSessionPolled extends TunnelEvent {
+  const TunnelSessionPolled();
+}
+
 class TunnelState extends Equatable {
   const TunnelState({
     this.busy = false,
@@ -92,6 +99,7 @@ class TunnelState extends Equatable {
     this.activeAttemptId,
     this.connectStartedAt,
     this.proxyExposure,
+    this.session,
     this.message,
   });
 
@@ -104,6 +112,9 @@ class TunnelState extends Equatable {
   final String? activeAttemptId;
   final DateTime? connectStartedAt;
   final ProxyExposure? proxyExposure;
+
+  /// What the running tunnel negotiated, refreshed while it is up (SPEC 9.1.7).
+  final TunnelSession? session;
   final HomeMessage? message;
 
   TunnelState copyWith({
@@ -119,6 +130,8 @@ class TunnelState extends Equatable {
     bool clearConnectStartedAt = false,
     ProxyExposure? proxyExposure,
     bool clearProxyExposure = false,
+    TunnelSession? session,
+    bool clearSession = false,
     HomeMessage? message,
     bool clearMessage = false,
   }) {
@@ -138,6 +151,7 @@ class TunnelState extends Equatable {
       proxyExposure: clearProxyExposure
           ? null
           : (proxyExposure ?? this.proxyExposure),
+      session: clearSession ? null : (session ?? this.session),
       message: clearMessage ? null : (message ?? this.message),
     );
   }
@@ -153,6 +167,7 @@ class TunnelState extends Equatable {
     activeAttemptId,
     connectStartedAt,
     proxyExposure,
+    session,
     message,
   ];
 }
@@ -166,6 +181,7 @@ class TunnelBloc extends Bloc<TunnelEvent, TunnelState> {
     on<TunnelHostStateReceived>(_onHostStateReceived);
     on<TunnelEngineLogReceived>(_onEngineLogReceived);
     on<TunnelProxyExposureReceived>(_onProxyExposureReceived);
+    on<TunnelSessionPolled>(_onSessionPolled);
     on<TunnelAwaitTimedOut>(_onAwaitTimedOut);
     on<TunnelDisconnectTimedOut>(_onDisconnectTimedOut);
   }
@@ -178,6 +194,7 @@ class TunnelBloc extends Bloc<TunnelEvent, TunnelState> {
   Future<void>? _runtimeBootstrapFuture;
   Timer? _awaitTimer;
   Timer? _disconnectTimer;
+  Timer? _sessionTimer;
   int _messageId = 0;
 
   Future<void> _onStarted(
@@ -326,6 +343,7 @@ class TunnelBloc extends Bloc<TunnelEvent, TunnelState> {
               clearActiveAttemptId: true,
               clearConnectStartedAt: true,
               clearProxyExposure: true,
+            clearSession: true,
             ),
           );
           return;
@@ -520,6 +538,7 @@ class TunnelBloc extends Bloc<TunnelEvent, TunnelState> {
             timedOutThisAttempt: false,
           ),
         );
+        _startSessionPolling();
         _logInfo(
           'Android${state.activeAttemptId == null ? '' : ' attempt=${state.activeAttemptId!}'}: ${proxyMode ? 'proxy ready' : 'TUN is up'}: ${update.detail}',
           source: LogSource.kotlin,
@@ -568,6 +587,7 @@ class TunnelBloc extends Bloc<TunnelEvent, TunnelState> {
               clearActiveAttemptId: true,
               clearConnectStartedAt: true,
               clearProxyExposure: true,
+            clearSession: true,
             ),
           );
           _logInfo(
@@ -586,6 +606,7 @@ class TunnelBloc extends Bloc<TunnelEvent, TunnelState> {
             clearActiveAttemptId: true,
             clearConnectStartedAt: true,
             clearProxyExposure: true,
+            clearSession: true,
           ),
         );
         _logError(
@@ -595,12 +616,13 @@ class TunnelBloc extends Bloc<TunnelEvent, TunnelState> {
         );
         _toast(
           emit,
-          update.detail.isEmpty
-              ? AppText.pick(
-                  'Couldn\'t establish the tunnel',
-                  'تونل برقرار نشد',
-                )
-              : update.detail,
+          engineErrorText(t, update.errorKey) ??
+              (update.detail.isEmpty
+                  ? AppText.pick(
+                      'Couldn\'t establish the tunnel',
+                      'تونل برقرار نشد',
+                    )
+                  : update.detail),
           error: true,
         );
         break;
@@ -616,6 +638,7 @@ class TunnelBloc extends Bloc<TunnelEvent, TunnelState> {
             clearActiveAttemptId: true,
             clearConnectStartedAt: true,
             clearProxyExposure: true,
+            clearSession: true,
           ),
         );
         _logInfo(
@@ -778,9 +801,12 @@ class TunnelBloc extends Bloc<TunnelEvent, TunnelState> {
         clearConnectStartedAt: connected,
         proxyExposure: runtimeState.proxyExposure,
         clearProxyExposure: runtimeState.proxyExposure == null,
+        session: runtimeState.session,
+        clearSession: runtimeState.session == null,
         clearMessage: true,
       ),
     );
+    if (connected) _startSessionPolling();
     if (connecting) {
       _scheduleAwaitTimeout(runtimeState.attemptId);
     } else {
@@ -790,6 +816,39 @@ class TunnelBloc extends Bloc<TunnelEvent, TunnelState> {
       'Recovered runtime state from Android: state=${runtimeState.state} mode=${runtimeState.connectionMode.jsonValue}${runtimeState.attemptId.isEmpty ? '' : ' attempt=${runtimeState.attemptId}'}',
       tag: 'TunnelState',
     );
+  }
+
+  /// Polls the host once a second while the tunnel is up.
+  ///
+  /// The session's byte counters and its timer move on their own; a state event
+  /// only arrives when the tunnel changes, so the status screen has to ask.
+  void _startSessionPolling() {
+    if (_sessionTimer != null) return;
+    add(const TunnelSessionPolled());
+    _sessionTimer = Timer.periodic(
+      const Duration(seconds: 1),
+      (_) => add(const TunnelSessionPolled()),
+    );
+  }
+
+  void _stopSessionPolling() {
+    _sessionTimer?.cancel();
+    _sessionTimer = null;
+  }
+
+  Future<void> _onSessionPolled(
+    TunnelSessionPolled event,
+    Emitter<TunnelState> emit,
+  ) async {
+    if (!state.tunnelUp) {
+      _stopSessionPolling();
+      if (state.session != null) emit(state.copyWith(clearSession: true));
+      return;
+    }
+    final runtimeState = await _tunnelRepository.getRuntimeState();
+    final session = runtimeState.session;
+    if (session == null) return;
+    emit(state.copyWith(session: session));
   }
 
   void _cancelAwaitTimer() {
@@ -870,6 +929,7 @@ class TunnelBloc extends Bloc<TunnelEvent, TunnelState> {
   Future<void> close() async {
     _cancelAwaitTimer();
     _cancelDisconnectTimer();
+    _stopSessionPolling();
     await _tunnelStatesSub?.cancel();
     await _engineLogsSub?.cancel();
     await _proxyExposureSub?.cancel();

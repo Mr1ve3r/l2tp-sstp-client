@@ -322,15 +322,17 @@ void main() {
       );
     });
 
-    test('tunnel state callback parses attempt id when present', () async {
+    test('tunnel state callback parses attempt id and error key', () async {
       String? seenState;
       String? seenDetail;
       String? seenAttemptId;
+      String? seenErrorKey;
       final client = VpnClient(
-        onTunnelState: (state, detail, attemptId) {
+        onTunnelState: (state, detail, attemptId, {errorKey}) {
           seenState = state;
           seenDetail = detail;
           seenAttemptId = attemptId;
+          seenErrorKey = errorKey;
         },
       );
       const codec = StandardMethodCodec();
@@ -339,6 +341,7 @@ void main() {
           VpnContract.argTunnelState: VpnTunnelState.failed,
           VpnContract.argTunnelDetail: 'L2TP handshake failed.',
           VpnContract.argAttemptId: 'attempt-2',
+          VpnContract.argTunnelErrorKey: 'engine.error.authentication_failed',
         }),
       );
       await TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
@@ -349,6 +352,7 @@ void main() {
       expect(seenState, VpnTunnelState.failed);
       expect(seenDetail, 'L2TP handshake failed.');
       expect(seenAttemptId, 'attempt-2');
+      expect(seenErrorKey, 'engine.error.authentication_failed');
     });
 
     test('setLogLevel', () async {

@@ -126,6 +126,17 @@ class ProfilesRepositoryImpl implements ProfilesRepository {
       profile: row.profile,
       password: row.password,
       psk: row.psk,
+      proxyPassword: row.proxyPassword,
+    );
+  }
+
+  @override
+  Future<TrustOptions> loadTrustOptions() async {
+    final store = _certificates;
+    if (store == null) return const TrustOptions();
+    return TrustOptions(
+      certificates: await store.list(),
+      policies: await store.policies(),
     );
   }
 
@@ -490,12 +501,13 @@ class TunnelRepositoryImpl implements TunnelRepository {
     _client =
         client ??
         VpnClient(
-          onTunnelState: (state, detail, attemptId) {
+          onTunnelState: (state, detail, attemptId, {errorKey}) {
             _tunnelStateController.add(
               TunnelHostUpdate(
                 state: state,
                 detail: detail,
                 attemptId: attemptId,
+                errorKey: errorKey,
               ),
             );
           },

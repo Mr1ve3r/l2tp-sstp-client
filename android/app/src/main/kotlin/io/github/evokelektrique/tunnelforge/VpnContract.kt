@@ -71,6 +71,27 @@ object VpnContract {
     const val ARG_TUNNEL_STATE = "tunnelState"
     const val ARG_TUNNEL_DETAIL = "tunnelDetail"
 
+    /** `l2tp`, `sstp`, or absent when no session is running (SPEC 9.1.9). */
+    const val ARG_TUNNEL_PROTOCOL = "tunnelProtocol"
+
+    /**
+     * `EngineError.messageKey` of a failure, so the app can phrase it in the
+     * user's language instead of showing the engine's technical detail
+     * (SPEC 9.2).
+     */
+    const val ARG_TUNNEL_ERROR_KEY = "tunnelErrorKey"
+
+    // What the running session negotiated, for the status screen (SPEC 9.1.7).
+    const val ARG_SESSION_ADDRESS = "sessionAddress"
+    const val ARG_SESSION_DNS = "sessionDns"
+    const val ARG_SESSION_MTU = "sessionMtu"
+    const val ARG_SESSION_SINCE = "sessionSince"
+    const val ARG_SESSION_RX_BYTES = "sessionRxBytes"
+    const val ARG_SESSION_TX_BYTES = "sessionTxBytes"
+
+    /** Host of the HTTP proxy the transport goes through, or absent. */
+    const val ARG_SESSION_PROXY_HOST = "sessionProxyHost"
+
     const val ON_ENGINE_LOG = "onEngineLog"
 
     const val ARG_ENGINE_LOG_LEVEL = "engineLogLevel"

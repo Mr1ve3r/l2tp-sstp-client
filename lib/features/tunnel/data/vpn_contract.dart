@@ -69,6 +69,21 @@ abstract final class VpnContract {
   static const String argTunnelState = 'tunnelState';
   static const String argTunnelDetail = 'tunnelDetail';
 
+  /// `l2tp`, `sstp`, or absent when no session is running (SPEC 9.1.9).
+  static const String argTunnelProtocol = 'tunnelProtocol';
+
+  /// `EngineError.messageKey` of a failure, phrased for the user on this side.
+  static const String argTunnelErrorKey = 'tunnelErrorKey';
+
+  // What the running session negotiated (SPEC 9.1.7).
+  static const String argSessionAddress = 'sessionAddress';
+  static const String argSessionDns = 'sessionDns';
+  static const String argSessionMtu = 'sessionMtu';
+  static const String argSessionSince = 'sessionSince';
+  static const String argSessionRxBytes = 'sessionRxBytes';
+  static const String argSessionTxBytes = 'sessionTxBytes';
+  static const String argSessionProxyHost = 'sessionProxyHost';
+
   /// Android -> Dart: engine log lines; [argEngineLogLevel] uses `android.util.Log` priorities.
   static const String onEngineLog = 'onEngineLog';
 
