@@ -17,6 +17,7 @@ import android.os.Looper
 import android.os.ParcelFileDescriptor
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import io.github.mr1ve3r.combined.core.profile.ProfileStore
 import io.github.mr1ve3r.combined.core.trust.store.TrustStore
 import io.github.mr1ve3r.combined.core.tunnel.NetworkEvent
 import io.github.mr1ve3r.combined.core.tunnel.NetworkMonitor
@@ -99,6 +100,15 @@ class TunnelVpnService : VpnService() {
     private var activeProtocol: TunnelProtocol = TunnelProtocol.L2TP
     private var connectedSince: Long = 0L
 
+    /**
+     * Where a start with no arguments reads the profile store (SPEC В.13).
+     *
+     * The store suspends and touches a database, which `onStartCommand` may
+     * not do. Cancelled in [onDestroy], so a profile that arrives after the
+     * service is gone starts nothing.
+     */
+    private val storeScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+
     private fun cancelPendingStopSelf() {
         mainHandler.removeCallbacks(pendingStopSelfRunnable)
     }
@@ -131,6 +141,7 @@ class TunnelVpnService : VpnService() {
 
     override fun onDestroy() {
         cancelPendingStopSelf()
+        storeScope.cancel()
         if (hasActiveSession()) {
             stopTunnelInternal()
         }
@@ -291,11 +302,21 @@ class TunnelVpnService : VpnService() {
             else -> {
                 if (intent?.action != null) {
                     AppLog.w(TAG, "Unknown action: ${intent.action}")
+                    if (!running.get()) {
+                        stopSelf()
+                    }
+                    return START_NOT_STICKY
                 }
-                if (!running.get()) {
-                    stopSelf()
+                // No action and no extras is how the system starts an always-on
+                // tunnel, and how it restarts a sticky service it killed. The
+                // profile has to come from the store; there is nobody to ask
+                // (SPEC В.13).
+                if (running.get()) {
+                    return START_STICKY
                 }
-                return START_NOT_STICKY
+                startForegroundWithType(buildNotification(getString(R.string.vpn_notification_connecting)))
+                startFromStoredProfile()
+                return START_STICKY
             }
         }
     }
@@ -694,6 +715,62 @@ class TunnelVpnService : VpnService() {
                 }
             }
             clearSetupThreadIfCurrent(currentSetupThread)
+        }
+    }
+
+    /**
+     * Connects the profile a start with no arguments implies (SPEC В.13).
+     *
+     * The choice is deliberately narrow: the profile last connected, or the
+     * only one there is. With several profiles and no record of which was last
+     * used, an always-on start would otherwise pick one for the user, and the
+     * one it picked would be a server they did not choose.
+     *
+     * The proxy listeners take their default ports. Their configured ones live
+     * in the Flutter layer's preferences, which this path cannot read; a
+     * listener on the wrong port is a smaller failure than no tunnel.
+     */
+    private fun startFromStoredProfile() {
+        val attemptId = "auto-${System.currentTimeMillis()}"
+        storeScope.launch {
+            val store = ProfileStore.get(applicationContext)
+            val profile = store.defaultProfile()
+            val row = profile?.let { store.findWithSecrets(it.id) }
+            if (row == null) {
+                VpnTunnelEvents.emitEngineLog(
+                    Log.ERROR,
+                    TAG,
+                    "${prefixAttempt(attemptId)}Start without arguments: no profile to connect",
+                )
+                VpnTunnelEvents.emit(VpnContract.TUNNEL_FAILED, "No profile to connect. Open the app and pick one.", attemptId)
+                stopForeground(STOP_FOREGROUND_REMOVE)
+                stopSelf()
+                return@launch
+            }
+            val request =
+                StoredProfileStart.requestFrom(
+                    row = row,
+                    trustedCertificateIds = TrustStore.get(applicationContext).certificateIdsFor(row.profile.id),
+                    attemptId = attemptId,
+                    proxyConfig =
+                        ProxyRuntimeConfig(
+                            httpEnabled = true,
+                            httpPort = ProxyTunnelService.DEFAULT_HTTP_PORT,
+                            socksEnabled = true,
+                            socksPort = ProxyTunnelService.DEFAULT_SOCKS_PORT,
+                            allowLanConnections = false,
+                        ),
+                )
+            store.setLastProfileId(row.profile.id)
+            beginSession(request)
+            RuntimeEnvironmentInfo.emit(this@TunnelVpnService, TAG, prefixAttempt(attemptId), mode = VpnContract.MODE_VPN_TUNNEL)
+            VpnTunnelEvents.emitEngineLog(
+                Log.DEBUG,
+                TAG,
+                "${prefixAttempt(attemptId)}Start without arguments accepted protocol=${request.protocol.wireValue} " +
+                    "server=${request.profile.server} profile=${request.profileName}",
+            )
+            startSetupThread(request)
         }
     }
 

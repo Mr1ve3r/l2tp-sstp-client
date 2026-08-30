@@ -4,6 +4,7 @@ import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.PrimaryKey
+import io.github.mr1ve3r.combined.core.profile.VpnProfile
 import io.github.mr1ve3r.combined.core.trust.CertificateSummary
 
 /**
@@ -90,12 +91,11 @@ data class ServerCertificateEntity(
 /**
  * Which certificates a profile trusts (SPEC 5.1, many-to-many).
  *
- * Only the certificate side is a foreign key: profiles live in the Flutter
- * layer's own storage until phase 8 moves them, so the database cannot enforce
- * that end of the relation yet. Deleting a certificate drops its references, so
- * a profile never points at a row that is gone — the pre-flight check
- * ([io.github.mr1ve3r.combined.core.trust.TrustPreflight]) is what reports the
- * profile is now short of a certificate.
+ * Both ends are foreign keys since phase 8 brought profiles into this database.
+ * Deleting either side drops the reference, so neither a profile nor a
+ * certificate can point at a row that is gone — the pre-flight check
+ * ([io.github.mr1ve3r.combined.core.trust.TrustPreflight]) is what reports that
+ * a profile is now short of a certificate.
  */
 @Entity(
     tableName = "profile_certificate_ref",
@@ -105,6 +105,12 @@ data class ServerCertificateEntity(
             entity = ServerCertificateEntity::class,
             parentColumns = ["id"],
             childColumns = ["certificateId"],
+            onDelete = ForeignKey.CASCADE,
+        ),
+        ForeignKey(
+            entity = VpnProfile::class,
+            parentColumns = ["id"],
+            childColumns = ["profileId"],
             onDelete = ForeignKey.CASCADE,
         ),
     ],

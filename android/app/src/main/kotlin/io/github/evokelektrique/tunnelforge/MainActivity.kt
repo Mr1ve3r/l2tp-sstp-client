@@ -24,6 +24,7 @@ import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 import io.github.mr1ve3r.combined.engine.EngineProfile
+import io.github.mr1ve3r.combined.core.profile.ProfileStore
 import io.github.mr1ve3r.combined.core.trust.store.TrustStore
 import java.io.ByteArrayOutputStream
 import kotlinx.coroutines.CoroutineScope
@@ -41,10 +42,10 @@ class MainActivity : FlutterActivity() {
 
     private var certificateDocumentResult: ((Uri?) -> Unit)? = null
 
-    // The certificate store answers from a coroutine, and a method channel
-    // reply has to be made on the main thread. Cancelled in onDestroy, so an
-    // answer that arrives after the activity is gone is dropped rather than
-    // delivered into a dead engine.
+    // The certificate and profile stores answer from a coroutine, and a method
+    // channel reply has to be made on the main thread. Cancelled in onDestroy,
+    // so an answer that arrives after the activity is gone is dropped rather
+    // than delivered into a dead engine.
     private val trustScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
@@ -85,6 +86,7 @@ class MainActivity : FlutterActivity() {
             }
         }
         configureTrustChannel(flutterEngine)
+        configureProfileChannel(flutterEngine)
         handleProfileTransferIntent(intent, deliverImmediately = false)
         VpnTunnelEvents.attach(vpnChannel)
         vpnChannel.setMethodCallHandler { call, result ->
@@ -389,6 +391,35 @@ class MainActivity : FlutterActivity() {
             )
         channel.setMethodCallHandler { call, result ->
             trustChannel.handle(
+                call.method,
+                call.arguments,
+                object : TrustChannel.Reply {
+                    override fun success(value: Any?) = result.success(value)
+
+                    override fun error(code: String, message: String) = result.error(code, message, null)
+
+                    override fun notImplemented() = result.notImplemented()
+                },
+            )
+        }
+    }
+
+    /**
+     * Wires the profile store (SPEC phase 8).
+     *
+     * The store is the same one the service reads when the system starts it
+     * without the application running, which is the point of it being in Kotlin.
+     */
+    private fun configureProfileChannel(flutterEngine: FlutterEngine) {
+        val channel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, ProfileContract.METHOD_CHANNEL)
+        val profileChannel =
+            ProfileChannel(
+                profiles = ProfileStore.get(applicationContext),
+                trust = TrustStore.get(applicationContext),
+                scope = trustScope,
+            )
+        channel.setMethodCallHandler { call, result ->
+            profileChannel.handle(
                 call.method,
                 call.arguments,
                 object : TrustChannel.Reply {
