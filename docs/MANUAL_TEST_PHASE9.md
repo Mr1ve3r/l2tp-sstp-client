@@ -129,7 +129,28 @@ Already in place since phase 7; re-check it still holds with an SSTP session
 running: the level filter and the protocol filter both narrow the buffer, and
 the share button exports what is on screen.
 
-## 8. Dark theme — SPEC 9.2, criterion 3
+## 8. The interface speaks English and Russian — SPEC 9.1.10
+
+Settings → **Language** offers English and Russian; Persian is gone. Switch to
+Russian and walk the editor, the certificate screen, the status card and the
+settings panel.
+
+Expected: every label is Russian, and none of the strings above fall back to
+English. The strings live in `lib/l10n/app_en.arb` and `lib/l10n/app_ru.arb`;
+`localization_test.dart` fails if one file gains a key the other lacks.
+
+Two things to look at rather than read:
+
+- **Plurals.** Select 1, 2 and 5 applications for split tunneling and watch the
+  subtitle: Russian needs three forms, and the ARB carries them.
+- **The font.** The bundled Estedad face has no Cyrillic, so the Russian locale
+  runs on the platform font. Check that Russian text is not a mix of two faces
+  within one line — digits and Latin words especially.
+
+A build that had Persian selected before the upgrade falls back to English; the
+stored code `fa` is no longer known.
+
+## 9. Dark theme — SPEC 9.2, criterion 3
 
 Go through the editor with the SSTP section open, the certificate list, the
 proxy sub-section and the status card in dark theme.
@@ -139,15 +160,6 @@ Expected: nothing unreadable, no light-theme surface left behind.
 ---
 
 ## What this phase does not settle
-
-**Localisation is English and Persian, not English and Russian.** SPEC 9.1.10
-asks for English and Russian with every string in ARB files. This application
-inherited English and Persian from TunnelForge upstream, held in
-`lib/l10n/app_localizations.dart` rather than in ARB, and every phase-9 string
-was added the same way. Adding Russian is a separate piece of work across the
-whole application — roughly 250 existing strings — and is not something phase 9
-could smuggle in. The phase-9 criterion that errors are readable in both
-languages is met for the two languages this build actually offers.
 
 **The session card is a card, not a screen.** SPEC 9.1.7 calls for a status
 screen; what phase 9 delivers is the same information on the VPN tab, under the
