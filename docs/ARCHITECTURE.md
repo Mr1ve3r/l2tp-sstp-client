@@ -115,7 +115,7 @@ person rediscovers. The decisions on all three are in appendix В of the `SPEC`.
 | Member | Status | Lands in |
 |---|---|---|
 | `EngineState.Reconnecting` | nothing emits it; reconnect-on-network-change is not built | phase 7, in the host — the logic is the same for both protocols |
-| `EngineProfile.customDns` | nothing reads it; DNS reaches the service through the `Intent` instead | phase 8, with the profile model |
+| `EngineProfile.customDns` | `SstpEngine` reads it, nothing fills it; the host configures DNS from the profile instead | settled in phase 8, see below |
 | `TunnelParams.searchDomains` | `TunnelBuilder` applies it, no engine fills it | phase 6 from SSTP; the L2TP native layer does not return domains from IPCP |
 
 `EngineProfile.L2tp` additionally carries four fields the native engine cannot
@@ -124,6 +124,68 @@ honour — `ipsecEnabled = false`, `localIdentifier`, `phase1Proposals` and
 silently, because a setting that does nothing is worse than an absent one. What
 happens to them — implemented in C, dropped from the contract, or shown for SSTP
 only — is decided before phase 9 (SPEC В.5).
+
+## The profile store
+
+Profiles live in Kotlin, in the database the certificates already use
+(`core-trust`, table `profiles`). Not because a profile is a trust concept, but
+because `profile_certificate_ref` is a relation between the two and a foreign
+key needs both ends in one database. Version 1 of that schema could only
+constrain the certificate side; the phase 8 migration rebuilds the table with
+both.
+
+The store is in Kotlin rather than in the Flutter layer for one reason: the
+service is started by things that run before any Dart code does. An always-on
+tunnel is raised by the system at boot, the Quick Settings tile fires straight
+at the service, and a sticky service is restarted after a kill. Each of those
+arrives with no arguments at all, and `StoredProfileStart` builds the connection
+from the stored profile — the last one connected, or the only one there is. With
+several profiles and no record of which was last used it refuses to guess,
+because the profile it guessed would be a server the user did not choose.
+
+Secrets are not in the row. The password, the pre-shared key and the proxy
+password are encrypted with an AES-GCM key that lives in the Android keystore
+and are kept in a preferences file, behind the reference columns
+(`passwordRef`, `pskRef`, `proxyPasswordRef`). `EncryptedSharedPreferences`
+would do the same thing and is deprecated; what it adds over `ProfileSecrets`
+is a dependency. A secret that cannot be decrypted reads back as absent rather
+than throwing, which is what a restore onto another device actually is: the
+preferences come back, the keystore key does not, and the password has to be
+entered again.
+
+DNS is the one place the row is wider than the SPEC's `customDns`: it keeps the
+two ordered slots the application has always had, each with its own transport,
+because DNS-over-TLS and DNS-over-HTTPS need more than an address. That also
+settles `EngineProfile.customDns` — the host configures DNS, from the profile,
+through `DnsSupport`, and filling the engine field as well would apply the same
+servers twice by two different routes (SPEC В.12 is the SSTP half of this).
+
+### Reaching it from Flutter
+
+The same shape as the certificate store: `ProfileChannel` on one side,
+`ProfileBackend` on the other, and `ProfilePayloads` mapping rows onto the
+channel's maps. A profile map never carries a secret; the editor asks for one
+profile with its secrets, and a listing gets none.
+
+`Profile.toJson` is that map, and it is also the export format. One spelling for
+both, because a second one would be a second thing to keep in step — the old
+export envelope was already a field behind by the time SSTP arrived.
+
+### Upgrading from the Flutter-side store
+
+Profiles used to be a JSON list in `SharedPreferences` with the secrets in
+`flutter_secure_storage`. Reading that from Kotlin would mean reimplementing
+another package's storage format, so the handover is driven from Dart instead:
+`ProfileStore.loadProfiles` runs it once, before anything can read an empty
+list, and the host ignores a second attempt so a profile edited after the move
+is never overwritten by the snapshot left in preferences. The old secrets are
+deleted once the host has them; the profile list is left in place, holding
+nothing secret and recording what was migrated.
+
+A profile from before phase 8 has no protocol, no port, and no SSTP fields.
+`ProfilePayloads.read` fills them with what a new profile would get, which is
+what those profiles always meant: L2TP over IPsec, every application in the
+tunnel.
 
 ## Trust, in `core-trust`
 

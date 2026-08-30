@@ -16,6 +16,7 @@ abstract class ProfilesRepository {
     Profile profile, {
     required String password,
     required String psk,
+    String proxyPassword,
   });
   Future<Profile> saveImportedProfile(
     ProfileTransferEnvelope envelope, {
@@ -23,7 +24,16 @@ abstract class ProfilesRepository {
   });
   Future<void> deleteProfile(String id);
   Future<void> copyProfileShareLink(String id);
-  Future<void> exportProfileFile(String id);
+
+  /// Writes the profile out. Without [password] the file carries no secret;
+  /// with one, the secrets go inside an encrypted container (SPEC 8.1.4).
+  Future<void> exportProfileFile(String id, {String? password});
+
+  /// Reads a container written by [exportProfileFile] with a password.
+  Future<ProfileTransferEnvelope> openSealedTransfer(
+    String payload,
+    String password,
+  );
   String newProfileId();
 }
 

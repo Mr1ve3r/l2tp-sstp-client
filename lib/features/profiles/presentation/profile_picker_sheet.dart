@@ -195,7 +195,13 @@ class _ProfilePickerSheetState extends State<ProfilePickerSheet> {
             )
           : IncomingProfileTransfer(
               type: ProfileTransferContract.typeTfpJson,
-              data: ProfileTransferEnvelope.fromFileJson(text).toFileJson(),
+              // Re-encoded rather than passed through so that a malformed
+              // paste fails here, where there is a message to show. The
+              // secrets stay in: this is one hop inside the application, not
+              // an export.
+              data: ProfileTransferEnvelope.fromFileJson(
+                text,
+              ).toFileJson(includeSecrets: true),
               source: 'Clipboard',
             );
       await _importTransfer(transfer);

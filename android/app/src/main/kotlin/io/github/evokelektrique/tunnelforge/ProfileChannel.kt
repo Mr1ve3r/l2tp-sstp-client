@@ -31,8 +31,6 @@ class ProfileChannel(
         when (method) {
             ProfileContract.LIST_PROFILES -> answer(reply) { list() }
 
-            ProfileContract.NEW_PROFILE_ID -> reply.success(ProfileStore.newProfileId())
-
             ProfileContract.LAST_PROFILE_ID -> reply.success(profiles.lastProfileId())
 
             ProfileContract.SET_LAST_PROFILE_ID -> {

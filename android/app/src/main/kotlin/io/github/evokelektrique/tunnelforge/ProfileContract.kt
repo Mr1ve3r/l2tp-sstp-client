@@ -24,9 +24,6 @@ object ProfileContract {
 
     const val DELETE_PROFILE = "deleteProfile"
 
-    /** Flutter -> host: an identifier for a profile that does not exist yet. */
-    const val NEW_PROFILE_ID = "newProfileId"
-
     const val LAST_PROFILE_ID = "lastProfileId"
     const val SET_LAST_PROFILE_ID = "setLastProfileId"
 

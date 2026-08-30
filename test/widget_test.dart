@@ -12,6 +12,7 @@ import 'package:tunnel_forge/features/home/domain/home_repositories.dart';
 import 'package:tunnel_forge/features/onboarding/domain/onboarding_repository.dart';
 import 'package:tunnel_forge/main.dart';
 import 'package:tunnel_forge/features/profiles/domain/profile_models.dart';
+import 'package:tunnel_forge/features/profiles/data/profile_bridge.dart';
 import 'package:tunnel_forge/features/profiles/data/profile_store.dart';
 import 'package:tunnel_forge/app/theme/app_theme.dart';
 import 'package:tunnel_forge/features/tunnel/data/vpn_contract.dart';
@@ -418,7 +419,10 @@ void main() {
     await tester.pumpWidget(
       TunnelForgeApp(
         onboardingRepository: const _AcceptedOnboardingRepository(),
-        profileStore: ProfileStore(secretsOverride: MemorySecretStore()),
+        profileStore: ProfileStore(
+          secretsOverride: MemorySecretStore(),
+          backendOverride: MemoryProfileBackend(),
+        ),
       ),
     );
 
@@ -478,7 +482,10 @@ void main() {
     await tester.pumpWidget(
       TunnelForgeApp(
         onboardingRepository: const _AcceptedOnboardingRepository(),
-        profileStore: ProfileStore(secretsOverride: MemorySecretStore()),
+        profileStore: ProfileStore(
+          secretsOverride: MemorySecretStore(),
+          backendOverride: MemoryProfileBackend(),
+        ),
       ),
     );
 
@@ -527,7 +534,10 @@ void main() {
     await tester.pumpWidget(
       TunnelForgeApp(
         onboardingRepository: const _AcceptedOnboardingRepository(),
-        profileStore: ProfileStore(secretsOverride: MemorySecretStore()),
+        profileStore: ProfileStore(
+          secretsOverride: MemorySecretStore(),
+          backendOverride: MemoryProfileBackend(),
+        ),
         connectivityChecker: checker,
         appVersionRepository: const _FakeAppVersionRepository(),
         appUpdateRepository: const _FakeAppUpdateRepository(),
@@ -606,7 +616,10 @@ void main() {
     await tester.pumpWidget(
       TunnelForgeApp(
         onboardingRepository: const _AcceptedOnboardingRepository(),
-        profileStore: ProfileStore(secretsOverride: MemorySecretStore()),
+        profileStore: ProfileStore(
+          secretsOverride: MemorySecretStore(),
+          backendOverride: MemoryProfileBackend(),
+        ),
         connectivityChecker: checker,
       ),
     );
@@ -656,7 +669,10 @@ void main() {
     await tester.pumpWidget(
       TunnelForgeApp(
         onboardingRepository: const _AcceptedOnboardingRepository(),
-        profileStore: ProfileStore(secretsOverride: MemorySecretStore()),
+        profileStore: ProfileStore(
+          secretsOverride: MemorySecretStore(),
+          backendOverride: MemoryProfileBackend(),
+        ),
         connectivityChecker: checker,
       ),
     );
@@ -708,7 +724,10 @@ void main() {
     await tester.pumpWidget(
       TunnelForgeApp(
         onboardingRepository: const _AcceptedOnboardingRepository(),
-        profileStore: ProfileStore(secretsOverride: MemorySecretStore()),
+        profileStore: ProfileStore(
+          secretsOverride: MemorySecretStore(),
+          backendOverride: MemoryProfileBackend(),
+        ),
         connectivityChecker: checker,
       ),
     );
@@ -760,7 +779,10 @@ void main() {
     await tester.pumpWidget(
       TunnelForgeApp(
         onboardingRepository: const _AcceptedOnboardingRepository(),
-        profileStore: ProfileStore(secretsOverride: MemorySecretStore()),
+        profileStore: ProfileStore(
+          secretsOverride: MemorySecretStore(),
+          backendOverride: MemoryProfileBackend(),
+        ),
         connectivityChecker: checker,
       ),
     );
@@ -809,7 +831,10 @@ void main() {
     await tester.pumpWidget(
       TunnelForgeApp(
         onboardingRepository: const _AcceptedOnboardingRepository(),
-        profileStore: ProfileStore(secretsOverride: MemorySecretStore()),
+        profileStore: ProfileStore(
+          secretsOverride: MemorySecretStore(),
+          backendOverride: MemoryProfileBackend(),
+        ),
         connectivityChecker: checker,
       ),
     );
@@ -869,7 +894,10 @@ void main() {
     await tester.pumpWidget(
       TunnelForgeApp(
         onboardingRepository: const _AcceptedOnboardingRepository(),
-        profileStore: ProfileStore(secretsOverride: MemorySecretStore()),
+        profileStore: ProfileStore(
+          secretsOverride: MemorySecretStore(),
+          backendOverride: MemoryProfileBackend(),
+        ),
       ),
     );
     await tester.pump();
@@ -905,7 +933,10 @@ void main() {
     });
     await tester.binding.setSurfaceSize(const Size(480, 1200));
 
-    final store = ProfileStore(secretsOverride: MemorySecretStore());
+    final store = ProfileStore(
+      secretsOverride: MemorySecretStore(),
+      backendOverride: MemoryProfileBackend(),
+    );
     await tester.pumpWidget(
       TunnelForgeApp(
         onboardingRepository: const _AcceptedOnboardingRepository(),
@@ -955,7 +986,10 @@ void main() {
     });
     await tester.binding.setSurfaceSize(const Size(480, 1200));
 
-    final store = ProfileStore(secretsOverride: MemorySecretStore());
+    final store = ProfileStore(
+      secretsOverride: MemorySecretStore(),
+      backendOverride: MemoryProfileBackend(),
+    );
     await tester.pumpWidget(
       TunnelForgeApp(
         onboardingRepository: const _AcceptedOnboardingRepository(),
@@ -1002,7 +1036,10 @@ void main() {
     await tester.pumpWidget(
       TunnelForgeApp(
         onboardingRepository: const _AcceptedOnboardingRepository(),
-        profileStore: ProfileStore(secretsOverride: MemorySecretStore()),
+        profileStore: ProfileStore(
+          secretsOverride: MemorySecretStore(),
+          backendOverride: MemoryProfileBackend(),
+        ),
       ),
     );
 
@@ -1077,7 +1114,10 @@ void main() {
     await tester.pumpWidget(
       TunnelForgeApp(
         onboardingRepository: const _AcceptedOnboardingRepository(),
-        profileStore: ProfileStore(secretsOverride: MemorySecretStore()),
+        profileStore: ProfileStore(
+          secretsOverride: MemorySecretStore(),
+          backendOverride: MemoryProfileBackend(),
+        ),
       ),
     );
 
@@ -1132,7 +1172,10 @@ void main() {
     await tester.pumpWidget(
       TunnelForgeApp(
         onboardingRepository: const _AcceptedOnboardingRepository(),
-        profileStore: ProfileStore(secretsOverride: MemorySecretStore()),
+        profileStore: ProfileStore(
+          secretsOverride: MemorySecretStore(),
+          backendOverride: MemoryProfileBackend(),
+        ),
       ),
     );
 
@@ -1193,7 +1236,10 @@ void main() {
     await tester.pumpWidget(
       TunnelForgeApp(
         onboardingRepository: const _AcceptedOnboardingRepository(),
-        profileStore: ProfileStore(secretsOverride: MemorySecretStore()),
+        profileStore: ProfileStore(
+          secretsOverride: MemorySecretStore(),
+          backendOverride: MemoryProfileBackend(),
+        ),
       ),
     );
 
@@ -1269,7 +1315,10 @@ void main() {
     await tester.pumpWidget(
       TunnelForgeApp(
         onboardingRepository: const _AcceptedOnboardingRepository(),
-        profileStore: ProfileStore(secretsOverride: MemorySecretStore()),
+        profileStore: ProfileStore(
+          secretsOverride: MemorySecretStore(),
+          backendOverride: MemoryProfileBackend(),
+        ),
       ),
     );
 
@@ -1322,7 +1371,10 @@ void main() {
     await tester.pumpWidget(
       TunnelForgeApp(
         onboardingRepository: const _AcceptedOnboardingRepository(),
-        profileStore: ProfileStore(secretsOverride: MemorySecretStore()),
+        profileStore: ProfileStore(
+          secretsOverride: MemorySecretStore(),
+          backendOverride: MemoryProfileBackend(),
+        ),
       ),
     );
 
@@ -1388,7 +1440,10 @@ void main() {
     await tester.pumpWidget(
       TunnelForgeApp(
         onboardingRepository: const _AcceptedOnboardingRepository(),
-        profileStore: ProfileStore(secretsOverride: MemorySecretStore()),
+        profileStore: ProfileStore(
+          secretsOverride: MemorySecretStore(),
+          backendOverride: MemoryProfileBackend(),
+        ),
       ),
     );
 
@@ -1426,7 +1481,10 @@ void main() {
     await tester.pumpWidget(
       TunnelForgeApp(
         onboardingRepository: const _AcceptedOnboardingRepository(),
-        profileStore: ProfileStore(secretsOverride: MemorySecretStore()),
+        profileStore: ProfileStore(
+          secretsOverride: MemorySecretStore(),
+          backendOverride: MemoryProfileBackend(),
+        ),
       ),
     );
 
@@ -1489,7 +1547,10 @@ void main() {
     await tester.pumpWidget(
       TunnelForgeApp(
         onboardingRepository: const _AcceptedOnboardingRepository(),
-        profileStore: ProfileStore(secretsOverride: MemorySecretStore()),
+        profileStore: ProfileStore(
+          secretsOverride: MemorySecretStore(),
+          backendOverride: MemoryProfileBackend(),
+        ),
       ),
     );
 
@@ -1546,7 +1607,10 @@ void main() {
     await tester.pumpWidget(
       TunnelForgeApp(
         onboardingRepository: const _AcceptedOnboardingRepository(),
-        profileStore: ProfileStore(secretsOverride: MemorySecretStore()),
+        profileStore: ProfileStore(
+          secretsOverride: MemorySecretStore(),
+          backendOverride: MemoryProfileBackend(),
+        ),
       ),
     );
 
@@ -1609,7 +1673,10 @@ void main() {
     await tester.pumpWidget(
       TunnelForgeApp(
         onboardingRepository: const _AcceptedOnboardingRepository(),
-        profileStore: ProfileStore(secretsOverride: MemorySecretStore()),
+        profileStore: ProfileStore(
+          secretsOverride: MemorySecretStore(),
+          backendOverride: MemoryProfileBackend(),
+        ),
       ),
     );
 

@@ -14,27 +14,26 @@ import 'package:tunnel_forge/features/profiles/data/profile_store.dart';
 import 'package:tunnel_forge/features/profiles/domain/profile_transfer.dart';
 import 'package:tunnel_forge/features/profiles/data/profile_transfer_bridge.dart';
 import 'package:tunnel_forge/core/logging/log_entry.dart';
+import 'package:tunnel_forge/features/trust/domain/trust_models.dart';
+import 'package:tunnel_forge/features/trust/domain/trust_repository.dart';
 import 'package:tunnel_forge/features/tunnel/data/vpn_client.dart';
 import 'package:tunnel_forge/features/tunnel/domain/tunnel_runtime_state.dart';
 import '../domain/home_models.dart';
 import '../domain/home_repositories.dart';
 
 class ProfilesRepositoryImpl implements ProfilesRepository {
-  ProfilesRepositoryImpl(this._profileStore);
+  ProfilesRepositoryImpl(this._profileStore, [this._certificates]);
 
   final ProfileStore _profileStore;
 
+  /// The certificate store, so an SSTP profile can travel with the
+  /// certificates it trusts (SPEC 8.1.4). Absent in tests that never
+  /// touch one.
+  final CertificatesRepository? _certificates;
+
   @override
   Future<void> copyProfileShareLink(String id) async {
-    final row = await _profileStore.loadProfileWithSecrets(id);
-    if (row == null) {
-      throw const ProfileRepositoryException('This profile no longer exists.');
-    }
-    final envelope = ProfileTransferEnvelope.fromProfile(
-      profile: row.profile,
-      password: row.password,
-      psk: row.psk,
-    );
+    final envelope = await _envelopeFor(id);
     await Clipboard.setData(ClipboardData(text: envelope.toTfUri()));
   }
 
@@ -42,18 +41,20 @@ class ProfilesRepositoryImpl implements ProfilesRepository {
   Future<void> deleteProfile(String id) => _profileStore.deleteProfile(id);
 
   @override
-  Future<void> exportProfileFile(String id) async {
-    final row = await _profileStore.loadProfileWithSecrets(id);
-    if (row == null) {
-      throw const ProfileRepositoryException('This profile no longer exists.');
-    }
-    final envelope = ProfileTransferEnvelope.fromProfile(
-      profile: row.profile,
-      password: row.password,
-      psk: row.psk,
+  Future<void> exportProfileFile(String id, {String? password}) async {
+    final envelope = await _envelopeFor(id);
+    // Without a password the file carries no secret at all. With one it
+    // carries them inside the container and nowhere else (SPEC 8.1.4).
+    final text = password == null || password.isEmpty
+        ? envelope.toFileJson()
+        : await _profileStore.sealExport(
+            envelope.toFileJson(includeSecrets: true),
+            password,
+          );
+    final bytes = Uint8List.fromList(utf8.encode(text));
+    final fileName = ProfileTransferEnvelope.exportFileNameFor(
+      envelope.profile,
     );
-    final bytes = Uint8List.fromList(utf8.encode(envelope.toFileJson()));
-    final fileName = ProfileTransferEnvelope.exportFileNameFor(row.profile);
     await SharePlus.instance.share(
       ShareParams(
         files: [
@@ -62,6 +63,52 @@ class ProfilesRepositoryImpl implements ProfilesRepository {
         fileNameOverrides: [fileName],
         title: 'Export TunnelForge profile',
       ),
+    );
+  }
+
+  @override
+  Future<ProfileTransferEnvelope> openSealedTransfer(
+    String payload,
+    String password,
+  ) async {
+    return ProfileTransferEnvelope.fromFileJson(
+      await _profileStore.openExport(payload, password),
+    );
+  }
+
+  /// The profile [id] with its secrets and the certificates it selects.
+  Future<ProfileTransferEnvelope> _envelopeFor(String id) async {
+    final row = await _profileStore.loadProfileWithSecrets(id);
+    if (row == null) {
+      throw const ProfileRepositoryException('This profile no longer exists.');
+    }
+    final certificates = <TransferredCertificate>[];
+    final store = _certificates;
+    if (store != null && row.profile.trustedCertificateIds.isNotEmpty) {
+      final stored = await store.list();
+      for (final certificateId in row.profile.trustedCertificateIds) {
+        final pem = await store.exportPem(certificateId);
+        if (pem == null || pem.isEmpty) continue;
+        certificates.add(
+          TransferredCertificate(
+            id: certificateId,
+            alias:
+                stored
+                    .where((entry) => entry.fields.id == certificateId)
+                    .map((entry) => entry.alias)
+                    .firstOrNull ??
+                '',
+            pem: pem,
+          ),
+        );
+      }
+    }
+    return ProfileTransferEnvelope.fromProfile(
+      profile: row.profile,
+      password: row.password,
+      psk: row.psk,
+      proxyPassword: row.proxyPassword,
+      certificates: certificates,
     );
   }
 
@@ -89,11 +136,39 @@ class ProfilesRepositoryImpl implements ProfilesRepository {
   Future<Profile> saveImportedProfile(
     ProfileTransferEnvelope envelope, {
     bool selectAsLastProfile = true,
-  }) {
-    return _profileStore.saveImportedProfile(
+  }) async {
+    final imported = await _profileStore.saveImportedProfile(
       envelope,
       selectAsLastProfile: selectAsLastProfile,
     );
+    // The certificates come in under the fingerprints this device computes,
+    // which is what makes an already-known certificate one entry rather than
+    // two. Until they are stored, the ids in the file mean nothing here.
+    final store = _certificates;
+    if (envelope.certificates.isEmpty || store == null) return imported;
+    final stored = await store.import(
+      envelope.certificates
+          .map(
+            (certificate) => CertificateImportRequest(
+              pem: certificate.pem,
+              alias: certificate.alias,
+            ),
+          )
+          .toList(),
+    );
+    if (stored.isEmpty) return imported;
+    final withCertificates = imported.copyWith(
+      trustedCertificateIds: stored
+          .map((entry) => entry.fields.id)
+          .toList(growable: false),
+    );
+    await _profileStore.upsertProfile(
+      withCertificates,
+      password: envelope.password,
+      psk: envelope.psk,
+      proxyPassword: envelope.proxyPassword,
+    );
+    return withCertificates;
   }
 
   @override
@@ -105,8 +180,14 @@ class ProfilesRepositoryImpl implements ProfilesRepository {
     Profile profile, {
     required String password,
     required String psk,
+    String proxyPassword = '',
   }) {
-    return _profileStore.upsertProfile(profile, password: password, psk: psk);
+    return _profileStore.upsertProfile(
+      profile,
+      password: password,
+      psk: psk,
+      proxyPassword: proxyPassword,
+    );
   }
 }
 

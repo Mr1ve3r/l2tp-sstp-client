@@ -9,6 +9,7 @@ import 'package:tunnel_forge/features/onboarding/domain/onboarding_repository.da
 import 'package:tunnel_forge/features/onboarding/presentation/bloc/onboarding_bloc.dart';
 import 'package:tunnel_forge/features/onboarding/presentation/pages/onboarding_page.dart';
 import 'package:tunnel_forge/main.dart';
+import 'package:tunnel_forge/features/profiles/data/profile_bridge.dart';
 import 'package:tunnel_forge/features/profiles/data/profile_store.dart';
 
 class _FakeOnboardingRepository implements OnboardingRepository {
@@ -55,7 +56,10 @@ void main() {
     });
     await tester.pumpWidget(
       TunnelForgeApp(
-        profileStore: ProfileStore(secretsOverride: MemorySecretStore()),
+        profileStore: ProfileStore(
+          secretsOverride: MemorySecretStore(),
+          backendOverride: MemoryProfileBackend(),
+        ),
         onboardingRepository: onboardingRepository,
         appExitController: appExitController,
       ),

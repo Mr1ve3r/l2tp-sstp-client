@@ -55,7 +55,10 @@ GetIt createAppLocator({
     () => appExitController ?? SystemAppExitController(),
   );
   locator.registerLazySingleton<ProfilesRepository>(
-    () => ProfilesRepositoryImpl(locator<ProfileStore>()),
+    () => ProfilesRepositoryImpl(
+      locator<ProfileStore>(),
+      locator<CertificatesRepository>(),
+    ),
   );
   locator.registerLazySingleton<SettingsRepository>(
     () => SettingsRepositoryImpl(locator<ProfileStore>()),
