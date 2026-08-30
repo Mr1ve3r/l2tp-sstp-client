@@ -827,7 +827,10 @@ class TunnelVpnService : VpnService() {
         synchronized(sessionLock) {
             networkWatcher?.cancel()
             networkWatcher = scope
-            connectedNetwork = manager.activeNetwork
+            // Seeded from the first event rather than from `activeNetwork`:
+            // with a tunnel up, the active network *is* the tunnel, and every
+            // underlying network would then look like a change.
+            connectedNetwork = null
         }
         val triggered = AtomicBoolean(false)
         scope.launch {

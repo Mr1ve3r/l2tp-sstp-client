@@ -49,9 +49,15 @@ class NetworkMonitor(
                 }
             }
 
+        // The tunnel's own interface is a network with INTERNET too, and it
+        // appears and disappears with every connect. Both consumers of this flow
+        // — the reconnect in the host and the protocol auto-selection of phase
+        // 10.2 — are asking about the network *underneath* the tunnel, so the
+        // tunnel is filtered out here rather than in each of them.
         val request =
             NetworkRequest.Builder()
                 .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                .addCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN)
                 .build()
         connectivityManager.registerNetworkCallback(request, callback)
 
