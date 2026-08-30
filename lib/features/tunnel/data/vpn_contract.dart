@@ -38,6 +38,9 @@ abstract final class VpnContract {
   static const String argDnsServerHost = 'host';
   static const String argDnsServerProtocol = 'protocol';
   static const String argMtu = 'mtu';
+
+  /// `l2tp` or `sstp`; absent means L2TP (SPEC 7.1.1).
+  static const String argProtocol = 'protocol';
   static const String argProfileName = 'profileName';
   static const String argConnectionMode = 'connectionMode';
   static const String argProxyHttpPort = 'proxyHttpPort';
@@ -74,6 +77,9 @@ abstract final class VpnContract {
   static const String argEngineLogTag = 'engineLogTag';
   static const String argEngineLogMessage = 'engineLogMessage';
 
+  /// Which engine produced the line, or absent for a host line outside a session.
+  static const String argEngineLogProtocol = 'engineLogProtocol';
+
   /// Android -> Dart: active local-proxy listener address/port exposure.
   static const String onProxyExposureChanged = 'onProxyExposureChanged';
 
@@ -93,6 +99,9 @@ abstract final class VpnContract {
 abstract final class VpnTunnelState {
   static const String connecting = 'connecting';
   static const String connected = 'connected';
+
+  /// The network changed under a live tunnel and the host is rebuilding it.
+  static const String reconnecting = 'reconnecting';
   static const String failed = 'failed';
   static const String stopped = 'stopped';
 }

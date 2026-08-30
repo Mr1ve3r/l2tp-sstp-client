@@ -1,3 +1,5 @@
+import 'package:tunnel_forge/core/vpn_protocol.dart';
+
 /// Shared severity policy:
 /// - DEBUG: verbose diagnostics, config, retries, and transport/handshake traces
 /// - INFO: calm lifecycle milestones and successful user-meaningful outcomes
@@ -85,6 +87,7 @@ class LogEntry {
     required this.source,
     required this.tag,
     required this.message,
+    this.protocol,
   });
 
   final DateTime timestamp;
@@ -93,15 +96,21 @@ class LogEntry {
   final String tag;
   final String message;
 
+  /// The engine this line is about, or null for a line outside any session.
+  final VpnProtocol? protocol;
+
   String get timeLabel {
     final t = timestamp;
     return '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}:${t.second.toString().padLeft(2, '0')}';
   }
 
   String get sourceTagLabel {
+    final prefix = protocol == null
+        ? source.label
+        : '${source.label}/${protocol!.label}';
     final trimmedTag = tag.trim();
-    if (trimmedTag.isEmpty) return source.label;
-    return '${source.label}/$trimmedTag';
+    if (trimmedTag.isEmpty) return prefix;
+    return '$prefix/$trimmedTag';
   }
 
   String toPlainText() {

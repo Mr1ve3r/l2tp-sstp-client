@@ -536,6 +536,25 @@ class TunnelBloc extends Bloc<TunnelEvent, TunnelState> {
           );
         }
         break;
+      case VpnTunnelState.reconnecting:
+        // The host is rebuilding the tunnel after a network change (SPEC В.4).
+        // No await timer is started: the reconnect has its own attempt limit,
+        // and a timeout here would race it and report a failure it recovers
+        // from on its own.
+        _cancelAwaitTimer();
+        emit(
+          state.copyWith(
+            awaitingTunnel: true,
+            tunnelUp: false,
+            timedOutThisAttempt: false,
+          ),
+        );
+        _logWarning(
+          'Android${state.activeAttemptId == null ? '' : ' attempt=${state.activeAttemptId!}'}: ${update.detail}',
+          source: LogSource.kotlin,
+          tag: 'TunnelState',
+        );
+        break;
       case VpnTunnelState.failed:
         _cancelAwaitTimer();
         _cancelDisconnectTimer();

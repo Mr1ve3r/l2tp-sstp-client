@@ -4,6 +4,7 @@ import 'package:bloc/bloc.dart';
 import 'package:equatable/equatable.dart';
 
 import 'package:tunnel_forge/core/logging/log_entry.dart';
+import 'package:tunnel_forge/core/vpn_protocol.dart';
 import '../../../home/domain/home_repositories.dart';
 
 sealed class LogsEvent extends Equatable {
@@ -35,6 +36,16 @@ final class LogsLevelChangeRequested extends LogsEvent {
   List<Object?> get props => [level];
 }
 
+/// Narrows the single buffer to one protocol's lines (SPEC 7.1.7).
+final class LogsProtocolFilterChangeRequested extends LogsEvent {
+  const LogsProtocolFilterChangeRequested(this.filter);
+
+  final VpnProtocolFilter filter;
+
+  @override
+  List<Object?> get props => [filter];
+}
+
 final class LogsWordWrapToggled extends LogsEvent {
   const LogsWordWrapToggled();
 }
@@ -47,33 +58,45 @@ class LogsState extends Equatable {
   const LogsState({
     this.entries = const <LogEntry>[],
     this.level = LogDisplayLevel.info,
+    this.protocolFilter = VpnProtocolFilter.all,
     this.wordWrap = true,
   });
 
   final List<LogEntry> entries;
   final LogDisplayLevel level;
+  final VpnProtocolFilter protocolFilter;
   final bool wordWrap;
 
   List<LogEntry> get visibleLogs {
-    return entries.where((entry) => level.includes(entry.level)).toList();
+    return entries
+        .where(
+          (entry) =>
+              level.includes(entry.level) &&
+              protocolFilter.includes(entry.protocol),
+        )
+        .toList();
   }
 
   String get levelLabel => level.label;
 
+  String get protocolLabel => protocolFilter.label;
+
   LogsState copyWith({
     List<LogEntry>? entries,
     LogDisplayLevel? level,
+    VpnProtocolFilter? protocolFilter,
     bool? wordWrap,
   }) {
     return LogsState(
       entries: entries ?? this.entries,
       level: level ?? this.level,
+      protocolFilter: protocolFilter ?? this.protocolFilter,
       wordWrap: wordWrap ?? this.wordWrap,
     );
   }
 
   @override
-  List<Object?> get props => [entries, level, wordWrap];
+  List<Object?> get props => [entries, level, protocolFilter, wordWrap];
 }
 
 class LogsBloc extends Bloc<LogsEvent, LogsState> {
@@ -85,6 +108,7 @@ class LogsBloc extends Bloc<LogsEvent, LogsState> {
     on<LogsStarted>(_onStarted);
     on<LogsEntriesChanged>(_onEntriesChanged);
     on<LogsLevelChangeRequested>(_onLevelChangeRequested);
+    on<LogsProtocolFilterChangeRequested>(_onProtocolFilterChangeRequested);
     on<LogsWordWrapToggled>(_onWordWrapToggled);
     on<LogsCleared>(_onCleared);
   }
@@ -116,6 +140,14 @@ class LogsBloc extends Bloc<LogsEvent, LogsState> {
     if (state.level == event.level) return;
     emit(state.copyWith(level: event.level));
     await _settingsRepository.saveLogDisplayLevel(event.level);
+  }
+
+  void _onProtocolFilterChangeRequested(
+    LogsProtocolFilterChangeRequested event,
+    Emitter<LogsState> emit,
+  ) {
+    if (state.protocolFilter == event.filter) return;
+    emit(state.copyWith(protocolFilter: event.filter));
   }
 
   void _onWordWrapToggled(LogsWordWrapToggled event, Emitter<LogsState> emit) {

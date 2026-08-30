@@ -5,6 +5,7 @@ import 'package:tunnel_forge/features/profiles/domain/profile_models.dart';
 import 'package:tunnel_forge/core/logging/log_entry.dart';
 import 'package:tunnel_forge/features/home/domain/home_models.dart';
 import 'package:tunnel_forge/features/tunnel/data/vpn_client.dart';
+import 'package:tunnel_forge/core/vpn_protocol.dart';
 import 'package:tunnel_forge/features/tunnel/data/vpn_contract.dart';
 import 'package:tunnel_forge/features/tunnel/domain/tunnel_runtime_state.dart';
 
@@ -364,12 +365,14 @@ void main() {
       LogSource? seenSource;
       String? seenTag;
       String? seenMessage;
+      VpnProtocol? seenProtocol;
       final client = VpnClient(
-        onEngineLog: (level, source, tag, message) {
+        onEngineLog: (level, source, tag, message, protocol) {
           seenLevel = level;
           seenSource = source;
           seenTag = tag;
           seenMessage = message;
+          seenProtocol = protocol;
         },
       );
       const codec = StandardMethodCodec();
@@ -379,6 +382,7 @@ void main() {
           VpnContract.argEngineLogSource: 'native',
           VpnContract.argEngineLogTag: 'tunnel_engine',
           VpnContract.argEngineLogMessage: 'hello',
+          VpnContract.argEngineLogProtocol: 'sstp',
         }),
       );
       await TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
@@ -390,14 +394,17 @@ void main() {
       expect(seenSource, LogSource.native);
       expect(seenTag, 'tunnel_engine');
       expect(seenMessage, 'hello');
+      expect(seenProtocol, VpnProtocol.sstp);
     });
 
     test('engine log callback defaults source to kotlin when absent', () async {
       LogSource? seenSource;
       final client = VpnClient(
-        onEngineLog: (_, source, tag, message) {
+        onEngineLog: (_, source, tag, message, protocol) {
           expect(tag, 'MainActivity');
           expect(message, 'hello');
+          // A line with no protocol belongs to no session and shows under ALL.
+          expect(protocol, isNull);
           seenSource = source;
         },
       );

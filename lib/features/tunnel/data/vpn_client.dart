@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 
 import 'package:tunnel_forge/features/profiles/domain/profile_models.dart';
 import 'package:tunnel_forge/core/logging/log_entry.dart';
+import 'package:tunnel_forge/core/vpn_protocol.dart';
 import 'package:tunnel_forge/features/home/domain/home_models.dart';
 import 'package:tunnel_forge/features/tunnel/data/vpn_contract.dart';
 import 'package:tunnel_forge/features/tunnel/domain/tunnel_runtime_state.dart';
@@ -13,7 +14,13 @@ typedef VpnTunnelHostCallback =
 
 /// Host -> Dart: one engine log line ([VpnContract.argEngineLogLevel] is an Android log priority).
 typedef VpnEngineLogCallback =
-    void Function(LogLevel level, LogSource source, String tag, String message);
+    void Function(
+      LogLevel level,
+      LogSource source,
+      String tag,
+      String message,
+      VpnProtocol? protocol,
+    );
 
 /// Host -> Dart: current proxy listener exposure after startup or shutdown.
 typedef VpnProxyExposureCallback = void Function(ProxyExposure exposure);
@@ -66,6 +73,7 @@ class VpnClient {
           source,
           tag,
           message,
+          VpnProtocol.parse(raw[VpnContract.argEngineLogProtocol]),
         );
       }
       return;
@@ -199,6 +207,9 @@ class VpnClient {
   Future<void> connect({
     String attemptId = '',
     required String server,
+    // The protocol the host dispatches on (SPEC 7.1.1). The SSTP fields that go
+    // with it arrive with the profile model in phase 8.
+    VpnProtocol protocol = VpnProtocol.l2tp,
     String? profileName,
     ConnectionMode connectionMode = ConnectionMode.vpnTunnel,
     String user = '',
@@ -234,6 +245,7 @@ class VpnClient {
       VpnContract.argDnsAutomatic: dnsAutomatic,
       VpnContract.argDnsServers: normalizedDnsServers,
       VpnContract.argMtu: mtuClamped,
+      VpnContract.argProtocol: protocol.wireValue,
       VpnContract.argConnectionMode: connectionMode.jsonValue,
       VpnContract.argSplitTunnelEnabled: splitTunnelSettings.enabled,
       VpnContract.argSplitTunnelMode: splitTunnelSettings.mode.jsonValue,

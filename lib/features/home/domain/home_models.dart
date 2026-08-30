@@ -3,6 +3,7 @@ import 'package:equatable/equatable.dart';
 import 'package:tunnel_forge/features/profiles/domain/profile_models.dart';
 import 'package:tunnel_forge/features/profiles/domain/profile_transfer.dart';
 import 'package:tunnel_forge/core/logging/log_entry.dart';
+import 'package:tunnel_forge/core/vpn_protocol.dart';
 
 class HomeMessage extends Equatable {
   const HomeMessage({required this.id, required this.text, this.error = false});
@@ -52,6 +53,7 @@ class EngineLogMessage extends Equatable {
     required this.source,
     required this.tag,
     required this.message,
+    this.protocol,
   });
 
   final DateTime timestamp;
@@ -59,6 +61,7 @@ class EngineLogMessage extends Equatable {
   final LogSource source;
   final String tag;
   final String message;
+  final VpnProtocol? protocol;
 
   LogEntry toLogEntry() {
     return LogEntry(
@@ -67,11 +70,19 @@ class EngineLogMessage extends Equatable {
       source: source,
       tag: tag,
       message: message,
+      protocol: protocol,
     );
   }
 
   @override
-  List<Object?> get props => [timestamp, level, source, tag, message];
+  List<Object?> get props => [
+    timestamp,
+    level,
+    source,
+    tag,
+    message,
+    protocol,
+  ];
 }
 
 class TunnelConnectRequest extends Equatable {

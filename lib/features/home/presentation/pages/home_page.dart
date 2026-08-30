@@ -15,6 +15,7 @@ import 'package:tunnel_forge/features/profiles/domain/profile_models.dart';
 import 'package:tunnel_forge/features/profiles/presentation/profile_picker_sheet.dart';
 import 'package:tunnel_forge/features/profiles/data/profile_store.dart';
 import 'package:tunnel_forge/core/logging/log_entry.dart';
+import 'package:tunnel_forge/core/vpn_protocol.dart';
 import 'package:tunnel_forge/features/home/presentation/widgets/connection_panel.dart';
 import 'package:tunnel_forge/features/home/presentation/widgets/logs_panel.dart';
 import 'package:tunnel_forge/features/home/presentation/widgets/settings_panel.dart';
@@ -610,6 +611,49 @@ class _VpnHomePageViewState extends State<_VpnHomePageView>
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
+                    PopupMenuButton<VpnProtocolFilter>(
+                      tooltip: 'Protocol',
+                      initialValue: logsState.protocolFilter,
+                      onSelected: (filter) => context.read<LogsBloc>().add(
+                        LogsProtocolFilterChangeRequested(filter),
+                      ),
+                      itemBuilder: (context) => const [
+                        PopupMenuItem<VpnProtocolFilter>(
+                          value: VpnProtocolFilter.all,
+                          child: Text('ALL'),
+                        ),
+                        PopupMenuItem<VpnProtocolFilter>(
+                          value: VpnProtocolFilter.l2tp,
+                          child: Text('L2TP'),
+                        ),
+                        PopupMenuItem<VpnProtocolFilter>(
+                          value: VpnProtocolFilter.sstp,
+                          child: Text('SSTP'),
+                        ),
+                      ],
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 8,
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.vpn_lock_rounded, size: 20),
+                            const SizedBox(width: 6),
+                            Text(
+                              logsState.protocolLabel,
+                              style: Theme.of(context).textTheme.labelMedium
+                                  ?.copyWith(
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.onSurfaceVariant,
+                                  ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
                     PopupMenuButton<LogDisplayLevel>(
                       tooltip: t.logLevel,
                       initialValue: logsState.level,

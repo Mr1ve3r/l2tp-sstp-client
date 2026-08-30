@@ -418,7 +418,7 @@ class TunnelRepositoryImpl implements TunnelRepository {
               ),
             );
           },
-          onEngineLog: (level, source, tag, message) {
+          onEngineLog: (level, source, tag, message, protocol) {
             _engineLogController.add(
               EngineLogMessage(
                 timestamp: DateTime.now(),
@@ -426,6 +426,7 @@ class TunnelRepositoryImpl implements TunnelRepository {
                 source: source,
                 tag: tag,
                 message: message,
+                protocol: protocol,
               ),
             );
           },
