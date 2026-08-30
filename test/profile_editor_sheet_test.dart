@@ -5,6 +5,8 @@ import 'package:tunnel_forge/features/profiles/presentation/profile_editor_sheet
 import 'package:tunnel_forge/features/profiles/domain/profile_models.dart';
 import 'package:tunnel_forge/features/profiles/data/profile_bridge.dart';
 import 'package:tunnel_forge/features/profiles/data/profile_store.dart';
+import 'package:tunnel_forge/features/trust/domain/trust_models.dart';
+import 'package:tunnel_forge/core/vpn_protocol.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -355,5 +357,94 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byKey(const Key('dns_servers_section')), findsOneWidget);
+  });
+
+  testWidgets('the protocol selector swaps the L2TP and SSTP sections', (
+    tester,
+  ) async {
+    final store = await buildStore();
+    const profile = Profile(
+      id: 'profile-protocol',
+      displayName: 'Office',
+      server: 'vpn.example.com',
+      user: 'alice',
+    );
+    await store.upsertProfile(profile, password: 'pw', psk: 'shared');
+
+    await pumpHost(tester, store: store, profileId: profile.id);
+
+    expect(find.byKey(const Key('l2tp_section')), findsOneWidget);
+    expect(find.byKey(const Key('sstp_section')), findsNothing);
+
+    await tester.tap(find.text('SSTP'));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('l2tp_section')), findsNothing);
+    expect(find.byKey(const Key('sstp_section')), findsOneWidget);
+    expect(find.byKey(const Key('sstp_port_field')), findsOneWidget);
+    expect(find.byKey(const Key('proxy_section')), findsNothing);
+
+    await tester.tap(find.byKey(const Key('proxy_toggle')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('proxy_section')), findsOneWidget);
+  });
+
+  testWidgets('saving keeps the SSTP fields the form does not draw', (
+    tester,
+  ) async {
+    final store = await buildStore();
+    const profile = Profile(
+      id: 'profile-sstp-keep',
+      displayName: 'Office',
+      server: 'vpn.example.com',
+      user: 'alice',
+      protocol: VpnProtocol.sstp,
+      port: 8443,
+      trustPolicy: TrustPolicy.systemPlusCustom,
+      trustedCertificateIds: <String>['abc123'],
+      expectedHostname: 'vpn.internal.lan',
+      minTlsVersion: TlsVersion.tls13,
+      pppAuthMethods: <PppAuthMethod>[PppAuthMethod.mschapv2],
+      proxyEnabled: true,
+      proxyHost: 'proxy.example.com',
+      proxyPort: 3128,
+      proxyUsername: 'bob',
+      killSwitch: true,
+      autoReconnect: false,
+    );
+    await store.upsertProfile(
+      profile,
+      password: 'pw',
+      psk: '',
+      proxyPassword: 'proxy-secret',
+    );
+
+    await pumpHost(tester, store: store, profileId: profile.id);
+
+    await tester.enterText(find.byType(TextField).first, 'Renamed');
+    await tester.pump();
+    await tester.tap(find.text('Save'));
+    await tester.pumpAndSettle();
+
+    final row = await store.loadProfileWithSecrets(profile.id);
+    expect(row, isNotNull);
+    final saved = row!.profile;
+    expect(saved.displayName, 'Renamed');
+    expect(saved.protocol, VpnProtocol.sstp);
+    expect(saved.port, 8443);
+    expect(saved.trustPolicy, TrustPolicy.systemPlusCustom);
+    expect(saved.trustedCertificateIds, <String>['abc123']);
+    expect(saved.expectedHostname, 'vpn.internal.lan');
+    expect(saved.minTlsVersion, TlsVersion.tls13);
+    expect(saved.pppAuthMethods, <PppAuthMethod>[PppAuthMethod.mschapv2]);
+    expect(saved.proxyEnabled, isTrue);
+    expect(saved.proxyHost, 'proxy.example.com');
+    expect(saved.proxyPort, 3128);
+    expect(saved.proxyUsername, 'bob');
+    expect(row.proxyPassword, 'proxy-secret');
+    // Fields no version of this form draws still have to survive it.
+    expect(saved.killSwitch, isTrue);
+    expect(saved.autoReconnect, isFalse);
   });
 }

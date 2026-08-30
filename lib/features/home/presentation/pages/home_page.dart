@@ -19,6 +19,7 @@ import 'package:tunnel_forge/core/vpn_protocol.dart';
 import 'package:tunnel_forge/features/home/presentation/widgets/connection_panel.dart';
 import 'package:tunnel_forge/features/home/presentation/widgets/logs_panel.dart';
 import 'package:tunnel_forge/features/home/presentation/widgets/settings_panel.dart';
+import 'package:tunnel_forge/features/trust/domain/trust_repository.dart';
 import 'package:tunnel_forge/features/trust/presentation/bloc/certificates_bloc.dart';
 import 'package:tunnel_forge/features/trust/presentation/pages/certificates_page.dart';
 import '../../../app_theme/presentation/bloc/app_theme_bloc.dart';
@@ -219,6 +220,7 @@ class _VpnHomePageViewState extends State<_VpnHomePageView>
       context,
       profilesBloc: profilesBloc,
       store: widget.locator<ProfileStore>(),
+      certificates: widget.locator<CertificatesRepository>(),
     );
   }
 
@@ -789,6 +791,7 @@ class _VpnHomePageViewState extends State<_VpnHomePageView>
                       ),
                       onUnavailablePrimaryTap: () =>
                           _handleMissingProfileTap(profilesState),
+                      session: tunnelState.session,
                       connectivityBadgeState: connectivityState.badgeState,
                       connectivityBadgeLabel: _connectivityBadgeLabel(
                         connectivityState,

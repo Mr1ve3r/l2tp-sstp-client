@@ -14,6 +14,7 @@ import 'package:tunnel_forge/features/profile_form/presentation/bloc/profile_for
 import 'package:tunnel_forge/l10n/app_localizations.dart';
 import 'package:tunnel_forge/features/profiles/presentation/profile_editor_sheet.dart';
 import 'package:tunnel_forge/features/profiles/data/profile_store.dart';
+import 'package:tunnel_forge/features/trust/domain/trust_repository.dart';
 import 'package:tunnel_forge/features/profiles/domain/profile_transfer.dart';
 import 'package:tunnel_forge/features/profiles/data/profile_transfer_contract.dart';
 
@@ -28,15 +29,21 @@ class ProfilePickerSheet extends StatefulWidget {
     super.key,
     required this.profilesBloc,
     required this.store,
+    this.certificates,
   });
 
   final ProfilesBloc profilesBloc;
   final ProfileStore store;
 
+  /// Passed to the editor so an SSTP profile can pick what it trusts
+  /// (SPEC 9.1.2).
+  final CertificatesRepository? certificates;
+
   static Future<void> show(
     BuildContext context, {
     required ProfilesBloc profilesBloc,
     required ProfileStore store,
+    CertificatesRepository? certificates,
   }) {
     final theme = Theme.of(context);
     final sheetColor =
@@ -355,13 +362,38 @@ class _ProfilePickerSheetState extends State<ProfilePickerSheet> {
                           fontWeight: selected ? FontWeight.w600 : null,
                         ),
                       ),
-                      subtitle: Text(
-                        profile.server,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: tt.bodySmall?.copyWith(
-                          color: cs.onSurfaceVariant,
-                        ),
+                      subtitle: Row(
+                        children: [
+                          Container(
+                            key: ValueKey('protocol_badge_${profile.id}'),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 1,
+                            ),
+                            decoration: BoxDecoration(
+                              color: cs.secondaryContainer,
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Text(
+                              profile.protocol.label,
+                              style: tt.labelSmall?.copyWith(
+                                color: cs.onSecondaryContainer,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              profile.server,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: tt.bodySmall?.copyWith(
+                                color: cs.onSurfaceVariant,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                       trailing: Row(
                         mainAxisSize: MainAxisSize.min,
@@ -435,7 +467,10 @@ class _ProfilePickerSheetState extends State<ProfilePickerSheet> {
   }
 
   Widget _buildEditor(BuildContext context) {
-    final repository = ProfilesRepositoryImpl(widget.store);
+    final repository = ProfilesRepositoryImpl(
+      widget.store,
+      widget.certificates,
+    );
     return BlocProvider(
       key: ValueKey<String>(
         'editor:${_editingProfileId ?? 'draft'}:$_editorSession',
