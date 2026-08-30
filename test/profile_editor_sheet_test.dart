@@ -384,6 +384,8 @@ void main() {
     expect(find.byKey(const Key('sstp_port_field')), findsOneWidget);
     expect(find.byKey(const Key('proxy_section')), findsNothing);
 
+    await tester.ensureVisible(find.byKey(const Key('proxy_toggle')));
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('proxy_toggle')));
     await tester.pumpAndSettle();
 

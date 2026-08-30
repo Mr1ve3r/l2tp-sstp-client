@@ -343,7 +343,7 @@ class TunnelBloc extends Bloc<TunnelEvent, TunnelState> {
               clearActiveAttemptId: true,
               clearConnectStartedAt: true,
               clearProxyExposure: true,
-            clearSession: true,
+              clearSession: true,
             ),
           );
           return;
@@ -587,7 +587,7 @@ class TunnelBloc extends Bloc<TunnelEvent, TunnelState> {
               clearActiveAttemptId: true,
               clearConnectStartedAt: true,
               clearProxyExposure: true,
-            clearSession: true,
+              clearSession: true,
             ),
           );
           _logInfo(

@@ -764,14 +764,10 @@ extension AppStrings on AppLocalizations {
   );
   String get proxyHostLabel => AppText.pick('Proxy host', 'میزبان پراکسی');
   String get proxyPortLabel => AppText.pick('Proxy port', 'درگاه پراکسی');
-  String get proxyUsernameLabel => AppText.pick(
-    'Proxy username (optional)',
-    'نام کاربری پراکسی (اختیاری)',
-  );
-  String get proxyPasswordLabel => AppText.pick(
-    'Proxy password (optional)',
-    'گذرواژه پراکسی (اختیاری)',
-  );
+  String get proxyUsernameLabel =>
+      AppText.pick('Proxy username (optional)', 'نام کاربری پراکسی (اختیاری)');
+  String get proxyPasswordLabel =>
+      AppText.pick('Proxy password (optional)', 'گذرواژه پراکسی (اختیاری)');
   String get showProxyPassword =>
       AppText.pick('Show proxy password', 'نمایش گذرواژه پراکسی');
   String get hideProxyPassword =>

@@ -378,8 +378,7 @@ class _ProfileEditorViewState extends State<ProfileEditorView> {
                 ),
               )
               .toList(growable: false),
-          onChanged: (value) =>
-              value == null
+          onChanged: (value) => value == null
               ? null
               : bloc.add(ProfileFormTrustPolicyChanged(value)),
         ),
@@ -427,10 +426,10 @@ class _ProfileEditorViewState extends State<ProfileEditorView> {
           autocorrect: false,
           onChanged: (value) =>
               bloc.add(ProfileFormExpectedHostnameChanged(value)),
-          decoration: _deco(context, label: t.expectedHostnameLabel).copyWith(
-            helperText: t.expectedHostnameHelp,
-            helperMaxLines: 3,
-          ),
+          decoration: _deco(
+            context,
+            label: t.expectedHostnameLabel,
+          ).copyWith(helperText: t.expectedHostnameHelp, helperMaxLines: 3),
         ),
         const SizedBox(height: 12),
         DropdownButtonFormField<TlsVersion>(
@@ -446,8 +445,7 @@ class _ProfileEditorViewState extends State<ProfileEditorView> {
                 ),
               )
               .toList(growable: false),
-          onChanged: (value) =>
-              value == null
+          onChanged: (value) => value == null
               ? null
               : bloc.add(ProfileFormMinTlsVersionChanged(value)),
         ),
@@ -748,18 +746,16 @@ class _ProfileEditorViewState extends State<ProfileEditorView> {
                             key: const Key('protocol_selector'),
                             segments: VpnProtocol.values
                                 .map(
-                                  (protocol) =>
-                                      ButtonSegment<VpnProtocol>(
-                                        value: protocol,
-                                        label: Text(protocol.label),
-                                      ),
+                                  (protocol) => ButtonSegment<VpnProtocol>(
+                                    value: protocol,
+                                    label: Text(protocol.label),
+                                  ),
                                 )
                                 .toList(growable: false),
                             selected: {state.protocol},
                             showSelectedIcon: false,
-                            onSelectionChanged: (selection) => context
-                                .read<ProfileFormBloc>()
-                                .add(
+                            onSelectionChanged: (selection) =>
+                                context.read<ProfileFormBloc>().add(
                                   ProfileFormProtocolChanged(selection.first),
                                 ),
                           ),
@@ -773,28 +769,25 @@ class _ProfileEditorViewState extends State<ProfileEditorView> {
                               dnsSectionColor,
                             )
                           else
-                            _sectionCard(
+                            // The L2TP half is the pre-shared key and nothing
+                            // else, drawn exactly as it was before the selector
+                            // existed (SPEC 9.1.4).
+                            KeyedSubtree(
                               key: const Key('l2tp_section'),
-                              color: dnsSectionColor,
-                              title: t.l2tpSection,
-                              tt: tt,
-                              children: [
-                                _secretField(
-                                  context: context,
-                                  controller: _pskController,
-                                  label: t.ipsecPsk,
-                                  hint: t.ipsecPskHint,
-                                  visible: _pskVisible,
-                                  showTooltip: t.showIpsecPsk,
-                                  hideTooltip: t.hideIpsecPsk,
-                                  onToggle: () => setState(
-                                    () => _pskVisible = !_pskVisible,
-                                  ),
-                                  onChanged: (value) => context
-                                      .read<ProfileFormBloc>()
-                                      .add(ProfileFormPskChanged(value)),
-                                ),
-                              ],
+                              child: _secretField(
+                                context: context,
+                                controller: _pskController,
+                                label: t.ipsecPsk,
+                                hint: t.ipsecPskHint,
+                                visible: _pskVisible,
+                                showTooltip: t.showIpsecPsk,
+                                hideTooltip: t.hideIpsecPsk,
+                                onToggle: () =>
+                                    setState(() => _pskVisible = !_pskVisible),
+                                onChanged: (value) => context
+                                    .read<ProfileFormBloc>()
+                                    .add(ProfileFormPskChanged(value)),
+                              ),
                             ),
                           const SizedBox(height: 12),
                           CheckboxListTile(

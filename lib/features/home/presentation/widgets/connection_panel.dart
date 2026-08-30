@@ -682,8 +682,7 @@ class _SessionCardState extends State<_SessionCard> {
       ),
       (t.sessionReceived, formatBytes(session.rxBytes)),
       (t.sessionSent, formatBytes(session.txBytes)),
-      if (session.proxyHost != null)
-        (t.sessionViaProxy, session.proxyHost!),
+      if (session.proxyHost != null) (t.sessionViaProxy, session.proxyHost!),
     ];
     return Container(
       key: const Key('session_card'),
@@ -706,9 +705,7 @@ class _SessionCardState extends State<_SessionCard> {
                   Expanded(
                     child: Text(
                       row.$1,
-                      style: tt.bodySmall?.copyWith(
-                        color: cs.onSurfaceVariant,
-                      ),
+                      style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant),
                     ),
                   ),
                   const SizedBox(width: 12),

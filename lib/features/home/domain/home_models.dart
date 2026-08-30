@@ -101,14 +101,7 @@ class EngineLogMessage extends Equatable {
   }
 
   @override
-  List<Object?> get props => [
-    timestamp,
-    level,
-    source,
-    tag,
-    message,
-    protocol,
-  ];
+  List<Object?> get props => [timestamp, level, source, tag, message, protocol];
 }
 
 class TunnelConnectRequest extends Equatable {
