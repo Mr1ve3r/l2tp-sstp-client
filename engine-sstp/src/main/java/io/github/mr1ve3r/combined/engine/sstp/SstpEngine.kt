@@ -255,14 +255,12 @@ class SstpEngine internal constructor(
         // The pins are looked up as well as the selection: in this application a
         // pin is the id of a stored certificate, so the store can say whether
         // what was pinned is a CA -- which is the one pin that can never match.
+        val preflightIds = (config.trustedCertificateIds + config.pinnedFingerprints).distinct()
         val report =
             TrustPreflight.check(
                 policy = policy,
                 selectedCertificateIds = config.trustedCertificateIds,
-                availableCertificates =
-                    certificates.summariesFor(
-                        (config.trustedCertificateIds + config.pinnedFingerprints).distinct(),
-                    ),
+                availableCertificates = certificates.summariesFor(preflightIds),
                 pinnedFingerprints = config.pinnedFingerprints,
                 now = clock(),
             )
