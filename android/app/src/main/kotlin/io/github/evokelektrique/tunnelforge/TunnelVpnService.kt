@@ -452,11 +452,19 @@ class TunnelVpnService : VpnService() {
                     selfPackageName = packageName,
                 )
 
-            emitAttemptState(attemptId, VpnContract.TUNNEL_CONNECTING, "Negotiating IKE/L2TP/PPP...")
+            // Named after the protocol actually starting: a session reading
+            // "IKE/L2TP/PPP" while SSTP is what was asked for sends whoever is
+            // reading the log after the wrong problem.
+            val negotiationLabel =
+                when (protocol) {
+                    TunnelProtocol.L2TP -> "IKE/L2TP/PPP"
+                    TunnelProtocol.SSTP -> "TLS/SSTP/PPP"
+                }
+            emitAttemptState(attemptId, VpnContract.TUNNEL_CONNECTING, "Negotiating $negotiationLabel...")
             VpnTunnelEvents.emitEngineLog(
                 Log.INFO,
                 TAG,
-                "${prefixAttempt(attemptId)}Starting native negotiation (IKE/L2TP/PPP)",
+                "${prefixAttempt(attemptId)}Starting negotiation ($negotiationLabel)",
             )
             // Only the L2TP engine drives the native poll loop, and only one
             // owner of it may exist. An SSTP session never touches it, so it

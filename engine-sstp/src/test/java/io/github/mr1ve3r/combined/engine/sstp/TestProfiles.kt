@@ -51,9 +51,13 @@ internal class RecordingSocketProtector(private val result: Boolean = true) : So
     val protectedSockets = mutableListOf<Socket>()
     val connectedWhenProtected = mutableListOf<Boolean>()
 
+    /** Whether the socket had a local address yet, i.e. a file descriptor. */
+    val boundWhenProtected = mutableListOf<Boolean>()
+
     override fun protect(socket: Socket): Boolean {
         protectedSockets += socket
         connectedWhenProtected += socket.isConnected
+        boundWhenProtected += socket.isBound
         return result
     }
 

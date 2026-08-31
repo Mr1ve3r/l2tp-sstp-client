@@ -126,6 +126,20 @@ internal class SslTerminal(
         val port = proxy?.port ?: config.port
 
         val opened = socketFactory()
+        // Bound before it is protected, and only then connected. `VpnService.
+        // protect(Socket)` reads the socket's file descriptor, and a socket
+        // that has never been bound has none yet: the call comes back false on
+        // a device even though the VPN holds consent, and the connection dies
+        // before a packet is sent. Binding to port 0 creates the descriptor
+        // without choosing anything -- `connect()` keeps the ephemeral port the
+        // kernel picked, and the socket is still unconnected here, which is the
+        // ordering `protect()` needs (SPEC 6.4.4).
+        try {
+            if (!opened.isBound) opened.bind(InetSocketAddress(0))
+        } catch (e: IOException) {
+            opened.closeQuietly()
+            throw EngineException(EngineError.Internal("could not bind the transport socket: ${e.message}"), e)
+        }
         if (!protector.protect(opened)) {
             opened.closeQuietly()
             // Refused rather than logged and carried on: an unprotected socket

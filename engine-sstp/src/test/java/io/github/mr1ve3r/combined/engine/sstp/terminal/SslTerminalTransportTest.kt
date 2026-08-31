@@ -60,6 +60,20 @@ class SslTerminalTransportTest {
     }
 
     @Test
+    fun `protects a socket that already has a file descriptor`() {
+        acceptAndReply(null)
+        val protector = RecordingSocketProtector()
+
+        terminal(config(), protector).connectTransportSocket().close()
+
+        // An unbound socket has no descriptor for `VpnService.protect()` to
+        // pass to the system, and the call fails on a device while every test
+        // with a fake protector passes.
+        assertTrue(protector.boundWhenProtected.single())
+        assertFalse(protector.connectedWhenProtected.single())
+    }
+
+    @Test
     fun `protects every socket, so a reconnect does not slip through`() {
         acceptAndReply(null, times = 3)
         val protector = RecordingSocketProtector()
