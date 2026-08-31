@@ -43,6 +43,33 @@ object TrustPreflight {
             blocking += PreflightProblem.NoPinsConfigured
         }
 
+        // A certificate the policy will never look at. The profile keeps its
+        // selection when the policy changes, so a profile can carry a
+        // certificate and verify against the system store without either the
+        // list or the error saying so.
+        if (!CertificateValidator.consultsSelectedCertificates(policy) && selectedCertificateIds.isNotEmpty()) {
+            confirmations += PreflightProblem.CertificatesIgnoredByPolicy(policy, selectedCertificateIds)
+        }
+
+        // A CA pinned under PIN_LEAF matches only if the server serves that
+        // certificate itself. Where a CA issued a separate server certificate
+        // -- the ordinary case on a router -- the pin can never match, and the
+        // handshake reports a fingerprint the user has never seen.
+        pinnedFingerprints
+            .mapNotNull { availableCertificates[CertificateFingerprint.normalise(it)] }
+            .filter { it.isCa }
+            .forEach { confirmations += PreflightProblem.PinnedCertificateIsCa(it.id, it.subjectCn) }
+
+        // The mirror image: a leaf handed to a chain-building policy is not an
+        // anchor for anything, and PKIX reports only that no trust anchor was
+        // found.
+        if (CertificateValidator.requiresCertificateAuthority(policy)) {
+            selectedCertificateIds
+                .mapNotNull(availableCertificates::get)
+                .filterNot { it.isCa }
+                .forEach { confirmations += PreflightProblem.AnchorIsNotACertificateAuthority(it.id, it.subjectCn) }
+        }
+
         // Expiry is a confirmation rather than a refusal: a router quietly
         // serving an expired certificate is common, and the user may know
         // exactly why. PIN_LEAF does not check expiry during the handshake at
@@ -94,6 +121,30 @@ sealed interface PreflightProblem {
     /** A policy that builds a chain was chosen without giving it anything to anchor on. */
     data class NoCertificatesSelected(val policy: TrustPolicy) : PreflightProblem {
         override val messageKey: String get() = "trust.preflight.no_certificates_selected"
+    }
+
+    /**
+     * The profile names certificates that its policy does not consult.
+     *
+     * Not an error -- the connection may well succeed against the system store
+     * -- but it is the difference between "my certificate is not working" and
+     * "my certificate is not being used".
+     */
+    data class CertificatesIgnoredByPolicy(val policy: TrustPolicy, val ids: List<String>) : PreflightProblem {
+        override val messageKey: String get() = "trust.preflight.certificates_ignored_by_policy"
+    }
+
+    /**
+     * A pinned certificate is a CA, and a CA is not what a server presents
+     * unless it serves its own root directly.
+     */
+    data class PinnedCertificateIsCa(val id: String, val subjectCn: String?) : PreflightProblem {
+        override val messageKey: String get() = "trust.preflight.pinned_certificate_is_ca"
+    }
+
+    /** A chain-building policy was anchored on a certificate that cannot sign anything. */
+    data class AnchorIsNotACertificateAuthority(val id: String, val subjectCn: String?) : PreflightProblem {
+        override val messageKey: String get() = "trust.preflight.anchor_is_not_a_ca"
     }
 
     /** [TrustPolicy.PIN_LEAF] was chosen without any fingerprint to compare against. */

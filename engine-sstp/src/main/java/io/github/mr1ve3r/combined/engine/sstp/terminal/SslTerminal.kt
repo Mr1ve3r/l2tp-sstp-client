@@ -243,6 +243,7 @@ internal class SslTerminal(
         output = secure.outputStream
         leafCertificate = secure.session.peerCertificates.firstOrNull() as? X509Certificate
         log(LogLevel.INFO, "TLS established: ${secure.session.protocol} ${secure.session.cipherSuite}")
+        logPresentedChain(LogLevel.DEBUG)
 
         return secure
     }
@@ -371,9 +372,41 @@ internal class SslTerminal(
         return head.toString()
     }
 
+    /**
+     * Writes out the chain the server actually presented.
+     *
+     * The single fingerprint in a rejection names the leaf and nothing else,
+     * which cannot distinguish the two mistakes that produce almost the same
+     * message: a CA pinned where the server serves a leaf, and a leaf stored as
+     * an anchor where the chain needs the CA. Subject, issuer and fingerprint
+     * of every element answer both at a glance, and none of it is secret --
+     * this is what the server sends to anyone who connects.
+     */
+    private fun logPresentedChain(level: LogLevel) {
+        val chain = recordingTrustManager.lastChain
+        if (chain.isNullOrEmpty()) {
+            log(level, "The server presented no certificate chain")
+            return
+        }
+        log(level, "The server presented ${chain.size} certificate(s):")
+        chain.forEachIndexed { index, certificate ->
+            val role = if (index == 0) "leaf" else "issuer $index"
+            val ca = if (certificate.basicConstraints >= 0) "CA" else "not a CA"
+            log(
+                level,
+                "  [$index] $role, $ca: subject=${certificate.subjectX500Principal.name} " +
+                    "issuer=${certificate.issuerX500Principal.name} " +
+                    "sha256=${CertificateFingerprint.formatForDisplay(CertificateFingerprint.sha256(certificate))}",
+            )
+        }
+    }
+
     private fun handshakeFailure(cause: Exception): EngineException {
         val presented = recordingTrustManager.lastChain?.firstOrNull()
         val fingerprint = presented?.let(CertificateFingerprint::sha256)
+        // Before the mapping, so the chain is in the log whichever branch the
+        // failure takes -- and whether or not the user can read the error.
+        logPresentedChain(LogLevel.WARN)
 
         causeOfType<CertificatePinMismatchException>(cause)?.also {
             return EngineException(EngineError.CertificateRejected(it.presentedSha256 ?: fingerprint, it.message), cause)

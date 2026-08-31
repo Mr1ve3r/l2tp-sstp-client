@@ -11,6 +11,7 @@
 package io.github.mr1ve3r.combined.engine.sstp
 
 import android.os.ParcelFileDescriptor
+import io.github.mr1ve3r.combined.core.trust.PreflightProblem
 import io.github.mr1ve3r.combined.core.trust.PreflightReport
 import io.github.mr1ve3r.combined.core.trust.TrustManagerFactoryProvider
 import io.github.mr1ve3r.combined.core.trust.TrustPreflight
@@ -251,11 +252,17 @@ class SstpEngine internal constructor(
                 log(LogLevel.WARN, "This build does not offer $from; the profile is connecting with $to instead")
             }
 
+        // The pins are looked up as well as the selection: in this application a
+        // pin is the id of a stored certificate, so the store can say whether
+        // what was pinned is a CA -- which is the one pin that can never match.
         val report =
             TrustPreflight.check(
                 policy = policy,
                 selectedCertificateIds = config.trustedCertificateIds,
-                availableCertificates = certificates.summariesFor(config.trustedCertificateIds),
+                availableCertificates =
+                    certificates.summariesFor(
+                        (config.trustedCertificateIds + config.pinnedFingerprints).distinct(),
+                    ),
                 pinnedFingerprints = config.pinnedFingerprints,
                 now = clock(),
             )
@@ -277,7 +284,7 @@ class SstpEngine internal constructor(
     }
 
     private fun reportPreflight(report: PreflightReport) {
-        report.confirmations.forEach { log(LogLevel.WARN, "Trust pre-flight: ${it.messageKey}") }
+        report.confirmations.forEach { log(LogLevel.WARN, "Trust pre-flight: ${describe(it)}") }
 
         if (!report.canConnect) {
             val blocking = report.blocking.joinToString { it.messageKey }
@@ -285,6 +292,39 @@ class SstpEngine internal constructor(
             fail(error)
             throw EngineException(error)
         }
+    }
+
+    /**
+     * A pre-flight finding as a sentence.
+     *
+     * The key alone reaches the log as `trust.preflight.pinned_certificate_is_ca`,
+     * which is a string the user has no way to act on. The UI still phrases
+     * these from [PreflightProblem.messageKey]; this is only for the log the
+     * user reads when a connection did not work.
+     */
+    private fun describe(problem: PreflightProblem): String = when (problem) {
+        is PreflightProblem.CertificatesMissing ->
+            "the profile refers to ${problem.ids.size} certificate(s) the store no longer holds"
+
+        is PreflightProblem.NoCertificatesSelected ->
+            "${problem.policy} needs at least one certificate and the profile selects none"
+
+        PreflightProblem.NoPinsConfigured ->
+            "PIN_LEAF needs at least one fingerprint and the profile pins none"
+
+        is PreflightProblem.CertificatesIgnoredByPolicy ->
+            "the ${problem.ids.size} certificate(s) this profile selects are not consulted under ${problem.policy}; " +
+                "choose SYSTEM_PLUS_CUSTOM or CUSTOM_ONLY to verify against them"
+
+        is PreflightProblem.PinnedCertificateIsCa ->
+            "the pinned certificate ${problem.subjectCn ?: problem.id} is a CA, and a pin is compared against the " +
+                "certificate the server presents; pin the server's own certificate, or anchor on this one with CUSTOM_ONLY"
+
+        is PreflightProblem.AnchorIsNotACertificateAuthority ->
+            "${problem.subjectCn ?: problem.id} is not a CA and cannot anchor a chain; pin it with PIN_LEAF instead"
+
+        is PreflightProblem.CertificateExpired ->
+            "the certificate ${problem.subjectCn ?: problem.id} expired"
     }
 
     private suspend fun openTransport(wiring: SstpBridge, protector: SocketProtector, trustManager: X509TrustManager) {

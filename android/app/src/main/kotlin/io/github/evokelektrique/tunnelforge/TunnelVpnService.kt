@@ -35,6 +35,7 @@ import io.github.mr1ve3r.combined.engine.EngineProfile
 import io.github.mr1ve3r.combined.engine.EngineState
 import io.github.mr1ve3r.combined.engine.LogLevel
 import io.github.mr1ve3r.combined.engine.Protocol
+import io.github.mr1ve3r.combined.engine.TrustPolicy
 import io.github.mr1ve3r.combined.engine.TunnelParams
 import io.github.mr1ve3r.combined.engine.VpnEngine
 import io.github.mr1ve3r.combined.engine.l2tp.L2tpEngine
@@ -848,13 +849,31 @@ class TunnelVpnService : VpnService() {
     private fun createEngine(profile: EngineProfile): VpnEngine =
         when (profile) {
             is EngineProfile.L2tp -> L2tpEngine(VpnBridgeL2tpNative)
-            is EngineProfile.Sstp ->
+            is EngineProfile.Sstp -> {
+                val debuggable = (applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
+                if (profile.trustPolicy == TrustPolicy.SYSTEM) {
+                    // Which store SYSTEM actually means is not something the
+                    // user can see from the outside, and it differs by build:
+                    // only a debug build declares a network security config
+                    // that trusts CAs installed through Android's settings.
+                    VpnTunnelEvents.emitEngineLog(
+                        Log.INFO,
+                        TAG,
+                        if (debuggable) {
+                            "Trust policy SYSTEM: Android's system CAs and CAs installed on this device (debug build)"
+                        } else {
+                            "Trust policy SYSTEM: Android's system CAs only -- a CA installed through Android's " +
+                                "settings is not consulted; import it into the app and pick SYSTEM_PLUS_CUSTOM or CUSTOM_ONLY"
+                        },
+                    )
+                }
                 SstpEngine(
                     certificates = TrustStoreCertificateSource(TrustStore.get(applicationContext)),
                     // The INSECURE policy must not be honoured by a release
                     // build (SPEC 5.5).
-                    allowInsecureTrust = (applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0,
+                    allowInsecureTrust = debuggable,
                 )
+            }
         }
 
     /**

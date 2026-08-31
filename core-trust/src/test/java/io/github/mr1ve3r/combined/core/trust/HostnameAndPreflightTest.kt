@@ -85,6 +85,87 @@ class HostnameAndPreflightTest {
     }
 
     @Test
+    fun `pinning a CA is reported, because the server presents its leaf`() {
+        val ca = CertificateSummary.of(TestCertificates.ca)
+
+        val report =
+            TrustPreflight.check(
+                policy = TrustPolicy.PIN_LEAF,
+                selectedCertificateIds = emptyList(),
+                availableCertificates = mapOf(ca.id to ca),
+                pinnedFingerprints = setOf(ca.id),
+                now = ca.notBefore + 1,
+            )
+
+        // Not blocking: a router that serves its own root directly makes this
+        // pin the correct one. It is still the likeliest reason a fingerprint
+        // "does not match" while naming a certificate the user never stored.
+        assertTrue(report.canConnect)
+        assertEquals(
+            ca.id,
+            report.confirmations.filterIsInstance<PreflightProblem.PinnedCertificateIsCa>().single().id,
+        )
+    }
+
+    @Test
+    fun `pinning the leaf itself says nothing`() {
+        val leaf = CertificateSummary.of(TestCertificates.leafSignedByCa)
+
+        val report =
+            TrustPreflight.check(
+                policy = TrustPolicy.PIN_LEAF,
+                selectedCertificateIds = emptyList(),
+                availableCertificates = mapOf(leaf.id to leaf),
+                pinnedFingerprints = setOf(leaf.id),
+                now = leaf.notBefore + 1,
+            )
+
+        assertTrue(report.isClean)
+    }
+
+    @Test
+    fun `anchoring a chain on a leaf is reported before PKIX says only that no anchor was found`() {
+        val leaf = CertificateSummary.of(TestCertificates.leafSignedByCa)
+
+        val report =
+            TrustPreflight.check(
+                policy = TrustPolicy.CUSTOM_ONLY,
+                selectedCertificateIds = listOf(leaf.id),
+                availableCertificates = mapOf(leaf.id to leaf),
+                pinnedFingerprints = emptySet(),
+                now = leaf.notBefore + 1,
+            )
+
+        assertTrue(report.canConnect)
+        assertEquals(
+            leaf.id,
+            report.confirmations.filterIsInstance<PreflightProblem.AnchorIsNotACertificateAuthority>().single().id,
+        )
+    }
+
+    @Test
+    fun `a certificate the policy never consults is reported as ignored`() {
+        val ca = CertificateSummary.of(TestCertificates.ca)
+
+        val report =
+            TrustPreflight.check(
+                policy = TrustPolicy.SYSTEM,
+                selectedCertificateIds = listOf(ca.id),
+                availableCertificates = mapOf(ca.id to ca),
+                pinnedFingerprints = emptySet(),
+                now = ca.notBefore + 1,
+            )
+
+        // The profile looks configured and the certificate takes no part in the
+        // connection; without this the log says nothing at all about it.
+        assertTrue(report.canConnect)
+        assertEquals(
+            listOf(ca.id),
+            report.confirmations.filterIsInstance<PreflightProblem.CertificatesIgnoredByPolicy>().single().ids,
+        )
+    }
+
+    @Test
     fun `a deleted certificate blocks the attempt and names what is missing`() {
         val report =
             TrustPreflight.check(

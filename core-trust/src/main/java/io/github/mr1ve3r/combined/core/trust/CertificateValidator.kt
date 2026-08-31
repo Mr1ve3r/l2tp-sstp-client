@@ -60,6 +60,10 @@ object CertificateValidator {
         }
     }
 
+    /** Whether [policy] looks at the certificates a profile has selected at all. */
+    fun consultsSelectedCertificates(policy: TrustPolicy): Boolean =
+        policy == TrustPolicy.CUSTOM_ONLY || policy == TrustPolicy.SYSTEM_PLUS_CUSTOM
+
     /** Whether [policy] builds a chain, and so wants a CA rather than a leaf. */
     fun requiresCertificateAuthority(policy: TrustPolicy): Boolean =
         policy == TrustPolicy.CUSTOM_ONLY || policy == TrustPolicy.SYSTEM_PLUS_CUSTOM
