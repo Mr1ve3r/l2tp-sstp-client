@@ -59,7 +59,11 @@ class ProfilePickerSheet extends StatefulWidget {
       backgroundColor: sheetColor,
       builder: (sheetContext) => BlocProvider.value(
         value: profilesBloc,
-        child: ProfilePickerSheet(profilesBloc: profilesBloc, store: store),
+        child: ProfilePickerSheet(
+          profilesBloc: profilesBloc,
+          store: store,
+          certificates: certificates,
+        ),
       ),
     );
   }

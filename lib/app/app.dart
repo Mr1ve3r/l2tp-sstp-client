@@ -9,6 +9,7 @@ import 'package:tunnel_forge/l10n/app_localizations.dart';
 import 'package:tunnel_forge/features/profiles/data/profile_store.dart';
 import 'package:tunnel_forge/features/profiles/data/profile_transfer_bridge.dart';
 import 'package:tunnel_forge/app/theme/app_theme.dart';
+import 'package:tunnel_forge/features/trust/domain/trust_repository.dart';
 import 'package:tunnel_forge/features/tunnel/data/vpn_client.dart';
 import 'package:tunnel_forge/features/home/domain/home_repositories.dart';
 import 'package:tunnel_forge/features/app_theme/presentation/bloc/app_theme_bloc.dart';
@@ -30,6 +31,7 @@ class TunnelForgeApp extends StatefulWidget {
     this.appUpdateRepository,
     this.onboardingRepository,
     this.appExitController,
+    this.certificatesRepository,
   });
 
   final ProfileStore? profileStore;
@@ -40,6 +42,10 @@ class TunnelForgeApp extends StatefulWidget {
   final AppUpdateRepository? appUpdateRepository;
   final OnboardingRepository? onboardingRepository;
   final AppExitController? appExitController;
+
+  /// The certificate store. Injected so a test can hold one that answers
+  /// without the host channel, which no test binding provides.
+  final CertificatesRepository? certificatesRepository;
 
   @override
   State<TunnelForgeApp> createState() => _TunnelForgeAppState();
@@ -62,6 +68,7 @@ class _TunnelForgeAppState extends State<TunnelForgeApp> {
       appUpdateRepository: widget.appUpdateRepository,
       onboardingRepository: widget.onboardingRepository,
       appExitController: widget.appExitController,
+      certificatesRepository: widget.certificatesRepository,
     );
   }
 

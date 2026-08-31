@@ -16,6 +16,7 @@ import 'package:tunnel_forge/features/tunnel/data/vpn_contract.dart';
 
 import 'support/host_to_dart_channel.dart';
 import 'support/vpn_channel_mock.dart';
+import 'support/fake_certificates_repository.dart';
 
 class _AcceptedOnboardingRepository implements OnboardingRepository {
   const _AcceptedOnboardingRepository();
@@ -37,6 +38,7 @@ void main() {
   }) async {
     await tester.pumpWidget(
       TunnelForgeApp(
+        certificatesRepository: FakeCertificatesRepository(),
         onboardingRepository: const _AcceptedOnboardingRepository(),
         profileStore: store,
         profileTransferBridge: profileTransferBridge,

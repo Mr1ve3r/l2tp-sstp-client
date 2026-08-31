@@ -41,6 +41,21 @@ abstract final class VpnContract {
 
   /// `l2tp` or `sstp`; absent means L2TP (SPEC 7.1.1).
   static const String argProtocol = 'protocol';
+
+  // The SSTP fields that travel with `argProtocol: 'sstp'`; the host ignores
+  // them for any other protocol (SPEC 7.1.1).
+  static const String argSstpPort = 'sstpPort';
+  static const String argSstpTrustPolicy = 'sstpTrustPolicy';
+  static const String argSstpCertificateIds = 'sstpCertificateIds';
+  static const String argSstpPinnedFingerprints = 'sstpPinnedFingerprints';
+  static const String argSstpExpectedHostname = 'sstpExpectedHostname';
+  static const String argSstpMinTlsVersion = 'sstpMinTlsVersion';
+  static const String argSstpAuthMethods = 'sstpAuthMethods';
+  static const String argSstpProxyHost = 'sstpProxyHost';
+  static const String argSstpProxyPort = 'sstpProxyPort';
+  static const String argSstpProxyUsername = 'sstpProxyUsername';
+  static const String argSstpProxyPassword = 'sstpProxyPassword';
+
   static const String argProfileName = 'profileName';
   static const String argConnectionMode = 'connectionMode';
   static const String argProxyHttpPort = 'proxyHttpPort';

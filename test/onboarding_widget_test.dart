@@ -12,6 +12,7 @@ import 'package:tunnel_forge/features/onboarding/presentation/pages/onboarding_p
 import 'package:tunnel_forge/main.dart';
 import 'package:tunnel_forge/features/profiles/data/profile_bridge.dart';
 import 'package:tunnel_forge/features/profiles/data/profile_store.dart';
+import 'support/fake_certificates_repository.dart';
 
 class _FakeOnboardingRepository implements OnboardingRepository {
   _FakeOnboardingRepository({this.version});
@@ -57,6 +58,7 @@ void main() {
     });
     await tester.pumpWidget(
       TunnelForgeApp(
+        certificatesRepository: FakeCertificatesRepository(),
         profileStore: ProfileStore(
           secretsOverride: MemorySecretStore(),
           backendOverride: MemoryProfileBackend(),

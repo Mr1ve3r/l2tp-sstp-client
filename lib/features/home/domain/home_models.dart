@@ -119,6 +119,8 @@ class TunnelConnectRequest extends Equatable {
     required this.connectionMode,
     required this.splitTunnelSettings,
     required this.proxySettings,
+    this.protocol = VpnProtocol.l2tp,
+    this.sstp = const SstpConnectSettings(),
   });
 
   final String attemptId;
@@ -135,6 +137,12 @@ class TunnelConnectRequest extends Equatable {
   final SplitTunnelSettings splitTunnelSettings;
   final ProxySettings proxySettings;
 
+  /// What the host dispatches on (SPEC 7.1.1).
+  final VpnProtocol protocol;
+
+  /// Read only when [protocol] is [VpnProtocol.sstp].
+  final SstpConnectSettings sstp;
+
   @override
   List<Object?> get props => [
     attemptId,
@@ -150,6 +158,8 @@ class TunnelConnectRequest extends Equatable {
     connectionMode,
     splitTunnelSettings,
     proxySettings,
+    protocol,
+    sstp,
   ];
 }
 

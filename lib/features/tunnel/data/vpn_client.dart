@@ -219,9 +219,10 @@ class VpnClient {
   Future<void> connect({
     String attemptId = '',
     required String server,
-    // The protocol the host dispatches on (SPEC 7.1.1). The SSTP fields that go
-    // with it arrive with the profile model in phase 8.
+    // The protocol the host dispatches on (SPEC 7.1.1), and the fields it reads
+    // only when that protocol is SSTP.
     VpnProtocol protocol = VpnProtocol.l2tp,
+    SstpConnectSettings sstp = const SstpConnectSettings(),
     String? profileName,
     ConnectionMode connectionMode = ConnectionMode.vpnTunnel,
     String user = '',
@@ -258,6 +259,31 @@ class VpnClient {
       VpnContract.argDnsServers: normalizedDnsServers,
       VpnContract.argMtu: mtuClamped,
       VpnContract.argProtocol: protocol.wireValue,
+      if (protocol == VpnProtocol.sstp) ...<String, Object?>{
+        VpnContract.argSstpPort: ProxySettings.normalizePort(
+          sstp.port,
+          fallback: Profile.defaultSstpPort,
+        ),
+        VpnContract.argSstpTrustPolicy: sstp.trustPolicy.wireName,
+        VpnContract.argSstpCertificateIds: List<String>.from(
+          sstp.trustedCertificateIds,
+        ),
+        VpnContract.argSstpPinnedFingerprints: List<String>.from(
+          sstp.pinnedFingerprints,
+        ),
+        VpnContract.argSstpExpectedHostname: sstp.expectedHostname.trim(),
+        VpnContract.argSstpMinTlsVersion: sstp.minTlsVersion.wireName,
+        VpnContract.argSstpAuthMethods: sstp.pppAuthMethods
+            .map((method) => method.wireName)
+            .toList(growable: false),
+        VpnContract.argSstpProxyHost: sstp.proxyHost.trim(),
+        VpnContract.argSstpProxyPort: ProxySettings.normalizePort(
+          sstp.proxyPort,
+          fallback: Profile.defaultProxyPort,
+        ),
+        VpnContract.argSstpProxyUsername: sstp.proxyUsername,
+        VpnContract.argSstpProxyPassword: sstp.proxyPassword,
+      },
       VpnContract.argConnectionMode: connectionMode.jsonValue,
       VpnContract.argSplitTunnelEnabled: splitTunnelSettings.enabled,
       VpnContract.argSplitTunnelMode: splitTunnelSettings.mode.jsonValue,

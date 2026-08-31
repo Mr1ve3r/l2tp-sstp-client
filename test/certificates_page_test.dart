@@ -10,8 +10,8 @@ import 'package:tunnel_forge/features/trust/presentation/pages/certificates_page
 import 'package:tunnel_forge/features/trust/presentation/widgets/certificate_import_sheet.dart';
 import 'package:tunnel_forge/l10n/app_localizations.dart';
 
-import 'certificates_bloc_test.dart' show FakeCertificatesRepository;
 import 'support/certificate_fixtures.dart';
+import 'support/fake_certificates_repository.dart';
 
 /// Closing a bloc is not awaited in these tests: the widget tree is still
 /// subscribed to it, and the close future only completes once the done event

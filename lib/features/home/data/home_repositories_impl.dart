@@ -559,6 +559,8 @@ class TunnelRepositoryImpl implements TunnelRepository {
     return _client.connect(
       attemptId: request.attemptId,
       server: request.server,
+      protocol: request.protocol,
+      sstp: request.sstp,
       profileName: request.profileName,
       connectionMode: request.connectionMode,
       user: request.user,

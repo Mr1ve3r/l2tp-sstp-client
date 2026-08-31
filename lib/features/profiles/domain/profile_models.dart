@@ -1,3 +1,5 @@
+import 'package:equatable/equatable.dart';
+
 import 'package:tunnel_forge/core/vpn_protocol.dart';
 import 'package:tunnel_forge/features/trust/domain/trust_models.dart';
 import 'package:tunnel_forge/l10n/app_localizations.dart';
@@ -461,6 +463,76 @@ enum PppAuthMethod {
     }
     return out.isEmpty ? defaults : out;
   }
+}
+
+/// The SSTP half of a connection request (SPEC 9.1.2, 9.1.3).
+///
+/// One object rather than eleven parameters on every layer between the profile
+/// and the method channel: the host reads these only when the request names
+/// SSTP, and an L2TP request carries none of them.
+class SstpConnectSettings extends Equatable {
+  const SstpConnectSettings({
+    this.port = Profile.defaultSstpPort,
+    this.trustPolicy = TrustPolicy.system,
+    this.trustedCertificateIds = const <String>[],
+    this.pinnedFingerprints = const <String>[],
+    this.expectedHostname = '',
+    this.minTlsVersion = TlsVersion.tls12,
+    this.pppAuthMethods = PppAuthMethod.defaults,
+    this.proxyHost = '',
+    this.proxyPort = Profile.defaultProxyPort,
+    this.proxyUsername = '',
+    this.proxyPassword = '',
+  });
+
+  /// What [profile] asks of SSTP, with the proxy dropped when it is switched
+  /// off so the host sees no proxy at all rather than a disabled one.
+  factory SstpConnectSettings.fromProfile(
+    Profile profile, {
+    String proxyPassword = '',
+  }) {
+    final proxyOn = profile.proxyEnabled && profile.proxyHost.trim().isNotEmpty;
+    return SstpConnectSettings(
+      port: profile.port,
+      trustPolicy: profile.trustPolicy,
+      trustedCertificateIds: profile.trustedCertificateIds,
+      pinnedFingerprints: profile.pinnedFingerprints,
+      expectedHostname: profile.expectedHostname,
+      minTlsVersion: profile.minTlsVersion,
+      pppAuthMethods: profile.pppAuthMethods,
+      proxyHost: proxyOn ? profile.proxyHost.trim() : '',
+      proxyPort: proxyOn ? profile.proxyPort : Profile.defaultProxyPort,
+      proxyUsername: proxyOn ? profile.proxyUsername : '',
+      proxyPassword: proxyOn ? proxyPassword : '',
+    );
+  }
+
+  final int port;
+  final TrustPolicy trustPolicy;
+  final List<String> trustedCertificateIds;
+  final List<String> pinnedFingerprints;
+  final String expectedHostname;
+  final TlsVersion minTlsVersion;
+  final List<PppAuthMethod> pppAuthMethods;
+  final String proxyHost;
+  final int proxyPort;
+  final String proxyUsername;
+  final String proxyPassword;
+
+  @override
+  List<Object?> get props => [
+    port,
+    trustPolicy,
+    trustedCertificateIds,
+    pinnedFingerprints,
+    expectedHostname,
+    minTlsVersion,
+    pppAuthMethods,
+    proxyHost,
+    proxyPort,
+    proxyUsername,
+    proxyPassword,
+  ];
 }
 
 /// Saved VPN identity: public fields only; password and PSK live in [ProfileStore] secrets.

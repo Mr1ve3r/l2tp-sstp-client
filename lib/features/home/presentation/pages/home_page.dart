@@ -364,6 +364,11 @@ class _VpnHomePageViewState extends State<_VpnHomePageView>
           activeProfileId: profile.id,
           profileName: trimmedName.isEmpty ? null : trimmedName,
           server: profile.server,
+          protocol: profile.protocol,
+          sstp: SstpConnectSettings.fromProfile(
+            profile,
+            proxyPassword: row.proxyPassword,
+          ),
           user: profile.user,
           password: row.password,
           psk: row.psk,

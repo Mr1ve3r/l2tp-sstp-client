@@ -4,6 +4,7 @@ import 'package:bloc/bloc.dart';
 import 'package:equatable/equatable.dart';
 import 'package:flutter/services.dart';
 
+import 'package:tunnel_forge/core/vpn_protocol.dart';
 import 'package:tunnel_forge/features/profiles/domain/profile_models.dart';
 import 'package:tunnel_forge/l10n/app_localizations.dart';
 import 'package:tunnel_forge/core/logging/log_entry.dart';
@@ -330,9 +331,21 @@ class TunnelBloc extends Bloc<TunnelEvent, TunnelState> {
           : request.dnsServers
                 .map((entry) => '${entry.host}[${entry.protocol.shortLabel}]')
                 .join(', ');
+      // What the SSTP session will be judged against, so a trust or auth
+      // failure can be read back against what the profile actually asked for.
+      final sstp = request.sstp;
+      final sstpLog = request.protocol != VpnProtocol.sstp
+          ? ''
+          : 'sstpPort=${sstp.port} trust=${sstp.trustPolicy.wireName} '
+                'certs=${sstp.trustedCertificateIds.length} pins=${sstp.pinnedFingerprints.length} '
+                'hostname=${sstp.expectedHostname.isEmpty ? "(server)" : sstp.expectedHostname} '
+                'minTls=${sstp.minTlsVersion.wireName} '
+                'auth=${sstp.pppAuthMethods.map((m) => m.wireName).join("/")} '
+                'proxy=${sstp.proxyHost.isEmpty ? "off" : "on"} ';
       _logDebug(
-        'Profile: server=$host user=${request.user.isEmpty ? '(empty)' : request.user} dns=$dnsLog mtu=${request.mtu} '
+        'Profile: protocol=${request.protocol.wireValue} server=$host user=${request.user.isEmpty ? '(empty)' : request.user} dns=$dnsLog mtu=${request.mtu} '
         'psk=${request.psk.isEmpty ? 'off (cleartext L2TP if server allows)' : 'on'} '
+        '$sstpLog'
         'mode=${request.connectionMode.jsonValue} splitTunnelEnabled=${splitTunnelSettings.enabled} splitTunnelMode=${splitTunnelSettings.mode.jsonValue} '
         'inclusiveApps=${splitTunnelSettings.inclusivePackages.length} exclusiveApps=${splitTunnelSettings.exclusivePackages.length} '
         'http=${request.proxySettings.httpPort} socks=${request.proxySettings.socksPort} lan=${request.proxySettings.allowLanConnections ? 'on' : 'off'} '
@@ -344,6 +357,8 @@ class TunnelBloc extends Bloc<TunnelEvent, TunnelState> {
           activeProfileId: request.activeProfileId,
           profileName: request.profileName,
           server: request.server,
+          protocol: request.protocol,
+          sstp: request.sstp,
           user: request.user,
           password: request.password,
           psk: request.psk,
