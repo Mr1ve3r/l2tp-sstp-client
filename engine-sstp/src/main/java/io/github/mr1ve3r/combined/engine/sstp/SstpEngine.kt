@@ -11,6 +11,8 @@
 package io.github.mr1ve3r.combined.engine.sstp
 
 import android.os.ParcelFileDescriptor
+import io.github.mr1ve3r.combined.core.trust.CertificateFingerprint
+import io.github.mr1ve3r.combined.core.trust.CertificateSummary
 import io.github.mr1ve3r.combined.core.trust.PreflightProblem
 import io.github.mr1ve3r.combined.core.trust.PreflightReport
 import io.github.mr1ve3r.combined.core.trust.TrustManagerFactoryProvider
@@ -49,6 +51,7 @@ import io.github.mr1ve3r.combined.engine.sstp.unit.sstp.SSTP_MESSAGE_TYPE_CALL_D
 import io.github.mr1ve3r.combined.engine.sstp.unit.sstp.SSTP_MESSAGE_TYPE_CALL_DISCONNECT_ACK
 import java.net.Inet4Address
 import java.net.InetAddress
+import java.security.cert.X509Certificate
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.net.ssl.X509TrustManager
 import kotlinx.coroutines.CoroutineDispatcher
@@ -272,6 +275,7 @@ class SstpEngine internal constructor(
             } else {
                 certificates.certificatesFor(config.trustedCertificateIds)
             }
+        logTrustBasis(policy, selected, config.pinnedFingerprints)
 
         return TrustManagerFactoryProvider.create(
             policy = policy,
@@ -279,6 +283,44 @@ class SstpEngine internal constructor(
             pinnedFingerprints = config.pinnedFingerprints,
             allowInsecure = allowInsecureTrust,
         )
+    }
+
+    /**
+     * Says what this attempt will actually check the server against.
+     *
+     * The chain the server presents is logged by the terminal; this is the
+     * other half of the same comparison. Without it a rejection cannot
+     * distinguish a certificate that is wrong from a certificate that was never
+     * consulted -- and those two have the same symptom and opposite fixes.
+     */
+    private fun logTrustBasis(policy: TrustPolicy, anchors: List<X509Certificate>, pins: Set<String>) {
+        when (policy) {
+            TrustPolicy.SYSTEM ->
+                log(
+                    LogLevel.INFO,
+                    "Trust: SYSTEM -- the chain is checked against the platform's CAs only; " +
+                        "certificates stored in this app take no part",
+                )
+
+            TrustPolicy.PIN_LEAF -> {
+                log(LogLevel.INFO, "Trust: PIN_LEAF -- the certificate the server presents first must match one of ${pins.size} pin(s):")
+                pins.forEach { pin ->
+                    log(LogLevel.INFO, "  pin ${CertificateFingerprint.formatForDisplay(CertificateFingerprint.normalise(pin))}")
+                }
+            }
+
+            else -> {
+                log(LogLevel.INFO, "Trust: $policy -- the chain is anchored on ${anchors.size} certificate(s) from this app:")
+                anchors.forEach { anchor ->
+                    val summary = CertificateSummary.of(anchor)
+                    log(
+                        LogLevel.INFO,
+                        "  anchor ${if (summary.isCa) "CA" else "not a CA"}: subject=${summary.subjectDn} " +
+                            "sha256=${CertificateFingerprint.formatForDisplay(summary.sha256Fingerprint)}",
+                    )
+                }
+            }
+        }
     }
 
     private fun reportPreflight(report: PreflightReport) {
