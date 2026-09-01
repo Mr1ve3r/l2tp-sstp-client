@@ -387,6 +387,12 @@ class _ServerAddressDialogState extends State<_ServerAddressDialog> {
           TextField(
             controller: _host,
             autofocus: true,
+            keyboardType: TextInputType.url,
+            autocorrect: false,
+            enableSuggestions: false,
+            textCapitalization: TextCapitalization.none,
+            smartDashesType: SmartDashesType.disabled,
+            smartQuotesType: SmartQuotesType.disabled,
             decoration: InputDecoration(labelText: l10n.certificateHost),
           ),
           const SizedBox(height: 8),

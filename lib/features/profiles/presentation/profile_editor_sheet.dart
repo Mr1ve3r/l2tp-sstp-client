@@ -185,6 +185,9 @@ class _ProfileEditorViewState extends State<ProfileEditorView> {
       obscureText: !visible,
       enableSuggestions: false,
       autocorrect: false,
+      textCapitalization: TextCapitalization.none,
+      smartDashesType: SmartDashesType.disabled,
+      smartQuotesType: SmartQuotesType.disabled,
       onChanged: onChanged,
       decoration: _deco(context, label: label, hint: hint).copyWith(
         suffixIcon: IconButton(
@@ -218,6 +221,11 @@ class _ProfileEditorViewState extends State<ProfileEditorView> {
             controller: controller,
             enabled: !dnsAutomatic,
             keyboardType: TextInputType.text,
+            autocorrect: false,
+            enableSuggestions: false,
+            textCapitalization: TextCapitalization.none,
+            smartDashesType: SmartDashesType.disabled,
+            smartQuotesType: SmartQuotesType.disabled,
             onChanged: onChanged,
             decoration: _deco(
               context,
@@ -424,6 +432,10 @@ class _ProfileEditorViewState extends State<ProfileEditorView> {
           controller: _expectedHostnameController,
           keyboardType: TextInputType.url,
           autocorrect: false,
+          enableSuggestions: false,
+          textCapitalization: TextCapitalization.none,
+          smartDashesType: SmartDashesType.disabled,
+          smartQuotesType: SmartQuotesType.disabled,
           onChanged: (value) =>
               bloc.add(ProfileFormExpectedHostnameChanged(value)),
           decoration: _deco(
@@ -488,6 +500,10 @@ class _ProfileEditorViewState extends State<ProfileEditorView> {
                 controller: _proxyHostController,
                 keyboardType: TextInputType.url,
                 autocorrect: false,
+                enableSuggestions: false,
+                textCapitalization: TextCapitalization.none,
+                smartDashesType: SmartDashesType.disabled,
+                smartQuotesType: SmartQuotesType.disabled,
                 onChanged: (value) =>
                     bloc.add(ProfileFormProxyHostChanged(value)),
                 decoration: _deco(context, label: t.proxyHostLabel),
@@ -506,6 +522,8 @@ class _ProfileEditorViewState extends State<ProfileEditorView> {
               TextField(
                 controller: _proxyUsernameController,
                 autocorrect: false,
+                enableSuggestions: false,
+                textCapitalization: TextCapitalization.none,
                 onChanged: (value) =>
                     bloc.add(ProfileFormProxyUsernameChanged(value)),
                 decoration: _deco(context, label: t.proxyUsernameLabel),
@@ -708,6 +726,11 @@ class _ProfileEditorViewState extends State<ProfileEditorView> {
                             controller: _serverController,
                             textInputAction: TextInputAction.next,
                             keyboardType: TextInputType.url,
+                            autocorrect: false,
+                            enableSuggestions: false,
+                            textCapitalization: TextCapitalization.none,
+                            smartDashesType: SmartDashesType.disabled,
+                            smartQuotesType: SmartQuotesType.disabled,
                             onChanged: (value) => context
                                 .read<ProfileFormBloc>()
                                 .add(ProfileFormServerChanged(value)),
@@ -721,6 +744,11 @@ class _ProfileEditorViewState extends State<ProfileEditorView> {
                           TextField(
                             controller: _userController,
                             textInputAction: TextInputAction.next,
+                            autocorrect: false,
+                            enableSuggestions: false,
+                            textCapitalization: TextCapitalization.none,
+                            smartDashesType: SmartDashesType.disabled,
+                            smartQuotesType: SmartQuotesType.disabled,
                             onChanged: (value) => context
                                 .read<ProfileFormBloc>()
                                 .add(ProfileFormUserChanged(value)),

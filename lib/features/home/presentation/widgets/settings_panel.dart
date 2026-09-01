@@ -542,6 +542,11 @@ class _SettingsPanelState extends State<SettingsPanel> {
                   key: const Key('connectivity_url_field'),
                   controller: _connectivityUrlController,
                   keyboardType: TextInputType.url,
+                  autocorrect: false,
+                  enableSuggestions: false,
+                  textCapitalization: TextCapitalization.none,
+                  smartDashesType: SmartDashesType.disabled,
+                  smartQuotesType: SmartQuotesType.disabled,
                   decoration: InputDecoration(
                     labelText: t.connectivityUrl,
                     hintText: ConnectivityCheckSettings.defaultUrl,
