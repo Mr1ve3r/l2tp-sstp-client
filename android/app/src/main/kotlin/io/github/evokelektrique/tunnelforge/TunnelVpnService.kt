@@ -1,6 +1,5 @@
 package io.github.evokelektrique.tunnelforge
 
-import androidx.annotation.Keep
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -18,7 +17,10 @@ import android.os.Looper
 import android.os.ParcelFileDescriptor
 import android.os.Process
 import android.util.Log
+import androidx.annotation.Keep
 import androidx.core.app.NotificationCompat
+import io.github.mr1ve3r.combined.core.profile.FailoverGroup
+import io.github.mr1ve3r.combined.core.profile.FailoverGroupStore
 import io.github.mr1ve3r.combined.core.profile.ProfileStore
 import io.github.mr1ve3r.combined.core.trust.store.TrustStore
 import io.github.mr1ve3r.combined.core.tunnel.NetworkEvent
@@ -30,6 +32,7 @@ import io.github.mr1ve3r.combined.core.tunnel.TunnelBuilder
 import io.github.mr1ve3r.combined.core.tunnel.TunnelConfig
 import io.github.mr1ve3r.combined.core.tunnel.TunnelEstablishFailedException
 import io.github.mr1ve3r.combined.core.tunnel.VpnServiceTunnelInterface
+import io.github.mr1ve3r.combined.engine.EngineError
 import io.github.mr1ve3r.combined.engine.EngineException
 import io.github.mr1ve3r.combined.engine.EngineProfile
 import io.github.mr1ve3r.combined.engine.EngineState
@@ -42,6 +45,12 @@ import io.github.mr1ve3r.combined.engine.l2tp.L2tpEngine
 import io.github.mr1ve3r.combined.engine.l2tp.L2tpNativeCallbacks
 import io.github.mr1ve3r.combined.engine.sstp.SstpEngine
 import io.github.mr1ve3r.combined.engine.sstp.TrustStoreCertificateSource
+import java.io.IOException
+import java.net.DatagramSocket
+import java.net.InetAddress
+import java.net.Socket
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -49,12 +58,6 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
-import java.io.IOException
-import java.net.DatagramSocket
-import java.net.InetAddress
-import java.net.Socket
-import java.util.concurrent.atomic.AtomicBoolean
-import java.util.concurrent.atomic.AtomicInteger
 
 /** Foreground [VpnService]: TUN, notification, native tunnel thread. */
 @Keep
@@ -103,6 +106,17 @@ class TunnelVpnService : VpnService() {
     private var activeProfileName: String? = null
     private var activeProtocol: TunnelProtocol = TunnelProtocol.L2TP
     private var connectedSince: Long = 0L
+
+    /**
+     * The failover group being walked, or `null` for an ordinary single-profile
+     * connection (SPEC 10.1). Guarded by [sessionLock] like the rest of the
+     * session's state, because the setup thread reads it while the main thread
+     * can be replacing it.
+     */
+    private var failoverRun: FailoverRun? = null
+
+    /** The armed [FailoverRun.connectTimeoutMs] callback, or `null` when none is pending. */
+    private var failoverBudgetRunnable: Runnable? = null
 
     /** What the engine negotiated for the live session, or `null` between sessions. */
     private var activeTunnelParams: TunnelParams? = null
@@ -200,6 +214,9 @@ class TunnelVpnService : VpnService() {
         when (intent?.action) {
             ACTION_STOP -> {
                 cancelPendingStopSelf()
+                // Before anything else: a group mid-walk would otherwise start
+                // its next member on top of the teardown.
+                clearFailoverRun()
                 val attemptId = intent.getStringExtra(EXTRA_ATTEMPT_ID) ?: ""
                 VpnTunnelEvents.emitEngineLog(Log.INFO, TAG, "${prefixAttempt(attemptId)}ACTION_STOP: tearing down tunnel")
                 val hadActiveSession = hasActiveSession()
@@ -218,6 +235,22 @@ class TunnelVpnService : VpnService() {
                 }
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf()
+                return START_NOT_STICKY
+            }
+            ACTION_START_GROUP -> {
+                // Required immediately after Context.startForegroundService(); must run before any early return.
+                startForegroundWithType(buildNotification(getString(R.string.vpn_notification_connecting)))
+                val attemptId = intent.getStringExtra(EXTRA_ATTEMPT_ID) ?: ""
+                val groupId = intent.getStringExtra(EXTRA_GROUP_ID)?.trim().orEmpty()
+                if (groupId.isEmpty()) {
+                    AppLog.e(TAG, "${prefixAttempt(attemptId)}ACTION_START_GROUP missing group")
+                    VpnTunnelEvents.emitEngineLog(Log.ERROR, TAG, "${prefixAttempt(attemptId)}ACTION_START_GROUP rejected: missing group")
+                    VpnTunnelEvents.emit(VpnContract.TUNNEL_FAILED, "Invalid tunnel arguments from the app.", attemptId)
+                    stopForeground(STOP_FOREGROUND_REMOVE)
+                    stopSelf()
+                    return START_NOT_STICKY
+                }
+                startFailoverGroup(groupId, attemptId, proxyConfigFrom(intent))
                 return START_NOT_STICKY
             }
             ACTION_START -> {
@@ -507,6 +540,18 @@ class TunnelVpnService : VpnService() {
                     )
                     return
                 } catch (e: EngineException) {
+                    // A failover group gets first refusal on the failure: if it
+                    // has another member for this error, the user never sees
+                    // this one (SPEC 10.1.2).
+                    if (advanceFailover(attemptId, e.error)) {
+                        VpnTunnelEvents.emitEngineLog(
+                            Log.INFO,
+                            TAG,
+                            "${prefixAttempt(attemptId)}Member failed with ${e.error.messageKey}; trying the next one",
+                        )
+                        running.set(false)
+                        return
+                    }
                     emitAttemptState(
                         attemptId,
                         VpnContract.TUNNEL_FAILED,
@@ -753,6 +798,189 @@ class TunnelVpnService : VpnService() {
             }
             clearSetupThreadIfCurrent(currentSetupThread)
         }
+    }
+
+    /** The proxy listener settings [intent] carries, with this build's defaults behind them. */
+    private fun proxyConfigFrom(intent: Intent): ProxyRuntimeConfig {
+        val http = ProxyTunnelService.sanitizePort(
+            intent.getIntExtra(EXTRA_PROXY_HTTP_PORT, ProxyTunnelService.DEFAULT_HTTP_PORT),
+            ProxyTunnelService.DEFAULT_HTTP_PORT,
+        )
+        val socks = ProxyTunnelService.sanitizePort(
+            intent.getIntExtra(EXTRA_PROXY_SOCKS_PORT, ProxyTunnelService.DEFAULT_SOCKS_PORT),
+            ProxyTunnelService.DEFAULT_SOCKS_PORT,
+        )
+        return ProxyRuntimeConfig(
+            httpEnabled = true,
+            httpPort = http,
+            socksEnabled = true,
+            socksPort = if (socks == http) ProxyTunnelService.DEFAULT_SOCKS_PORT else socks,
+            allowLanConnections = intent.getBooleanExtra(EXTRA_PROXY_ALLOW_LAN, false),
+        )
+    }
+
+    /**
+     * Connects a failover group: its members in order, until one comes up
+     * (SPEC 10.1).
+     *
+     * Every member is resolved here, before the first socket is opened, so that
+     * moving to the next one costs nothing but the connection itself. A group
+     * with no members is reported as such rather than started: it looks exactly
+     * like a server that will not answer, and the two have different fixes.
+     */
+    private fun startFailoverGroup(groupId: String, attemptId: String, proxyConfig: ProxyRuntimeConfig) {
+        storeScope.launch {
+            val stored = FailoverGroupStore.get(applicationContext).findWithMembers(groupId)
+            if (stored == null || stored.members.isEmpty()) {
+                val detail =
+                    if (stored == null) {
+                        "That failover group no longer exists."
+                    } else {
+                        "The failover group \"${stored.group.name}\" has no profiles in it."
+                    }
+                VpnTunnelEvents.emitEngineLog(Log.ERROR, TAG, "${prefixAttempt(attemptId)}ACTION_START_GROUP rejected: $detail")
+                VpnTunnelEvents.emit(VpnContract.TUNNEL_FAILED, detail, attemptId)
+                stopForeground(STOP_FOREGROUND_REMOVE)
+                stopSelf()
+                return@launch
+            }
+            val profiles = ProfileStore.get(applicationContext)
+            val trust = TrustStore.get(applicationContext)
+            val requests =
+                stored.members.mapNotNull { member ->
+                    profiles.findWithSecrets(member.id)?.let { row ->
+                        StoredProfileStart.requestFrom(
+                            row = row,
+                            trustedCertificateIds = trust.certificateIdsFor(row.profile.id),
+                            attemptId = attemptId,
+                            proxyConfig = proxyConfig,
+                        )
+                    }
+                }
+            if (requests.isEmpty()) {
+                val detail = "None of the profiles in \"${stored.group.name}\" could be read."
+                VpnTunnelEvents.emitEngineLog(Log.ERROR, TAG, "${prefixAttempt(attemptId)}ACTION_START_GROUP rejected: $detail")
+                VpnTunnelEvents.emit(VpnContract.TUNNEL_FAILED, detail, attemptId)
+                stopForeground(STOP_FOREGROUND_REMOVE)
+                stopSelf()
+                return@launch
+            }
+            val run =
+                FailoverRun(
+                    groupId = stored.group.id,
+                    groupName = stored.group.name,
+                    members = requests,
+                    connectTimeoutSec = FailoverGroup.normalizeTimeout(stored.group.connectTimeoutSec),
+                )
+            synchronized(sessionLock) { failoverRun = run }
+            RuntimeEnvironmentInfo.emit(this@TunnelVpnService, TAG, prefixAttempt(attemptId), mode = VpnContract.MODE_VPN_TUNNEL)
+            VpnTunnelEvents.emitEngineLog(
+                Log.DEBUG,
+                TAG,
+                "${prefixAttempt(attemptId)}ACTION_START_GROUP accepted group=${run.groupName} members=${run.size} budgetSec=${run.connectTimeoutSec}",
+            )
+            startFailoverMember(run)
+        }
+    }
+
+    /**
+     * Starts the member [run] is pointing at, and arms the budget that gives up
+     * on it (SPEC 10.1.2).
+     */
+    private fun startFailoverMember(run: FailoverRun) {
+        val request = run.current
+        val label = request.profileName ?: request.profile.server
+        VpnTunnelEvents.emitEngineLog(
+            Log.INFO,
+            TAG,
+            "${prefixAttempt(request.attemptId)}Failover ${run.groupName}: trying ${run.position} of ${run.size} -- $label over ${request.protocol.displayLabel}",
+        )
+        emitAttemptState(
+            request.attemptId,
+            VpnContract.TUNNEL_CONNECTING,
+            "Trying ${run.position} of ${run.size}: $label",
+        )
+        beginSession(request)
+        armFailoverBudget(run, request)
+        startSetupThread(request)
+    }
+
+    /**
+     * Gives up on a member that is taking longer than the group allows.
+     *
+     * Without this a member that neither answers nor refuses -- a filtered port
+     * is the usual one, and it is the exact case a group exists for -- would
+     * hold the run for as long as the engine's own timeouts take, which is
+     * longer than the 20 seconds SPEC 10.3 gives the whole fall-through.
+     */
+    private fun armFailoverBudget(run: FailoverRun, request: TunnelStartRequest) {
+        cancelFailoverBudget()
+        failoverBudgetRunnable = Runnable {
+            val stillWaiting =
+                synchronized(sessionLock) {
+                    failoverRun === run && activeAttemptId == request.attemptId && connectedSince == 0L
+                }
+            if (!stillWaiting) return@Runnable
+            VpnTunnelEvents.emitEngineLog(
+                Log.WARN,
+                TAG,
+                "${prefixAttempt(request.attemptId)}Failover ${run.groupName}: member ${run.position} did not connect within ${run.connectTimeoutSec}s",
+            )
+            stopTunnelInternal(preserveSession = true)
+            val budgetError = EngineError.TimedOut("failover_budget", null)
+            if (!advanceFailover(request.attemptId, budgetError)) {
+                emitAttemptState(
+                    request.attemptId,
+                    VpnContract.TUNNEL_FAILED,
+                    "No member of \"${run.groupName}\" answered in time.",
+                    errorKey = budgetError.messageKey,
+                )
+                clearFailoverRun()
+                stopServiceForAttempt(request.attemptId)
+            }
+        }.also { mainHandler.postDelayed(it, run.connectTimeoutMs) }
+    }
+
+    private fun cancelFailoverBudget() {
+        failoverBudgetRunnable?.let(mainHandler::removeCallbacks)
+        failoverBudgetRunnable = null
+    }
+
+    /** Forgets the run, so an ordinary connection after it is not treated as a group. */
+    private fun clearFailoverRun() {
+        cancelFailoverBudget()
+        synchronized(sessionLock) { failoverRun = null }
+    }
+
+    /**
+     * Moves a failover group on to its next member after [error], if it has one.
+     *
+     * @return whether the next member was started. `false` means the caller
+     *   owns the failure and should report it: either the error stops a group
+     *   outright, or this was the last member, or there is no group running at
+     *   all -- which is every ordinary single-profile connection.
+     */
+    private fun advanceFailover(attemptId: String, error: EngineError): Boolean {
+        val run = synchronized(sessionLock) { failoverRun?.takeIf { activeAttemptId == attemptId } } ?: return false
+        cancelFailoverBudget()
+        val next = run.advanceAfter(error)
+        if (next == null) {
+            VpnTunnelEvents.emitEngineLog(
+                Log.INFO,
+                TAG,
+                "${prefixAttempt(attemptId)}Failover ${run.groupName}: stopping after member ${run.position} of ${run.size} -- ${run.stopReason(error)}",
+            )
+            clearFailoverRun()
+            return false
+        }
+        // Posted rather than called: this runs from the setup thread's failure
+        // path, whose `finally` still has to shut the engine down. Starting the
+        // next member first would hand it a service that is mid-teardown.
+        mainHandler.post {
+            val stillRunning = synchronized(sessionLock) { failoverRun === run && activeAttemptId == attemptId }
+            if (stillRunning) startFailoverMember(run)
+        }
+        return true
     }
 
     /**
@@ -1195,6 +1423,17 @@ class TunnelVpnService : VpnService() {
      * engine identity check rather than by comparing worker threads.
      */
     private fun handleTunnelReady(attemptId: String, engine: VpnEngine) {
+        // The group has done its job. Cancelling the budget here rather than
+        // letting it check for itself keeps a live tunnel out of reach of a
+        // callback whose whole purpose is to tear one down.
+        synchronized(sessionLock) { failoverRun }?.let { run ->
+            VpnTunnelEvents.emitEngineLog(
+                Log.INFO,
+                TAG,
+                "${prefixAttempt(attemptId)}Failover ${run.groupName}: member ${run.position} of ${run.size} is up",
+            )
+            clearFailoverRun()
+        }
         if (synchronized(sessionLock) { activeEngine } !== engine) {
             AppLog.w(TAG, "Ignoring tunnel ready from a superseded engine")
             return
@@ -1460,7 +1699,11 @@ class TunnelVpnService : VpnService() {
     companion object {
         private const val TAG = "TunnelVpnService"
         const val ACTION_START = "io.github.evokelektrique.tunnelforge.action.START"
+
+        /** Connects a failover group: its members, in order, until one comes up (SPEC 10.1). */
+        const val ACTION_START_GROUP = "io.github.evokelektrique.tunnelforge.action.START_GROUP"
         const val ACTION_STOP = "io.github.evokelektrique.tunnelforge.action.STOP"
+        const val EXTRA_GROUP_ID = "groupId"
         const val EXTRA_ATTEMPT_ID = "attemptId"
         const val EXTRA_SERVER = "server"
         const val EXTRA_USER = "user"

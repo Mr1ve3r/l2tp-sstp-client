@@ -9,6 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:tunnel_forge/core/platform/app_info_bridge.dart';
 import 'package:tunnel_forge/core/network/connectivity_checker.dart';
+import 'package:tunnel_forge/features/profiles/domain/failover_group.dart';
 import 'package:tunnel_forge/features/profiles/domain/profile_models.dart';
 import 'package:tunnel_forge/features/profiles/data/profile_store.dart';
 import 'package:tunnel_forge/features/profiles/domain/profile_transfer.dart';
@@ -39,6 +40,24 @@ class ProfilesRepositoryImpl implements ProfilesRepository {
 
   @override
   Future<void> deleteProfile(String id) => _profileStore.deleteProfile(id);
+
+  @override
+  Future<List<FailoverGroup>> loadFailoverGroups() =>
+      _profileStore.loadFailoverGroups();
+
+  @override
+  Future<FailoverGroup> saveFailoverGroup(FailoverGroup group) =>
+      _profileStore.saveFailoverGroup(group);
+
+  @override
+  Future<void> deleteFailoverGroup(String id) =>
+      _profileStore.deleteFailoverGroup(id);
+
+  @override
+  Future<String?> loadLastGroupId() => _profileStore.loadLastGroupId();
+
+  @override
+  Future<void> setLastGroupId(String? id) => _profileStore.setLastGroupId(id);
 
   @override
   Future<void> exportProfileFile(String id, {String? password}) async {
@@ -570,6 +589,15 @@ class TunnelRepositoryImpl implements TunnelRepository {
       dnsServers: request.dnsServers,
       mtu: request.mtu,
       splitTunnelSettings: request.splitTunnelSettings,
+      proxySettings: request.proxySettings,
+    );
+  }
+
+  @override
+  Future<void> connectGroup(TunnelGroupConnectRequest request) {
+    return _client.connectGroup(
+      groupId: request.groupId,
+      attemptId: request.attemptId,
       proxySettings: request.proxySettings,
     );
   }

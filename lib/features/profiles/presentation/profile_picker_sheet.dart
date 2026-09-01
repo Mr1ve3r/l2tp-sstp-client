@@ -12,6 +12,8 @@ import 'package:tunnel_forge/features/home/domain/home_models.dart';
 import 'package:tunnel_forge/features/home/presentation/bloc/profiles_bloc.dart';
 import 'package:tunnel_forge/features/profile_form/presentation/bloc/profile_form_bloc.dart';
 import 'package:tunnel_forge/l10n/app_localizations.dart';
+import 'package:tunnel_forge/features/profiles/domain/failover_group.dart';
+import 'package:tunnel_forge/features/profiles/presentation/failover_group_editor.dart';
 import 'package:tunnel_forge/features/profiles/presentation/profile_editor_sheet.dart';
 import 'package:tunnel_forge/features/profiles/data/profile_store.dart';
 import 'package:tunnel_forge/features/trust/domain/trust_repository.dart';
@@ -74,10 +76,119 @@ class ProfilePickerSheet extends StatefulWidget {
 
 class _ProfilePickerSheetState extends State<ProfilePickerSheet> {
   _ProfileSheetMode _mode = _ProfileSheetMode.list;
+  _PickerTab _tab = _PickerTab.profiles;
   String? _editingProfileId;
   int _editorSession = 0;
 
+  /// The group the editor is open on, or null when it is open on a new one.
+  FailoverGroup? _editingGroup;
+  bool _savingGroup = false;
+
   ProfilesBloc get _profilesBloc => widget.profilesBloc;
+
+  void _openGroupEditor({FailoverGroup? group}) {
+    setState(() {
+      _mode = _ProfileSheetMode.groupEditor;
+      _editingGroup = group;
+      _editorSession += 1;
+      _savingGroup = false;
+    });
+  }
+
+  void _closeGroupEditor() {
+    if (!mounted) return;
+    FocusScope.of(context).unfocus();
+    setState(() {
+      _mode = _ProfileSheetMode.list;
+      _editingGroup = null;
+      _savingGroup = false;
+    });
+  }
+
+  /// Chooses [group] as what the connect button starts (SPEC 10.1.3).
+  ///
+  /// A group whose profiles have all been deleted is not chosen. It would sit
+  /// on the home screen as the active target and fail at connect time with the
+  /// host's version of the same sentence; saying it here costs nothing.
+  Future<void> _selectGroup(FailoverGroup group) async {
+    if (group.isEmpty) {
+      showAppSnackBar(
+        context,
+        AppText.current.failoverGroupHasNoProfiles,
+        error: true,
+      );
+      return;
+    }
+    Navigator.of(context).pop();
+    _profilesBloc.add(ProfilesGroupSelectionChanged(group.id));
+  }
+
+  Future<void> _saveGroup(FailoverGroup group) async {
+    setState(() => _savingGroup = true);
+    final initialMessageId = _profilesBloc.state.message?.id ?? 0;
+    final saveResult = _profilesBloc.stream
+        .firstWhere((state) {
+          final saved = state.savedGroupId != null;
+          final failed =
+              state.message != null &&
+              state.message!.error &&
+              state.message!.id > initialMessageId;
+          return saved || failed;
+        })
+        .timeout(const Duration(seconds: 5));
+    _profilesBloc.add(ProfilesGroupSaveRequested(group));
+    try {
+      final state = await saveResult;
+      if (!mounted) return;
+      setState(() => _savingGroup = false);
+      // The bloc reports both outcomes as a message and the home screen shows
+      // it; the only thing left here is whether to leave the form open.
+      if (state.savedGroupId != null) _closeGroupEditor();
+    } on TimeoutException {
+      if (!mounted) return;
+      setState(() => _savingGroup = false);
+      showAppSnackBar(
+        context,
+        AppText.current.couldNotSaveFailoverGroup,
+        error: true,
+      );
+    }
+  }
+
+  Future<void> _confirmDeleteGroup(FailoverGroup group) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(AppLocalizations.of(ctx).deleteFailoverGroupQuestion),
+        content: Text(AppLocalizations.of(ctx).deleteFailoverGroupBody),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(AppLocalizations.of(ctx).cancel),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(ctx).colorScheme.error,
+              foregroundColor: Theme.of(ctx).colorScheme.onError,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(AppLocalizations.of(ctx).delete),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    final deleteResult = _profilesBloc.stream
+        .firstWhere((state) => !state.groups.any((row) => row.id == group.id))
+        .timeout(const Duration(seconds: 5));
+    _profilesBloc.add(ProfilesGroupDeleteRequested(group.id));
+    try {
+      await deleteResult;
+      if (mounted) setState(() {});
+    } on TimeoutException {
+      // The bloc's own error message is already on its way to the home screen.
+    }
+  }
 
   void _openEditor({String? profileId}) {
     setState(() {
@@ -294,48 +405,83 @@ class _ProfilePickerSheetState extends State<ProfilePickerSheet> {
           padding: const EdgeInsets.fromLTRB(16, 0, 8, 8),
           child: Row(
             children: [
-              Expanded(child: Text(t.profiles, style: tt.titleLarge)),
-              PopupMenuButton<_AddProfileAction>(
-                tooltip: t.addProfile,
-                icon: const Icon(Icons.add),
-                onSelected: (action) async {
-                  switch (action) {
-                    case _AddProfileAction.create:
-                      _openEditor();
-                      break;
-                    case _AddProfileAction.importFile:
-                      await _importFromFile();
-                      break;
-                    case _AddProfileAction.importClipboard:
-                      await _importFromClipboard();
-                      break;
-                  }
-                },
-                itemBuilder: (context) => [
-                  PopupMenuItem<_AddProfileAction>(
-                    value: _AddProfileAction.create,
-                    child: _PopupMenuIconLabel(
-                      icon: Icons.add_circle_outline,
-                      label: t.createNewProfile,
+              Expanded(
+                child: Text(
+                  _tab == _PickerTab.profiles ? t.profiles : t.failoverGroups,
+                  style: tt.titleLarge,
+                ),
+              ),
+              if (_tab == _PickerTab.groups)
+                IconButton(
+                  key: const Key('add_failover_group'),
+                  tooltip: t.newFailoverGroup,
+                  icon: const Icon(Icons.add),
+                  onPressed: state.loading ? null : () => _openGroupEditor(),
+                )
+              else
+                PopupMenuButton<_AddProfileAction>(
+                  tooltip: t.addProfile,
+                  icon: const Icon(Icons.add),
+                  onSelected: (action) async {
+                    switch (action) {
+                      case _AddProfileAction.create:
+                        _openEditor();
+                        break;
+                      case _AddProfileAction.importFile:
+                        await _importFromFile();
+                        break;
+                      case _AddProfileAction.importClipboard:
+                        await _importFromClipboard();
+                        break;
+                    }
+                  },
+                  itemBuilder: (context) => [
+                    PopupMenuItem<_AddProfileAction>(
+                      value: _AddProfileAction.create,
+                      child: _PopupMenuIconLabel(
+                        icon: Icons.add_circle_outline,
+                        label: t.createNewProfile,
+                      ),
                     ),
-                  ),
-                  PopupMenuItem<_AddProfileAction>(
-                    value: _AddProfileAction.importFile,
-                    child: _PopupMenuIconLabel(
-                      icon: Icons.file_upload_outlined,
-                      label: t.importFromFile,
+                    PopupMenuItem<_AddProfileAction>(
+                      value: _AddProfileAction.importFile,
+                      child: _PopupMenuIconLabel(
+                        icon: Icons.file_upload_outlined,
+                        label: t.importFromFile,
+                      ),
                     ),
-                  ),
-                  PopupMenuItem<_AddProfileAction>(
-                    value: _AddProfileAction.importClipboard,
-                    child: _PopupMenuIconLabel(
-                      icon: Icons.content_paste_outlined,
-                      label: t.importFromClipboard,
+                    PopupMenuItem<_AddProfileAction>(
+                      value: _AddProfileAction.importClipboard,
+                      child: _PopupMenuIconLabel(
+                        icon: Icons.content_paste_outlined,
+                        label: t.importFromClipboard,
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
+            ],
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+          child: SegmentedButton<_PickerTab>(
+            key: const Key('profile_picker_tabs'),
+            showSelectedIcon: false,
+            segments: [
+              ButtonSegment<_PickerTab>(
+                value: _PickerTab.profiles,
+                label: Text(t.profiles),
+                icon: const Icon(Icons.vpn_key_outlined, size: 18),
+              ),
+              ButtonSegment<_PickerTab>(
+                value: _PickerTab.groups,
+                label: Text(t.failoverGroups),
+                icon: const Icon(Icons.alt_route_outlined, size: 18),
               ),
             ],
+            selected: <_PickerTab>{_tab},
+            onSelectionChanged: (selection) =>
+                setState(() => _tab = selection.first),
           ),
         ),
         if (state.loading)
@@ -344,7 +490,9 @@ class _ProfilePickerSheetState extends State<ProfilePickerSheet> {
             child: LinearProgressIndicator(),
           ),
         Expanded(
-          child: state.profiles.isEmpty
+          child: _tab == _PickerTab.groups
+              ? _buildGroupList(context, state)
+              : state.profiles.isEmpty
               ? Padding(
                   padding: const EdgeInsets.fromLTRB(24, 16, 24, 32),
                   child: Text(
@@ -470,6 +618,128 @@ class _ProfilePickerSheetState extends State<ProfilePickerSheet> {
     );
   }
 
+  /// The failover groups, with what each one would try and in what order
+  /// (SPEC 10.1.3).
+  Widget _buildGroupList(BuildContext context, ProfilesState state) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    final tt = theme.textTheme;
+    final t = AppLocalizations.of(context);
+
+    if (state.groups.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(24, 16, 24, 32),
+        child: Text(
+          t.noFailoverGroupsYet,
+          style: tt.bodyMedium?.copyWith(color: cs.onSurfaceVariant),
+        ),
+      );
+    }
+    return ListView.builder(
+      itemCount: state.groups.length,
+      itemBuilder: (context, i) {
+        final group = state.groups[i];
+        final selected = group.id == state.activeGroupId;
+        final members = group.resolveMembers(
+          state.profiles,
+          (profile) => profile.id,
+        );
+        // What the group will actually try, in order, rather than the ids it
+        // stores: it is the one thing a user needs to check before starting it.
+        final memberLine = members
+            .map(
+              (profile) => '${profile.displayName} (${profile.protocol.label})',
+            )
+            .join('  →  ');
+        return ListTile(
+          key: ValueKey<String>('failover_group_tile_${group.id}'),
+          selected: selected,
+          title: Text(
+            group.displayName,
+            style: tt.titleSmall?.copyWith(
+              color: selected ? cs.primary : null,
+              fontWeight: selected ? FontWeight.w600 : null,
+            ),
+          ),
+          subtitle: Row(
+            children: [
+              Container(
+                key: ValueKey('failover_group_badge_${group.id}'),
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                decoration: BoxDecoration(
+                  color: cs.secondaryContainer,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(
+                  t.failoverGroupProfileCount(members.length),
+                  style: tt.labelSmall?.copyWith(
+                    color: cs.onSecondaryContainer,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  memberLine.isEmpty ? t.failoverGroupIsEmpty : memberLine,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+                ),
+              ),
+            ],
+          ),
+          trailing: PopupMenuButton<_GroupTileAction>(
+            key: ValueKey<String>('failover_group_actions_${group.id}'),
+            tooltip: t.failoverGroupActions,
+            enabled: !state.loading,
+            onSelected: (action) async {
+              switch (action) {
+                case _GroupTileAction.edit:
+                  _openGroupEditor(group: group);
+                  break;
+                case _GroupTileAction.delete:
+                  await _confirmDeleteGroup(group);
+                  break;
+              }
+            },
+            itemBuilder: (context) => [
+              PopupMenuItem<_GroupTileAction>(
+                value: _GroupTileAction.edit,
+                child: _PopupMenuIconLabel(
+                  icon: Icons.edit_outlined,
+                  label: t.editFailoverGroup,
+                ),
+              ),
+              PopupMenuItem<_GroupTileAction>(
+                value: _GroupTileAction.delete,
+                child: _PopupMenuIconLabel(
+                  icon: Icons.delete_outline,
+                  label: t.deleteFailoverGroup,
+                  color: cs.error,
+                ),
+              ),
+            ],
+          ),
+          onTap: state.loading ? null : () => _selectGroup(group),
+        );
+      },
+    );
+  }
+
+  Widget _buildGroupEditor(BuildContext context, ProfilesState state) {
+    return FailoverGroupEditorView(
+      key: ValueKey<String>(
+        'group-editor:${_editingGroup?.id ?? 'draft'}:$_editorSession',
+      ),
+      group: _editingGroup,
+      profiles: state.profiles,
+      saving: _savingGroup,
+      onClose: _closeGroupEditor,
+      onSave: _saveGroup,
+    );
+  }
+
   Widget _buildEditor(BuildContext context) {
     final repository = ProfilesRepositoryImpl(
       widget.store,
@@ -503,9 +773,9 @@ class _ProfilePickerSheetState extends State<ProfilePickerSheet> {
         theme.colorScheme.surfaceContainerLow;
     final listHeight = MediaQuery.sizeOf(context).height * 0.62;
     final editorHeight = MediaQuery.sizeOf(context).height * 0.9;
-    final targetHeight = _mode == _ProfileSheetMode.editor
-        ? editorHeight
-        : listHeight;
+    final targetHeight = _mode == _ProfileSheetMode.list
+        ? listHeight
+        : editorHeight;
 
     return SafeArea(
       child: Material(
@@ -533,15 +803,20 @@ class _ProfilePickerSheetState extends State<ProfilePickerSheet> {
                       child: SlideTransition(position: offset, child: child),
                     );
                   },
-                  child: _mode == _ProfileSheetMode.editor
-                      ? KeyedSubtree(
-                          key: const ValueKey<String>('profile-editor-mode'),
-                          child: _buildEditor(context),
-                        )
-                      : KeyedSubtree(
-                          key: const ValueKey<String>('profile-list-mode'),
-                          child: _buildList(context, state),
-                        ),
+                  child: switch (_mode) {
+                    _ProfileSheetMode.editor => KeyedSubtree(
+                      key: const ValueKey<String>('profile-editor-mode'),
+                      child: _buildEditor(context),
+                    ),
+                    _ProfileSheetMode.groupEditor => KeyedSubtree(
+                      key: const ValueKey<String>('failover-group-editor-mode'),
+                      child: _buildGroupEditor(context, state),
+                    ),
+                    _ProfileSheetMode.list => KeyedSubtree(
+                      key: const ValueKey<String>('profile-list-mode'),
+                      child: _buildList(context, state),
+                    ),
+                  },
                 ),
               ),
             );
@@ -580,8 +855,13 @@ class _PopupMenuIconLabel extends StatelessWidget {
   }
 }
 
+/// Which of the two things the sheet lists is on screen.
+enum _PickerTab { profiles, groups }
+
 enum _AddProfileAction { create, importFile, importClipboard }
+
+enum _GroupTileAction { edit, delete }
 
 enum _ProfileTileAction { edit, copyShareLink, exportFile, delete }
 
-enum _ProfileSheetMode { list, editor }
+enum _ProfileSheetMode { list, editor, groupEditor }

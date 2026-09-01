@@ -7,6 +7,9 @@ import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
+import io.github.mr1ve3r.combined.core.profile.FailoverGroup
+import io.github.mr1ve3r.combined.core.profile.FailoverGroupDao
+import io.github.mr1ve3r.combined.core.profile.FailoverGroupMember
 import io.github.mr1ve3r.combined.core.profile.ProfileConverters
 import io.github.mr1ve3r.combined.core.profile.ProfileDao
 import io.github.mr1ve3r.combined.core.profile.VpnProfile
@@ -20,8 +23,14 @@ import io.github.mr1ve3r.combined.core.profile.VpnProfile
  * it was created with; renaming it would cost a migration and buy nothing.
  */
 @Database(
-    entities = [ServerCertificateEntity::class, ProfileCertificateRef::class, VpnProfile::class],
-    version = 2,
+    entities = [
+        ServerCertificateEntity::class,
+        ProfileCertificateRef::class,
+        VpnProfile::class,
+        FailoverGroup::class,
+        FailoverGroupMember::class,
+    ],
+    version = 3,
     exportSchema = true,
 )
 @TypeConverters(StringListConverter::class, ProfileConverters::class)
@@ -29,6 +38,8 @@ abstract class TrustDatabase : RoomDatabase() {
     abstract fun serverCertificates(): ServerCertificateDao
 
     abstract fun profiles(): ProfileDao
+
+    abstract fun failoverGroups(): FailoverGroupDao
 
     companion object {
         /** File name under the application's database directory. */
@@ -44,7 +55,7 @@ abstract class TrustDatabase : RoomDatabase() {
 
         private fun build(context: Context): TrustDatabase = Room
             .databaseBuilder(context, TrustDatabase::class.java, NAME)
-            .addMigrations(MIGRATION_1_2)
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
             .build()
 
         /**
@@ -90,6 +101,41 @@ abstract class TrustDatabase : RoomDatabase() {
         private const val CREATE_PROFILE_CERTIFICATE_REF_INDEX =
             "CREATE INDEX IF NOT EXISTS `index_profile_certificate_ref_certificateId` " +
                 "ON `profile_certificate_ref` (`certificateId`)"
+
+        /**
+         * Adds failover groups and their membership (SPEC 10.1.1).
+         *
+         * Two new tables and one index, and nothing existing is touched: a
+         * group names profiles, profiles do not name groups, so no column had
+         * to be added to a table a user already has rows in.
+         *
+         * The statements are Room's own, copied from `schemas/3.json` with
+         * `${TABLE_NAME}` resolved. `MigrationTestHelper` compares the result
+         * against that same file, which is what keeps the copies honest.
+         */
+        private const val CREATE_FAILOVER_GROUPS =
+            "CREATE TABLE IF NOT EXISTS `failover_groups` (`id` TEXT NOT NULL, `name` TEXT NOT NULL, " +
+                "`connectTimeoutSec` INTEGER NOT NULL, `createdAt` INTEGER NOT NULL, PRIMARY KEY(`id`))"
+
+        private const val CREATE_FAILOVER_GROUP_MEMBER =
+            "CREATE TABLE IF NOT EXISTS `failover_group_member` (`groupId` TEXT NOT NULL, " +
+                "`profileId` TEXT NOT NULL, `position` INTEGER NOT NULL, " +
+                "PRIMARY KEY(`groupId`, `profileId`), " +
+                "FOREIGN KEY(`groupId`) REFERENCES `failover_groups`(`id`) " +
+                "ON UPDATE NO ACTION ON DELETE CASCADE , " +
+                "FOREIGN KEY(`profileId`) REFERENCES `profiles`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )"
+
+        private const val CREATE_FAILOVER_GROUP_MEMBER_INDEX =
+            "CREATE INDEX IF NOT EXISTS `index_failover_group_member_profileId` " +
+                "ON `failover_group_member` (`profileId`)"
+
+        val MIGRATION_2_3: Migration = object : Migration(2, 3) {
+            override fun migrate(connection: SupportSQLiteDatabase) {
+                connection.execSQL(CREATE_FAILOVER_GROUPS)
+                connection.execSQL(CREATE_FAILOVER_GROUP_MEMBER)
+                connection.execSQL(CREATE_FAILOVER_GROUP_MEMBER_INDEX)
+            }
+        }
 
         val MIGRATION_1_2: Migration = object : Migration(1, 2) {
             override fun migrate(connection: SupportSQLiteDatabase) {

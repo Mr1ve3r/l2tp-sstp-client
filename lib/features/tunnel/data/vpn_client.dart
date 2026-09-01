@@ -305,6 +305,34 @@ class VpnClient {
     });
   }
 
+  /// Connects a failover group: its members in order, until one comes up
+  /// (SPEC 10.1).
+  ///
+  /// The group's members carry their own servers, protocols and secrets, so
+  /// none of that is sent here — only the proxy listener settings, which are
+  /// this application's and not any profile's. Progress arrives as ordinary
+  /// tunnel state, with the member being tried named in the detail.
+  Future<void> connectGroup({
+    required String groupId,
+    String attemptId = '',
+    ProxySettings proxySettings = const ProxySettings(),
+  }) {
+    return _channel
+        .invokeMethod<void>(VpnContract.connectGroup, <String, Object?>{
+          VpnContract.argGroupId: groupId,
+          if (attemptId.isNotEmpty) VpnContract.argAttemptId: attemptId,
+          VpnContract.argProxyHttpPort: ProxySettings.normalizePort(
+            proxySettings.httpPort,
+            fallback: ProxySettings.defaultHttpPort,
+          ),
+          VpnContract.argProxySocksPort: ProxySettings.normalizePort(
+            proxySettings.socksPort,
+            fallback: ProxySettings.defaultSocksPort,
+          ),
+          VpnContract.argProxyAllowLan: proxySettings.allowLanConnections,
+        });
+  }
+
   /// Launcher icon as PNG bytes, or null (Android; missing plugin returns null).
   Future<Uint8List?> getAppIcon(String packageName) async {
     if (packageName.isEmpty) return null;

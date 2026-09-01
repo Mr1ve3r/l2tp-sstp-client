@@ -24,6 +24,7 @@ import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 import io.github.mr1ve3r.combined.engine.EngineProfile
+import io.github.mr1ve3r.combined.core.profile.FailoverGroupStore
 import io.github.mr1ve3r.combined.core.profile.ProfileStore
 import io.github.mr1ve3r.combined.core.trust.store.TrustStore
 import java.io.ByteArrayOutputStream
@@ -126,6 +127,40 @@ class MainActivity : FlutterActivity() {
                         AppLog.d(TAG, "vpn_call prepareVpn result needs_ui=true")
                         startActivityForResult(intent, REQUEST_VPN_PERMISSION)
                     }
+                }
+                VpnContract.CONNECT_GROUP -> {
+                    val args = call.arguments as? Map<*, *>
+                    val groupId = (args?.get(VpnContract.ARG_GROUP_ID) as? String)?.trim().orEmpty()
+                    val attemptId = (args?.get(VpnContract.ARG_ATTEMPT_ID) as? String).orEmpty()
+                    if (groupId.isEmpty()) {
+                        AppLog.e(TAG, "vpn_call connectGroup rejected bad_args (no group)")
+                        result.error("bad_args", "Expected a group id", null)
+                        return@setMethodCallHandler
+                    }
+                    // A group only ever runs a VPN tunnel: its members are whole
+                    // profiles with their own protocols, and the local-proxy mode
+                    // has no second member to fall through to.
+                    ProxyTunnelService.stopActiveSessionForModeSwitch("starting failover group")
+                    AppLog.d(TAG, "vpn_call connectGroup start attempt=$attemptId group=$groupId")
+                    val intent =
+                        Intent(this, TunnelVpnService::class.java).apply {
+                            action = TunnelVpnService.ACTION_START_GROUP
+                            putExtra(TunnelVpnService.EXTRA_ATTEMPT_ID, attemptId)
+                            putExtra(TunnelVpnService.EXTRA_GROUP_ID, groupId)
+                            putExtra(
+                                TunnelVpnService.EXTRA_PROXY_HTTP_PORT,
+                                sanitizePort(args?.get(VpnContract.ARG_PROXY_HTTP_PORT), ProxyTunnelService.DEFAULT_HTTP_PORT),
+                            )
+                            putExtra(
+                                TunnelVpnService.EXTRA_PROXY_SOCKS_PORT,
+                                sanitizePort(args?.get(VpnContract.ARG_PROXY_SOCKS_PORT), ProxyTunnelService.DEFAULT_SOCKS_PORT),
+                            )
+                            putExtra(
+                                TunnelVpnService.EXTRA_PROXY_ALLOW_LAN,
+                                args?.get(VpnContract.ARG_PROXY_ALLOW_LAN) as? Boolean ?: false,
+                            )
+                        }
+                    dispatchConnectIntent(intent, result, "vpn_call connectGroup")
                 }
                 VpnContract.CONNECT -> {
                     val args = call.arguments as? Map<*, *>
@@ -416,6 +451,7 @@ class MainActivity : FlutterActivity() {
             ProfileChannel(
                 profiles = ProfileStore.get(applicationContext),
                 trust = TrustStore.get(applicationContext),
+                groups = FailoverGroupStore.get(applicationContext),
                 scope = trustScope,
             )
         channel.setMethodCallHandler { call, result ->

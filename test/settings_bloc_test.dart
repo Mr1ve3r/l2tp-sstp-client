@@ -156,6 +156,9 @@ class _FakeTunnelRepository implements TunnelRepository {
   Future<void> connect(TunnelConnectRequest request) async {}
 
   @override
+  Future<void> connectGroup(TunnelGroupConnectRequest request) async {}
+
+  @override
   Future<void> disconnect({
     required ConnectionMode connectionMode,
     String attemptId = '',

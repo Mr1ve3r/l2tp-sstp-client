@@ -387,6 +387,90 @@ void main() {
       ),
     ],
   );
+
+  group('failover groups (SPEC 10.1)', () {
+    test('a group is dispatched to the host with nothing but its id', () async {
+      final repository = _FakeTunnelRepository();
+      final bloc = TunnelBloc(repository, _FakeLogsRepository());
+      addTearDown(bloc.close);
+
+      bloc.add(TunnelConnectGroupRequested(_groupRequest()));
+      await bloc.stream.firstWhere((state) => state.awaitingTunnel);
+
+      expect(repository.groupConnects, hasLength(1));
+      final sent = repository.groupConnects.single;
+      expect(sent.groupId, 'group-1');
+      expect(sent.attemptId, isNotEmpty);
+      expect(sent.connectionMode, ConnectionMode.vpnTunnel);
+      expect(bloc.state.connectionMode, ConnectionMode.vpnTunnel);
+    });
+
+    test('an empty group is refused before the permission dialog', () async {
+      final repository = _FakeTunnelRepository();
+      final bloc = TunnelBloc(repository, _FakeLogsRepository());
+      addTearDown(bloc.close);
+
+      bloc.add(TunnelConnectGroupRequested(_groupRequest(memberCount: 0)));
+      final state = await bloc.stream.firstWhere(
+        (state) => state.message?.error ?? false,
+      );
+
+      expect(repository.groupConnects, isEmpty);
+      expect(state.awaitingTunnel, isFalse);
+      expect(state.busy, isFalse);
+    });
+
+    test(
+      'proxy-only mode is refused rather than silently overridden',
+      () async {
+        final repository = _FakeTunnelRepository();
+        final bloc = TunnelBloc(repository, _FakeLogsRepository());
+        addTearDown(bloc.close);
+
+        bloc.add(
+          TunnelConnectGroupRequested(
+            _groupRequest(connectionMode: ConnectionMode.proxyOnly),
+          ),
+        );
+        final state = await bloc.stream.firstWhere(
+          (state) => state.message?.error ?? false,
+        );
+
+        expect(repository.groupConnects, isEmpty);
+        expect(state.connectionMode, ConnectionMode.vpnTunnel);
+      },
+    );
+
+    test('a walk that needs longer than one profile would is given it', () {
+      // Three members at 90 seconds each cannot finish inside the 60 seconds a
+      // single profile is allowed; the interface would otherwise call a timeout
+      // on a group the host is still working through (SPEC 10.1.2).
+      const request = TunnelGroupConnectRequest(
+        groupId: 'group-1',
+        groupName: 'Work',
+        memberCount: 3,
+        connectTimeoutSec: 90,
+        connectionMode: ConnectionMode.vpnTunnel,
+        proxySettings: ProxySettings(),
+      );
+
+      expect(request.worstCaseDuration, const Duration(seconds: 270));
+    });
+  });
+}
+
+TunnelGroupConnectRequest _groupRequest({
+  int memberCount = 2,
+  ConnectionMode connectionMode = ConnectionMode.vpnTunnel,
+}) {
+  return TunnelGroupConnectRequest(
+    groupId: 'group-1',
+    groupName: 'Work',
+    memberCount: memberCount,
+    connectTimeoutSec: 15,
+    connectionMode: connectionMode,
+    proxySettings: const ProxySettings(),
+  );
 }
 
 late _CountingTunnelRepository _countingTunnelRepository;
@@ -436,6 +520,15 @@ class _FakeTunnelRepository implements TunnelRepository {
 
   @override
   Future<void> connect(TunnelConnectRequest request) async {}
+
+  /// The group starts this fake was asked for, in order (SPEC 10.1).
+  final List<TunnelGroupConnectRequest> groupConnects =
+      <TunnelGroupConnectRequest>[];
+
+  @override
+  Future<void> connectGroup(TunnelGroupConnectRequest request) async {
+    groupConnects.add(request);
+  }
 
   @override
   Future<void> disconnect({

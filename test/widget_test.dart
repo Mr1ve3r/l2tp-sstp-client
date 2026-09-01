@@ -934,11 +934,147 @@ void main() {
     await tester.tap(find.byIcon(Icons.close).first);
     await tester.pumpAndSettle();
 
-    expect(find.text('Profiles'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('profile-list-mode')),
+      findsOneWidget,
+    );
     expect(find.text('Primary'), findsNWidgets(2));
     expect(find.text('primary.example.com'), findsNWidgets(2));
     expect(find.text('Secondary'), findsOneWidget);
   });
+
+  testWidgets(
+    'a failover group can be built, chosen, and started from the home screen',
+    (WidgetTester tester) async {
+      // SPEC 10.1 end to end above the channel: the group the sheet builds is
+      // the one the host is asked to walk, and it is asked with connectGroup
+      // rather than with a profile's connect.
+      SharedPreferences.setMockInitialValues({});
+      addTearDown(() async {
+        await tester.binding.setSurfaceSize(null);
+      });
+      await tester.binding.setSurfaceSize(const Size(480, 1600));
+
+      final backend = MemoryProfileBackend();
+      await backend.save(
+        const Profile(
+          id: 'l2tp',
+          displayName: 'Work L2TP',
+          server: 'l2tp.example.com',
+          user: 'user',
+        ),
+        password: 'pw',
+        psk: 'psk',
+      );
+      await backend.save(
+        const Profile(
+          id: 'sstp',
+          displayName: 'Work SSTP',
+          server: 'sstp.example.com',
+          user: 'user',
+          protocol: VpnProtocol.sstp,
+        ),
+        password: 'pw',
+        psk: '',
+      );
+
+      final methods = <String>[];
+      final calls = <MethodCall>[];
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(const MethodChannel(VpnContract.channel), (
+            call,
+          ) async {
+            methods.add(call.method);
+            calls.add(call);
+            return call.method == VpnContract.prepareVpn ? true : null;
+          });
+      addTearDown(uninstallVpnChannelMock);
+
+      await tester.pumpWidget(
+        TunnelForgeApp(
+          certificatesRepository: FakeCertificatesRepository(),
+          onboardingRepository: const _AcceptedOnboardingRepository(),
+          profileStore: ProfileStore(
+            secretsOverride: MemorySecretStore(),
+            backendOverride: backend,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('profile_picker_tile')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Failover groups').last);
+      await tester.pumpAndSettle();
+      expect(find.textContaining('No failover groups yet'), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('add_failover_group')));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const Key('failover_group_name')),
+        'Work',
+      );
+      for (final id in const ['l2tp', 'sstp']) {
+        await tester.tap(find.byKey(const Key('failover_group_add_member')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(Key('failover_candidate_$id')));
+        await tester.pumpAndSettle();
+      }
+      await tester.tap(find.byKey(const Key('failover_group_editor_save')));
+      await tester.pumpAndSettle();
+
+      final groups = await backend.listGroups();
+      expect(groups, hasLength(1));
+      expect(groups.single.memberIds, ['l2tp', 'sstp']);
+
+      // Choosing the group closes the sheet and makes it what the button runs.
+      await tester.tap(
+        find.byKey(ValueKey<String>('failover_group_tile_${groups.single.id}')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Work'), findsOneWidget);
+      // The tile says what the group will try and in what order, which is the
+      // part the status line cannot show until the walk has started.
+      expect(find.textContaining('Work L2TP (L2TP)'), findsOneWidget);
+      expect(find.textContaining('Work SSTP (SSTP)'), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('vpn_connect')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+
+      expect(statusText(tester), contains('Connecting'));
+      expect(methods, contains(VpnContract.connectGroup));
+      expect(methods, isNot(contains(VpnContract.connect)));
+      final sent = calls.lastWhere(
+        (call) => call.method == VpnContract.connectGroup,
+      );
+      expect((sent.arguments as Map)[VpnContract.argGroupId], groups.single.id);
+
+      // Which member is active can only come from the host — it resolves the
+      // group itself — so the tile shows what the host reports (SPEC 10.1.3).
+      await simulateHostTunnelState(
+        tester,
+        VpnTunnelState.connecting,
+        'Trying 2 of 2: Work SSTP',
+      );
+      await tester.pump(const Duration(milliseconds: 300));
+
+      expect(find.text('Trying 2 of 2: Work SSTP'), findsOneWidget);
+      expect(find.textContaining('Work L2TP (L2TP)'), findsNothing);
+
+      // Once a member is up the walk is over and the order comes back.
+      await simulateHostTunnelState(
+        tester,
+        VpnTunnelState.connected,
+        'TUN is up',
+      );
+      await tester.pump(const Duration(milliseconds: 300));
+
+      expect(find.text('Trying 2 of 2: Work SSTP'), findsNothing);
+      expect(find.textContaining('Work L2TP (L2TP)'), findsOneWidget);
+    },
+  );
 
   testWidgets('the SSTP editor lists the certificates the app stores', (
     WidgetTester tester,
@@ -1036,7 +1172,10 @@ void main() {
     await tester.tap(find.byIcon(Icons.close).first);
     await tester.pumpAndSettle();
 
-    expect(find.text('Profiles'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('profile-list-mode')),
+      findsOneWidget,
+    );
     expect(
       find.text(
         'No profiles yet. Tap + to create or import your first profile.',
@@ -1087,7 +1226,10 @@ void main() {
     expect(profiles, hasLength(1));
     expect(profiles.single.displayName, 'New profile');
     expect(profiles.single.server, 'vpn.example.com');
-    expect(find.text('Profiles'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('profile-list-mode')),
+      findsOneWidget,
+    );
     expect(find.text('Profile saved'), findsOneWidget);
     expect(find.text('New profile'), findsWidgets);
     expect(find.text('vpn.example.com'), findsWidgets);

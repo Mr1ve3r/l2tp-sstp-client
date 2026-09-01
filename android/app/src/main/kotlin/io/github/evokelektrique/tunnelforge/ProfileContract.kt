@@ -40,6 +40,19 @@ object ProfileContract {
     /** Flutter -> host: unwrap a container produced by [SEAL_EXPORT]. */
     const val OPEN_EXPORT = "openExport"
 
+    /** Failover groups (SPEC 10.1). Their members are profile ids, in order. */
+    const val LIST_GROUPS = "listFailoverGroups"
+    const val LOAD_GROUP = "loadFailoverGroup"
+    const val SAVE_GROUP = "saveFailoverGroup"
+    const val DELETE_GROUP = "deleteFailoverGroup"
+
+    const val ARG_GROUP = "group"
+    const val GROUP_FIELD_ID = "id"
+    const val GROUP_FIELD_NAME = "name"
+    const val GROUP_FIELD_CONNECT_TIMEOUT_SEC = "connectTimeoutSec"
+    const val GROUP_FIELD_CREATED_AT = "createdAt"
+    const val GROUP_FIELD_MEMBER_IDS = "memberIds"
+
     const val ARG_ID = "id"
     const val ARG_PROFILE = "profile"
     const val ARG_PROFILES = "profiles"

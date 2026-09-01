@@ -6,6 +6,10 @@ object VpnContract {
 
     const val PREPARE_VPN = "prepareVpn"
     const val CONNECT = "connect"
+
+    /** Connects a failover group by id, rather than one profile (SPEC 10.1). */
+    const val CONNECT_GROUP = "connectGroup"
+    const val ARG_GROUP_ID = "groupId"
     const val DISCONNECT = "disconnect"
     const val SET_LOG_LEVEL = "setLogLevel"
     const val GET_RUNTIME_STATE = "getRuntimeState"

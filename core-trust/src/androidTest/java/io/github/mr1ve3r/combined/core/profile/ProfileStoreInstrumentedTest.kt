@@ -212,6 +212,46 @@ class TrustDatabaseMigrationTest {
         migrated.close()
     }
 
+    /**
+     * Version 3 adds failover groups (SPEC 10.1.1).
+     *
+     * The point of the assertion below is that the upgrade is additive: a user
+     * with profiles and certificates keeps every one of them, because a group
+     * names profiles rather than being named by them and no existing table had
+     * to change.
+     */
+    @Test
+    fun version2UpgradesToVersion3() {
+        helper.createDatabase(NAME, 2).use { database ->
+            database.execSQL(
+                "INSERT INTO server_certificates VALUES ('aa11', 'Work CA', 'ca', 'CN=ca', 'CN=ca', '01', 0, 1, " +
+                    "'aa11', 'bb22', 1, NULL, '[]', 2048, 'SHA256withRSA', 5, 'aa11.pem')",
+            )
+            database.execSQL(
+                "INSERT INTO profiles VALUES ('id-1', 'Work', 'SSTP', 'vpn.example.org', 'alice', " +
+                    "'profile/id-1/password', 1400, 1, 1, '', 'DNS_OVER_UDP', '', 'DNS_OVER_UDP', 'OFF', '[]', " +
+                    "0, 1, 1, 'profile/id-1/psk', NULL, '[]', '[]', 443, 'SYSTEM', '[]', NULL, 'TLS_1_2', " +
+                    "'[\"MSCHAPV2\"]', 0, '', 8080, '', 'profile/id-1/proxyPassword')",
+            )
+        }
+
+        val migrated = helper.runMigrationsAndValidate(NAME, 3, true, TrustDatabase.MIGRATION_2_3)
+
+        migrated.query("SELECT COUNT(*) FROM profiles").use { cursor ->
+            cursor.moveToFirst()
+            assertEquals(1, cursor.getInt(0))
+        }
+        migrated.query("SELECT COUNT(*) FROM server_certificates").use { cursor ->
+            cursor.moveToFirst()
+            assertEquals(1, cursor.getInt(0))
+        }
+        migrated.query("SELECT COUNT(*) FROM failover_groups").use { cursor ->
+            cursor.moveToFirst()
+            assertEquals(0, cursor.getInt(0))
+        }
+        migrated.close()
+    }
+
     private companion object {
         const val NAME = "migration-test.db"
     }

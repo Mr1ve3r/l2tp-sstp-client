@@ -7,6 +7,10 @@ abstract final class VpnContract {
 
   static const String prepareVpn = 'prepareVpn';
   static const String connect = 'connect';
+
+  /// Connects a failover group by id, rather than one profile (SPEC 10.1).
+  static const String connectGroup = 'connectGroup';
+  static const String argGroupId = 'groupId';
   static const String disconnect = 'disconnect';
   static const String setLogLevel = 'setLogLevel';
   static const String getRuntimeState = 'getRuntimeState';

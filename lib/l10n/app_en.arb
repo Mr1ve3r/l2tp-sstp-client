@@ -563,5 +563,56 @@
   "updateCheckErrorTls": "Secure connection to GitHub Releases failed.",
   "updateCheckErrorMalformed": "GitHub Releases returned malformed data.",
   "updateCheckErrorNoReleases": "GitHub Releases returned no usable releases.",
-  "updateCheckErrorUnexpected": "Unexpected error while checking GitHub Releases."
+  "updateCheckErrorUnexpected": "Unexpected error while checking GitHub Releases.",
+  "failoverGroups": "Failover groups",
+  "failoverGroup": "Failover group",
+  "newFailoverGroup": "New failover group",
+  "editFailoverGroup": "Edit group",
+  "deleteFailoverGroup": "Delete group",
+  "failoverGroupActions": "Group actions",
+  "deleteFailoverGroupQuestion": "Delete this group?",
+  "deleteFailoverGroupBody": "The profiles in it are kept. Only the group and the order it tries them in are removed.",
+  "noFailoverGroupsYet": "No failover groups yet. A group tries its profiles from the top down until one connects — L2TP/IPsec first, SSTP on 443 behind it, for example.",
+  "failoverGroupNameLabel": "Group name",
+  "failoverGroupNameHint": "Work",
+  "failoverGroupTriesInOrder": "The group tries these profiles from the top down. It moves to the next one when a server is unreachable or runs out of time, and stops when a password is refused.",
+  "failoverGroupMembersLabel": "Profiles, in order",
+  "addProfileToFailoverGroup": "Add a profile",
+  "removeFromFailoverGroup": "Remove from the group",
+  "moveUpInFailoverGroup": "Move up",
+  "moveDownInFailoverGroup": "Move down",
+  "failoverGroupIsEmpty": "No profiles in this group yet.",
+  "everyProfileAlreadyInGroup": "Every saved profile is already in this group.",
+  "failoverGroupNeedsAProfile": "Add at least one profile to the group.",
+  "failoverConnectTimeoutLabel": "Time for each profile",
+  "failoverConnectTimeoutHelp": "How long one profile may take before the group gives up on it and tries the next.",
+  "failoverConnectTimeoutOutOfRange": "Choose between {min} and {max} seconds.",
+  "@failoverConnectTimeoutOutOfRange": {
+    "placeholders": {
+      "min": {
+        "type": "int"
+      },
+      "max": {
+        "type": "int"
+      }
+    }
+  },
+  "seconds": "seconds",
+  "failoverGroupProfileCount": "{count, plural, =0{No profiles} =1{1 profile} other{{count} profiles}}",
+  "@failoverGroupProfileCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "failoverGroupNoLongerExists": "This failover group no longer exists.",
+  "failoverGroupNeedsName": "Give the group a name.",
+  "failoverGroupSaved": "Group saved",
+  "couldNotSaveFailoverGroup": "Could not save the group.",
+  "failoverGroupRemoved": "Group removed",
+  "couldNotDeleteFailoverGroup": "Could not delete the group.",
+  "failoverGroupHasNoProfiles": "This group has no profiles to try. Add one to it first.",
+  "failoverGroupNeedsVpnMode": "A failover group runs as a VPN tunnel. Turn off proxy-only mode to start it.",
+  "chooseSavedProfileOrGroupBeforeConnecting": "Choose a saved profile or a failover group before connecting."
 }

@@ -14,6 +14,7 @@ import 'package:tunnel_forge/l10n/app_localizations.dart';
 import 'package:tunnel_forge/features/profiles/domain/profile_models.dart';
 import 'package:tunnel_forge/features/profiles/presentation/profile_picker_sheet.dart';
 import 'package:tunnel_forge/features/profiles/data/profile_store.dart';
+import 'package:tunnel_forge/features/profiles/domain/failover_group.dart';
 import 'package:tunnel_forge/core/logging/log_entry.dart';
 import 'package:tunnel_forge/core/vpn_protocol.dart';
 import 'package:tunnel_forge/features/home/presentation/widgets/connection_panel.dart';
@@ -310,9 +311,19 @@ class _VpnHomePageViewState extends State<_VpnHomePageView>
   }
 
   void _handleMissingProfileTap(ProfilesState profilesState) {
-    final message = profilesState.profiles.isEmpty
-        ? AppText.current.createProfileFirst
-        : AppText.current.chooseSavedProfileBeforeConnecting;
+    // An empty group is its own case: something *is* chosen, so telling the
+    // user to choose something would be wrong advice.
+    final emptyGroup =
+        profilesState.activeGroup != null && !profilesState.hasActiveGroup;
+    final message = emptyGroup
+        ? AppText.current.failoverGroupHasNoProfiles
+        : (profilesState.profiles.isEmpty
+              ? AppText.current.createProfileFirst
+              : (profilesState.groups.isEmpty
+                    ? AppText.current.chooseSavedProfileBeforeConnecting
+                    : AppText
+                          .current
+                          .chooseSavedProfileOrGroupBeforeConnecting));
     _toast(message, error: true);
     widget.locator<LogsRepository>().append(
       LogEntry(
@@ -336,6 +347,11 @@ class _VpnHomePageViewState extends State<_VpnHomePageView>
     if (tunnelState.tunnelUp ||
         (tunnelState.awaitingTunnel && !tunnelState.tunnelUp)) {
       context.read<TunnelBloc>().add(const TunnelDisconnectRequested());
+      return;
+    }
+    final group = profilesState.activeGroup;
+    if (group != null) {
+      _startFailoverGroup(group, profilesState, settingsState);
       return;
     }
     final row = profilesState.activeProfileRow;
@@ -377,6 +393,39 @@ class _VpnHomePageViewState extends State<_VpnHomePageView>
           mtu: profile.mtu,
           connectionMode: settingsState.connectionMode,
           splitTunnelSettings: settingsState.splitTunnelSettings,
+          proxySettings: settingsState.proxySettings,
+        ),
+      ),
+    );
+  }
+
+  /// Starts a failover group (SPEC 10.1).
+  ///
+  /// Nothing about the members is read here. They are whole profiles the host
+  /// resolves for itself as it walks the list, so passing a snapshot of them
+  /// from this side would only be a second copy that could already be stale.
+  void _startFailoverGroup(
+    FailoverGroup group,
+    ProfilesState profilesState,
+    SettingsState settingsState,
+  ) {
+    if (!profilesState.hasActiveGroup) {
+      _handleMissingProfileTap(profilesState);
+      return;
+    }
+    if (settingsState.connectionMode == ConnectionMode.vpnTunnel) {
+      context.read<SettingsBloc>().add(
+        const SettingsBatteryOptimizationVpnConnectAttempted(),
+      );
+    }
+    context.read<TunnelBloc>().add(
+      TunnelConnectGroupRequested(
+        TunnelGroupConnectRequest(
+          groupId: group.id,
+          groupName: group.displayName,
+          memberCount: profilesState.activeGroupMembers.length,
+          connectTimeoutSec: group.connectTimeoutSec,
+          connectionMode: settingsState.connectionMode,
           proxySettings: settingsState.proxySettings,
         ),
       ),
@@ -501,14 +550,36 @@ class _VpnHomePageViewState extends State<_VpnHomePageView>
         }
       }
     }
-    final profileSummaryTitle = activeProfile != null
-        ? activeProfile.displayName
-        : (profilesState.profiles.isEmpty ? t.noSavedProfile : t.quickConnect);
-    final profileSummarySubtitle = activeProfile != null
-        ? activeProfile.server
-        : (profilesState.profiles.isEmpty
-              ? t.createFirstProfile
-              : t.selectSavedProfile);
+    // A failover group can be what the button starts instead of a profile
+    // (SPEC 10.1.3). The tile shows what it will try and in what order, which
+    // is the part the status line cannot say until the walk has begun.
+    final activeGroup = profilesState.activeGroup;
+    final groupMemberLine = profilesState.activeGroupMembers
+        .map((profile) => '${profile.displayName} (${profile.protocol.label})')
+        .join('  →  ');
+    final profileSummaryTitle = activeGroup != null
+        ? activeGroup.displayName
+        : (activeProfile != null
+              ? activeProfile.displayName
+              : (profilesState.profiles.isEmpty
+                    ? t.noSavedProfile
+                    : t.quickConnect));
+    // While a group is walking its list the host says which member it is on;
+    // that replaces the static order, because it is the one thing the user
+    // cannot work out for themselves (SPEC 10.1.3).
+    final walkingDetail = tunnelState.awaitingTunnel && !tunnelState.tunnelUp
+        ? tunnelState.connectingDetail
+        : null;
+    final profileSummarySubtitle = activeGroup != null
+        ? (walkingDetail ??
+              (groupMemberLine.isEmpty
+                  ? t.failoverGroupIsEmpty
+                  : groupMemberLine))
+        : (activeProfile != null
+              ? activeProfile.server
+              : (profilesState.profiles.isEmpty
+                    ? t.createFirstProfile
+                    : t.selectSavedProfile));
     final appBarTitle = switch (navState.index) {
       0 => t.appTitle,
       1 => t.logs,
@@ -747,10 +818,13 @@ class _VpnHomePageViewState extends State<_VpnHomePageView>
                       tunnelUp: tunnelState.tunnelUp,
                       awaitingTunnel: tunnelState.awaitingTunnel,
                       stopRequested: tunnelState.stopRequested,
-                      canStartConnection: profilesState.hasActiveProfile,
+                      canStartConnection:
+                          profilesState.hasActiveProfile ||
+                          profilesState.hasActiveGroup,
                       connectButtonLabel: _connectButtonLabel(
                         tunnelState,
-                        profilesState.hasActiveProfile,
+                        profilesState.hasActiveProfile ||
+                            profilesState.hasActiveGroup,
                         settingsState.connectionMode,
                       ),
                       onPrimary: () => _primaryAction(

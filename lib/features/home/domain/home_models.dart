@@ -163,6 +163,59 @@ class TunnelConnectRequest extends Equatable {
   ];
 }
 
+/// A request to start a failover group rather than one profile (SPEC 10.1).
+///
+/// It carries almost nothing: the members are whole profiles in the host's
+/// store, with their own servers, protocols and secrets, and the host reads
+/// them itself. What is here is the group to run, the proxy listener settings
+/// — which belong to this application and to no profile — and enough about the
+/// group to say what is happening before the host answers.
+class TunnelGroupConnectRequest extends Equatable {
+  const TunnelGroupConnectRequest({
+    this.attemptId = '',
+    required this.groupId,
+    required this.groupName,
+    required this.memberCount,
+    required this.connectTimeoutSec,
+    required this.connectionMode,
+    required this.proxySettings,
+  });
+
+  final String attemptId;
+  final String groupId;
+  final String groupName;
+
+  /// How many members the group had when the button was pressed, and the budget
+  /// each of them gets. Neither is sent to the host — it reads the group again
+  /// and is the authority — but together they say how long the whole walk may
+  /// take, which is how long this side is willing to wait for it.
+  final int memberCount;
+  final int connectTimeoutSec;
+
+  /// What the user has the application set to. A group is always a VPN tunnel;
+  /// this is here so that a group started in proxy-only mode is refused with a
+  /// sentence rather than quietly changing the mode underneath the setting.
+  final ConnectionMode connectionMode;
+
+  final ProxySettings proxySettings;
+
+  /// The longest a whole walk can honestly take: every member getting its full
+  /// budget, one after another.
+  Duration get worstCaseDuration =>
+      Duration(seconds: memberCount * connectTimeoutSec);
+
+  @override
+  List<Object?> get props => [
+    attemptId,
+    groupId,
+    groupName,
+    memberCount,
+    connectTimeoutSec,
+    connectionMode,
+    proxySettings,
+  ];
+}
+
 class ImportTransferRequest extends Equatable {
   const ImportTransferRequest({
     required this.transfer,

@@ -7,6 +7,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:tunnel_forge/features/profiles/data/profile_bridge.dart';
+import 'package:tunnel_forge/features/profiles/domain/failover_group.dart';
 import 'package:tunnel_forge/features/profiles/domain/profile_models.dart';
 import 'package:tunnel_forge/features/profiles/domain/profile_transfer.dart';
 import 'package:tunnel_forge/core/logging/log_entry.dart';
@@ -69,6 +70,15 @@ class ProfileStore {
 
   static const prefsKeyProfilesJson = 'vpn_profiles_json_v3';
   static const prefsKeyLastProfileId = 'vpn_last_profile_id_v1';
+
+  /// The failover group the connect button would start, when one is chosen
+  /// instead of a profile (SPEC 10.1).
+  ///
+  /// It lives in preferences rather than beside the last profile id in the
+  /// host's store because nothing on the host needs it: a group is only ever
+  /// started by this application, while the last *profile* is what the service
+  /// reads when the system starts it with no Dart running (SPEC В.13).
+  static const prefsKeyLastGroupId = 'vpn_last_failover_group_id_v1';
   static const prefsKeyConnectionMode = 'connection_mode_v1';
   static const prefsKeyProxyHttpPort = 'proxy_http_port_v1';
   static const prefsKeyProxySocksPort = 'proxy_socks_port_v1';
@@ -129,6 +139,44 @@ class ProfileStore {
   }
 
   Future<void> setLastProfileId(String? id) => _backend.setLastProfileId(id);
+
+  /// Every failover group, oldest first (SPEC 10.1).
+  Future<List<FailoverGroup>> loadFailoverGroups() async {
+    await _migrated();
+    return _backend.listGroups();
+  }
+
+  /// The group with [id], or null if there is none.
+  Future<FailoverGroup?> loadFailoverGroup(String id) async {
+    await _migrated();
+    return _backend.loadGroup(id);
+  }
+
+  /// Stores [group]; the stored copy comes back, with its budget clamped and
+  /// members that no longer exist dropped.
+  Future<FailoverGroup> saveFailoverGroup(FailoverGroup group) =>
+      _backend.saveGroup(group);
+
+  Future<void> deleteFailoverGroup(String id) async {
+    if (id.isEmpty) return;
+    await _backend.deleteGroup(id);
+    if (await loadLastGroupId() == id) await setLastGroupId(null);
+  }
+
+  Future<String?> loadLastGroupId() async {
+    final p = await _prefs();
+    final id = p.getString(prefsKeyLastGroupId);
+    return (id == null || id.isEmpty) ? null : id;
+  }
+
+  Future<void> setLastGroupId(String? id) async {
+    final p = await _prefs();
+    if (id == null || id.isEmpty) {
+      await p.remove(prefsKeyLastGroupId);
+      return;
+    }
+    await p.setString(prefsKeyLastGroupId, id);
+  }
 
   /// Wraps [payload] in a password-encrypted container (SPEC 8.1.4).
   Future<String> sealExport(String payload, String password) =>

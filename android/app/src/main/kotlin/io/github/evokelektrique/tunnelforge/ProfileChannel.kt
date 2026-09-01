@@ -1,5 +1,7 @@
 package io.github.evokelektrique.tunnelforge
 
+import io.github.mr1ve3r.combined.core.profile.FailoverGroup
+import io.github.mr1ve3r.combined.core.profile.FailoverGroupStore
 import io.github.mr1ve3r.combined.core.profile.ProfileContainer
 import io.github.mr1ve3r.combined.core.profile.ProfileContainerException
 import io.github.mr1ve3r.combined.core.profile.ProfileStore
@@ -22,6 +24,7 @@ import kotlinx.coroutines.launch
 class ProfileChannel(
     private val profiles: ProfileStore,
     private val trust: TrustStore,
+    private val groups: FailoverGroupStore,
     private val scope: CoroutineScope,
     private val clock: () -> Long = System::currentTimeMillis,
 ) {
@@ -30,6 +33,21 @@ class ProfileChannel(
         val args = arguments as? Map<*, *>
         when (method) {
             ProfileContract.LIST_PROFILES -> answer(reply) { list() }
+
+            ProfileContract.LIST_GROUPS -> answer(reply) { listGroups() }
+
+            ProfileContract.LOAD_GROUP -> withId(args, reply) { id -> loadedGroup(id) }
+
+            ProfileContract.DELETE_GROUP -> withId(args, reply) { id -> groups.delete(id) }
+
+            ProfileContract.SAVE_GROUP -> {
+                val map = args?.get(ProfileContract.ARG_GROUP) as? Map<*, *>
+                if (map == null) {
+                    reply.error(ProfileContract.ERROR_BAD_ARGS, "A group is required")
+                    return
+                }
+                answer(reply) { saveGroup(map) }
+            }
 
             ProfileContract.LAST_PROFILE_ID -> reply.success(profiles.lastProfileId())
 
@@ -74,6 +92,64 @@ class ProfileChannel(
             else -> reply.notImplemented()
         }
     }
+
+    /**
+     * Every group with the ids of its members, in order (SPEC 10.1.1).
+     *
+     * Ids rather than whole profiles: the caller already has the profile list,
+     * and sending each member twice would make two copies of one profile that
+     * could disagree after an edit.
+     */
+    private suspend fun listGroups(): List<Map<String, Any?>> = groups.list().map { group ->
+        writeGroup(group, groups.findWithMembers(group.id)?.members?.map { it.id } ?: emptyList())
+    }
+
+    private suspend fun loadedGroup(id: String): Map<String, Any?>? {
+        val stored = groups.findWithMembers(id) ?: return null
+        return writeGroup(stored.group, stored.members.map { it.id })
+    }
+
+    /**
+     * Stores a group and its membership.
+     *
+     * Members that name a profile this store does not have are dropped rather
+     * than rejected: a group whose member was deleted on another screen is a
+     * shorter group, not an invalid one, and refusing the save would strand the
+     * user on a form they cannot submit.
+     */
+    private suspend fun saveGroup(map: Map<*, *>): Map<String, Any?> {
+        val id = (map[ProfileContract.GROUP_FIELD_ID] as? String)?.takeIf { it.isNotEmpty() }
+            ?: FailoverGroupStore.newGroupId()
+        val name = (map[ProfileContract.GROUP_FIELD_NAME] as? String)?.trim().orEmpty()
+        if (name.isEmpty()) {
+            throw ProfileChannelException(ProfileContract.ERROR_BAD_ARGS, "A group needs a name")
+        }
+        val known = profiles.list().map { it.id }.toSet()
+        val memberIds = (map[ProfileContract.GROUP_FIELD_MEMBER_IDS] as? List<*>)
+            ?.mapNotNull { (it as? String)?.trim()?.takeIf { id -> id.isNotEmpty() && id in known } }
+            ?: emptyList()
+        val group = FailoverGroup(
+            id = id,
+            name = name,
+            connectTimeoutSec = FailoverGroup.normalizeTimeout(
+                (map[ProfileContract.GROUP_FIELD_CONNECT_TIMEOUT_SEC] as? Number)?.toInt()
+                    ?: FailoverGroup.DEFAULT_CONNECT_TIMEOUT_SEC,
+            ),
+            createdAt = (map[ProfileContract.GROUP_FIELD_CREATED_AT] as? Number)?.toLong()
+                ?: groups.find(id)?.createdAt
+                ?: clock(),
+        )
+        val stored = groups.save(group, memberIds)
+        return writeGroup(stored, groups.findWithMembers(stored.id)?.members?.map { it.id } ?: emptyList())
+    }
+
+    private fun writeGroup(group: FailoverGroup, memberIds: List<String>): Map<String, Any?> = mapOf(
+        ProfileContract.GROUP_FIELD_ID to group.id,
+        ProfileContract.GROUP_FIELD_NAME to group.name,
+        ProfileContract.GROUP_FIELD_CONNECT_TIMEOUT_SEC to group.connectTimeoutSec,
+        ProfileContract.GROUP_FIELD_CREATED_AT to group.createdAt,
+        ProfileContract.GROUP_FIELD_MEMBER_IDS to memberIds,
+    )
 
     private suspend fun list(): List<Map<String, Any?>> = profiles.list().map { profile ->
         ProfilePayloads.write(profile, trust.certificateIdsFor(profile.id))
