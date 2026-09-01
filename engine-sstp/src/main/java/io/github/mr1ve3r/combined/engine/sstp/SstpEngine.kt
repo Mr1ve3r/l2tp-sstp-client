@@ -229,14 +229,25 @@ class SstpEngine internal constructor(
     override suspend fun disconnect() {
         if (!disconnectRequested.compareAndSet(false, true)) return
 
-        // A courtesy, not a requirement: a server that never hears the
-        // disconnect keeps the session until its own timer expires, so this
-        // gets a short deadline and no more.
-        withTimeoutOrNull(DISCONNECT_TIMEOUT_MS) {
-            runCatching { sstpClient?.sendLastPacket(SSTP_MESSAGE_TYPE_CALL_DISCONNECT) }
-        }
+        // On this engine's own dispatcher rather than the caller's thread.
+        // Tearing an SSTP session down *writes to the network* twice: the
+        // courtesy packet below, and the TLS close_notify that Socket.close()
+        // sends from inside closeEverything(). The host tears tunnels down from
+        // Service.onStartCommand, which is the main thread, and StrictMode
+        // makes a network write there fatal -- a plain disconnect took the
+        // process down with NetworkOnMainThreadException. Socket work belongs
+        // on the dispatcher that exists for it; the caller is only ever
+        // suspended, whichever thread it started on.
+        withContext(dispatcher) {
+            // A courtesy, not a requirement: a server that never hears the
+            // disconnect keeps the session until its own timer expires, so this
+            // gets a short deadline and no more.
+            withTimeoutOrNull(DISCONNECT_TIMEOUT_MS) {
+                runCatching { sstpClient?.sendLastPacket(SSTP_MESSAGE_TYPE_CALL_DISCONNECT) }
+            }
 
-        closeEverything()
+            closeEverything()
+        }
         finishTerminal(EngineState.Disconnected)
     }
 
