@@ -392,12 +392,42 @@ internal class SslTerminal(
         chain.forEachIndexed { index, certificate ->
             val role = if (index == 0) "leaf" else "issuer $index"
             val ca = if (certificate.basicConstraints >= 0) "CA" else "not a CA"
+            // Self-signed is reported separately from the names because the two
+            // disagree often enough to matter: a certificate whose subject and
+            // issuer read the same may still have been signed by another key
+            // carrying that same name, and only one of those two cases can be
+            // fixed by trusting a different certificate.
+            val signing = if (isSelfSigned(certificate)) "self-signed" else "signed by another key"
             log(
                 level,
-                "  [$index] $role, $ca: subject=${certificate.subjectX500Principal.name} " +
+                "  [$index] $role, $ca, $signing: subject=${certificate.subjectX500Principal.name} " +
                     "issuer=${certificate.issuerX500Principal.name} " +
                     "sha256=${CertificateFingerprint.formatForDisplay(CertificateFingerprint.sha256(certificate))}",
             )
+        }
+    }
+
+    /** Whether [certificate] carries a signature made by its own key. */
+    private fun isSelfSigned(certificate: X509Certificate): Boolean = runCatching {
+        certificate.verify(certificate.publicKey)
+    }.isSuccess
+
+    /**
+     * Reports the failures the thrown one is hiding.
+     *
+     * Under `SYSTEM_PLUS_CUSTOM` the exception that reaches here is always the
+     * platform store's, and the platform store has never heard of a private CA:
+     * its verdict is the same uninformative sentence whatever is wrong. The
+     * profile's own anchors failed for some other reason, and that reason
+     * travels as a suppressed exception which nothing would otherwise print.
+     */
+    private fun logSuppressedFailures(cause: Throwable) {
+        var current: Throwable? = cause
+        while (current != null) {
+            current.suppressed.forEach { suppressed ->
+                log(LogLevel.WARN, "The profile's own certificates rejected it too: ${suppressed.message}")
+            }
+            current = current.cause.takeIf { it !== current }
         }
     }
 
@@ -407,6 +437,7 @@ internal class SslTerminal(
         // Before the mapping, so the chain is in the log whichever branch the
         // failure takes -- and whether or not the user can read the error.
         logPresentedChain(LogLevel.WARN)
+        logSuppressedFailures(cause)
 
         causeOfType<CertificatePinMismatchException>(cause)?.also {
             return EngineException(EngineError.CertificateRejected(it.presentedSha256 ?: fingerprint, it.message), cause)
