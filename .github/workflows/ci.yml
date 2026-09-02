@@ -406,7 +406,7 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v6
         with:
-          name: tunnel-forge-release-apk
+          name: l2-ss-tp-release-apk
           path: build/app/outputs/flutter-apk/*.apk
           if-no-files-found: error
 

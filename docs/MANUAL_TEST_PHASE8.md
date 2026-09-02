@@ -34,7 +34,7 @@ Connect with each.
 Then check the handover really moved them rather than copying them:
 
 ```bash
-adb shell run-as io.github.evokelektrique.tunnelforge cat shared_prefs/profile_secrets.xml
+adb shell run-as io.github.mr1ve3r.l2tpsstp cat shared_prefs/profile_secrets.xml
 ```
 
 Expected: one entry per secret, each an opaque base64 string. Neither password
@@ -44,7 +44,7 @@ profiles are gone.
 ## 2. The database holds no secret — SPEC 8.2
 
 ```bash
-adb shell run-as io.github.evokelektrique.tunnelforge strings databases/trust.db | grep -i <the-password>
+adb shell run-as io.github.mr1ve3r.l2tpsstp strings databases/trust.db | grep -i <the-password>
 ```
 
 Expected: no match. The row carries `profile/<id>/password` and the like, never
@@ -81,7 +81,7 @@ could not be closed there.
 While connected:
 
 ```bash
-adb shell am force-stop io.github.evokelektrique.tunnelforge
+adb shell am force-stop io.github.mr1ve3r.l2tpsstp
 ```
 
 Expected: the service is restarted by the system with a null intent and

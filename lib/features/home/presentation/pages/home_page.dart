@@ -78,9 +78,9 @@ class _VpnHomePageView extends StatefulWidget {
 class _VpnHomePageViewState extends State<_VpnHomePageView>
     with WidgetsBindingObserver {
   static const String _kGithubReleasesUrl =
-      'https://github.com/evokelektrique/tunnel-forge/releases';
+      'https://github.com/Mr1ve3r/l2tp-sstp-client/releases';
   static const String _kProjectGithubUrl =
-      'https://github.com/evokelektrique/tunnel-forge';
+      'https://github.com/Mr1ve3r/l2tp-sstp-client';
   static const String _kTelegramUrl = 'https://t.me/TunnelForge';
 
   final ScrollController _logsScroll = ScrollController();

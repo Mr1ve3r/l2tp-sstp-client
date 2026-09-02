@@ -1,4 +1,4 @@
-# l2tp-sstp-client
+# L2/SS/TP
 
 > Форк [TunnelForge](https://github.com/evokelektrique/tunnel-forge) (GPL-3.0)
 > с SSTP-движком на основе [Open SSTP Client](https://github.com/kittoku/Open-SSTP-Client) (MIT).
@@ -8,7 +8,8 @@
 
 ## Что это
 
-VPN-клиент для Android, поддерживающий два протокола в одном приложении:
+**L2/SS/TP** — VPN-клиент для Android, поддерживающий два протокола в одном
+приложении:
 
 - **L2TP/IPsec (IKEv1)** — из TunnelForge, нативный C-движок;
 - **SSTP** — движок, перенесённый из Open SSTP Client.
@@ -31,6 +32,11 @@ Android 12 убрал встроенную поддержку L2TP и PPTP, пр
 | HTTP-прокси для VPN-транспорта | — | есть для SSTP, с авторизацией на прокси |
 | Failover | — | группа профилей с перебором по порядку |
 | Локализация | — | добавлен русский |
+
+Форк живёт под своим `applicationId` — `io.github.mr1ve3r.l2tpsstp` — и своим
+ключом подписи. Он ставится рядом с upstream TunnelForge, а не поверх него, и
+одно не обновляет другое. На F-Droid ещё не опубликован: метаданные готовы в
+[`docs/fdroid/`](docs/fdroid/), merge request в `fdroiddata` не подан.
 
 ## Состояние
 

@@ -1,0 +1,54 @@
+Categories:
+  - Connectivity
+License: GPL-3.0-or-later
+AuthorName: Mr1ve3r
+WebSite: https://github.com/Mr1ve3r/l2tp-sstp-client
+SourceCode: https://github.com/Mr1ve3r/l2tp-sstp-client
+IssueTracker: https://github.com/Mr1ve3r/l2tp-sstp-client/issues
+Changelog: https://github.com/Mr1ve3r/l2tp-sstp-client/blob/main/CHANGELOG.md
+
+RepoType: git
+Repo: https://github.com/Mr1ve3r/l2tp-sstp-client.git
+
+Builds:
+  - versionName: 0.1.0
+    versionCode: 1
+    commit: v0.1.0
+    timeout: 14400
+    sudo:
+      - apt-get update
+      - apt-get install -y golang-go cmake ninja-build
+    output: build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
+    srclibs:
+      - flutter@stable
+      - mbedtls@v2.28.9
+    rm:
+      - ios
+      - linux
+      - macos
+      - web
+      - windows
+    prebuild:
+      - flutterVersion=$(sed -n -E "s/.*flutter-version:\ '(.*)'/\1/p" .github/workflows/release.yml)
+      - '[[ $flutterVersion ]]'
+      - git -C $$flutter$$ checkout -f $flutterVersion
+      - export PUB_CACHE=$(pwd)/.pub-cache
+      - $$flutter$$/bin/flutter config --no-analytics
+      - $$flutter$$/bin/flutter pub get
+      - echo "tunnelForgeMbedtlsSourceDir=$$mbedtls$$" >> android/gradle.properties
+      - cd android/gvisor
+      - go mod download
+    scandelete:
+      - .pub-cache
+    scanignore:
+      - android/gvisor/go.sum
+      - $$flutter$$/bin/cache
+    build:
+      - export PUB_CACHE=$(pwd)/.pub-cache
+      - $$flutter$$/bin/flutter build apk --release --split-per-abi --target-platform android-arm64
+
+AutoUpdateMode: Version v%v
+UpdateCheckMode: Tags
+UpdateCheckData: pubspec.yaml|version:\s.+\+(\d+)|.|version:\s(.+)\+
+CurrentVersion: 0.1.0
+CurrentVersionCode: 1

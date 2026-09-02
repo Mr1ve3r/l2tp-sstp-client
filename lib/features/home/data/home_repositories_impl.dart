@@ -387,8 +387,11 @@ class AppVersionRepositoryImpl implements AppVersionRepository {
 class AppUpdateRepositoryImpl implements AppUpdateRepository {
   AppUpdateRepositoryImpl({
     Future<String> Function(Uri uri)? fetcher,
-    this.owner = 'evokelektrique',
-    this.repo = 'tunnel-forge',
+    // This fork's releases, not upstream's. An APK from upstream is signed
+    // with a different key and cannot install over this one, so offering it as
+    // an update produces a failure the user cannot act on.
+    this.owner = 'Mr1ve3r',
+    this.repo = 'l2tp-sstp-client',
   }) : _fetcher = fetcher ?? _fetchJson;
 
   final Future<String> Function(Uri uri) _fetcher;

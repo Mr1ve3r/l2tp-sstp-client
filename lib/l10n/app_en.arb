@@ -1,6 +1,6 @@
 {
   "@@locale": "en",
-  "appTitle": "TunnelForge",
+  "appTitle": "L2/SS/TP",
   "vpn": "VPN",
   "logs": "Logs",
   "settings": "Settings",
@@ -121,7 +121,7 @@
     }
   },
   "about": "About",
-  "aboutText": "TunnelForge keeps L2TP/IPsec usable on modern Android, with profile management, local proxy access, per-app routing, and clear connection logs in one place.",
+  "aboutText": "L2/SS/TP keeps L2TP/IPsec and SSTP usable on modern Android, with profile management, a server certificate store, failover groups, per-app routing, and clear connection logs in one place.",
   "telegramTitle": "Telegram",
   "githubTitle": "GitHub",
   "checkingUpdates": "Checking for updates",
@@ -132,7 +132,7 @@
   "checkForUpdates": "Check for updates",
   "lookingUpRelease": "Looking up the latest published GitHub release.",
   "updateCheckConsentTitle": "Check GitHub releases?",
-  "updateCheckConsentMessage": "TunnelForge will contact GitHub Releases to compare your installed version with the latest published build. This is used only when you request an update check.",
+  "updateCheckConsentMessage": "L2/SS/TP will contact GitHub Releases to compare your installed version with the latest published build. This is used only when you request an update check.",
   "updateCheckConsentAllow": "Check releases",
   "latestReleaseRunning": "Latest release: {latest}. You are running {installed}.",
   "@latestReleaseRunning": {
@@ -222,7 +222,7 @@
   "couldNotReadSelectedFile": "Couldn't read the selected file",
   "couldNotImportTfp": "Couldn't import .tfp file",
   "clipboardEmpty": "Clipboard is empty",
-  "clipboardInvalidProfile": "Clipboard does not contain a valid TunnelForge profile",
+  "clipboardInvalidProfile": "Clipboard does not contain a valid L2/SS/TP profile",
   "couldNotImportClipboard": "Couldn't import a profile from the clipboard",
   "profileDetails": "Profile details",
   "name": "Name",
@@ -472,7 +472,7 @@
   "profileFileReady": "Profile file ready to save or share",
   "couldNotExportTfpFile": "Couldn't export .tfp file",
   "batteryOptimizationUnavailableOnDevice": "Battery optimization settings are not available on this device.",
-  "batteryOptimizationAlreadyDisabled": "Battery optimization is already disabled for TunnelForge.",
+  "batteryOptimizationAlreadyDisabled": "Battery optimization is already disabled for L2/SS/TP.",
   "batteryOptimizationRequestOpened": "Battery optimization request opened.",
   "batterySettingsOpened": "Battery settings opened.",
   "couldNotOpenBatterySettings": "Could not open battery settings.",

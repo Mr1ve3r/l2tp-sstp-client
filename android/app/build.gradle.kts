@@ -137,7 +137,12 @@ android {
     }
 
     defaultConfig {
-        applicationId = "io.github.evokelektrique.tunnelforge"
+        // The fork's own identity. It is deliberately not the Kotlin package
+        // below it, which stays `io.github.evokelektrique.tunnelforge`: the
+        // package name is upstream's and renaming it would touch every file
+        // in `:app` for no user-visible gain, while making a merge from
+        // upstream painful. Android does not require the two to match.
+        applicationId = "io.github.mr1ve3r.l2tpsstp"
         minSdk = 31
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode

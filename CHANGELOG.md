@@ -5,16 +5,30 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-The version in `pubspec.yaml` was inherited from
-[TunnelForge](https://github.com/evokelektrique/tunnel-forge) and carried
-forward, so the numbering continues upstream's rather than restarting. A
+Numbering starts at `0.1.0` for this fork rather than continuing
+[TunnelForge](https://github.com/evokelektrique/tunnel-forge)'s: the fork has
+its own application id and its own signing key, so it is a different
+application and inheriting a version history it did not have would mislead. A
 release tag must be `v<the pubspec version>` — the release workflow refuses to
 publish otherwise.
 
 ## [Unreleased]
 
-Everything below is the fork's own work: SSTP alongside the inherited
-L2TP/IPsec, built to the phases in [`SPEC`](SPEC). It has not been tagged yet.
+## [0.1.0] — unreleased
+
+The first release of this fork: SSTP alongside the inherited L2TP/IPsec, built
+to the phases in [`SPEC`](SPEC).
+
+### Identity
+
+- **Own application id**, `io.github.mr1ve3r.l2tpsstp`, and own name,
+  **L2/SS/TP**. It installs alongside upstream TunnelForge rather than over it;
+  neither can update the other.
+- **Update checks point at this repository.** An APK from upstream is signed
+  with a different key and cannot install over this one, so offering it as an
+  update would produce a failure the user could not act on.
+- The Persian F-Droid listing was replaced by a Russian one, matching the
+  locales the application actually ships.
 
 ### Added
 
@@ -93,4 +107,5 @@ L2TP/IPsec, built to the phases in [`SPEC`](SPEC). It has not been tagged yet.
 - **Proxy-only mode**, inherited from TunnelForge, fails its L2TP handshake and
   has not been attributed to a cause. See SPEC appendix В.8.
 
-[Unreleased]: https://github.com/Mr1ve3r/l2tp-sstp-client/commits/main
+[Unreleased]: https://github.com/Mr1ve3r/l2tp-sstp-client/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/Mr1ve3r/l2tp-sstp-client/releases/tag/v0.1.0

@@ -75,14 +75,14 @@ the proxy host.
 3. Check the password went where the VPN password goes:
 
 ```bash
-adb shell run-as io.github.evokelektrique.tunnelforge cat shared_prefs/profile_secrets.xml
+adb shell run-as io.github.mr1ve3r.l2tpsstp cat shared_prefs/profile_secrets.xml
 ```
 
 Expected: opaque base64 entries; the proxy password appears nowhere in clear
 text. The database holds only a reference:
 
 ```bash
-adb shell run-as io.github.evokelektrique.tunnelforge strings databases/trust.db | grep -i <the-proxy-password>
+adb shell run-as io.github.mr1ve3r.l2tpsstp strings databases/trust.db | grep -i <the-proxy-password>
 ```
 
 Expected: no match.

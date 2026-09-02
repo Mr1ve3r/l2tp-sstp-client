@@ -9,8 +9,8 @@ void main() {
     test('combines app version and build number for display', () async {
       final repository = AppVersionRepositoryImpl(
         packageInfoLoader: () async => PackageInfo(
-          appName: 'TunnelForge',
-          packageName: 'io.github.evokelektrique.tunnelforge',
+          appName: 'L2/SS/TP',
+          packageName: 'io.github.mr1ve3r.l2tpsstp',
           version: '0.3.0',
           buildNumber: '11',
           buildSignature: '',

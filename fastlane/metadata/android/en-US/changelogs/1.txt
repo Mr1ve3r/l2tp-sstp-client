@@ -1,0 +1,16 @@
+First release of this fork.
+
+Adds SSTP over TLS on port 443 alongside the inherited L2TP/IPsec: PAP, CHAP,
+MSCHAPv2 and EAP-MSCHAPv2, and support for reaching the server through an HTTP
+proxy.
+
+Adds a server certificate store with system, custom-CA-only and pinned
+policies, a pre-flight check that says what a profile will accept before it
+connects, and failover groups that try profiles in order and stop on an
+authentication failure rather than spreading failed logins across servers.
+
+Profiles and their secrets now live on the Android side, with secrets held
+under an Android Keystore key.
+
+Not yet verified on a device across the full protocol and Android-version
+matrix; proxy-only mode, inherited from upstream, does not work.

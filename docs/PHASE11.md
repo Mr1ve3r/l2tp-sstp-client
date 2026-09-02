@@ -123,6 +123,34 @@ repository. F-Droid metadata is in `docs/fdroid/`.
 
 Google Play is out of scope per SPEC 11.3 and does not block a release.
 
+### The fork's own identity
+
+Everything about the application still pointed at upstream: the `applicationId`,
+the F-Droid metadata, the README badges, and — the one that would have shipped a
+real failure — the update check, which asked upstream's GitHub releases for a
+newer build. An APK from upstream is signed with a different key and cannot
+install over this one, so every "update available" would have ended in an
+install error the user could do nothing about.
+
+The application is now `io.github.mr1ve3r.l2tpsstp`, named **L2/SS/TP**, at
+version `0.1.0+1`. Three decisions inside that:
+
+- **The Kotlin package stays `io.github.evokelektrique.tunnelforge`,** as does
+  the Dart package `tunnel_forge` and every platform-channel name. Android does
+  not require `applicationId` to match the package, and renaming it would touch
+  every file in `:app` — upstream's code — for nothing a user can see, while
+  making any future merge from upstream painful.
+- **Version numbering restarts at 0.1.0** rather than continuing upstream's
+  0.7.6. A different application id with a different signing key is a different
+  application; inheriting a version history it never had would only mislead.
+  `0.1.0` rather than `1.0.0` because the manual matrix has not been run.
+- **The F-Droid build list was reset to one entry.** Upstream's 0.7.1 and 0.7.2
+  entries under this application id would build upstream's application under the
+  fork's name. The stale `fa` listing was replaced with `ru-RU`, matching the
+  locales the application actually ships, and the old per-versionCode changelog
+  files were removed — this fork's codes start at 1 and would eventually collide
+  with upstream's.
+
 ---
 
 ## Two open items phase 11 inherited and did not close

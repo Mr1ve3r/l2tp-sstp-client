@@ -736,7 +736,7 @@ class _SettingsPanelState extends State<SettingsPanel> {
                 contentPadding: _kCardTilePadding,
                 title: _cardTitle(t.githubTitle),
                 subtitle: _cardText(
-                  'https://github.com/evokelektrique/tunnel-forge',
+                  'https://github.com/Mr1ve3r/l2tp-sstp-client',
                   color: widget.colorScheme.onSurfaceVariant,
                 ),
                 trailing: Icon(

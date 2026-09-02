@@ -150,7 +150,7 @@ void main() {
       );
       await tester.tap(find.byKey(const Key('onboarding_continue_button')));
       await tester.pump(const Duration(milliseconds: 500));
-      expect(find.text('TunnelForge'), findsOneWidget);
+      expect(find.text('L2/SS/TP'), findsOneWidget);
 
       await tester.ensureVisible(
         find.byKey(const Key('onboarding_continue_button')),

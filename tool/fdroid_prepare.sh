@@ -5,7 +5,7 @@ set -euo pipefail
 SCRIPT_NAME="$(basename "$0")"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 PUBSPEC_FILE="$ROOT/pubspec.yaml"
-METADATA_FILE="$ROOT/docs/fdroid/io.github.evokelektrique.tunnelforge.yml"
+METADATA_FILE="$ROOT/docs/fdroid/io.github.mr1ve3r.l2tpsstp.yml"
 ALLOW_DIRTY=0
 DRY_RUN=0
 
@@ -21,7 +21,7 @@ Reads:
   current git HEAD commit
 
 Updates:
-  docs/fdroid/io.github.evokelektrique.tunnelforge.yml
+  docs/fdroid/io.github.mr1ve3r.l2tpsstp.yml
 
 Options:
   --dry-run       Print the values without editing the metadata file.

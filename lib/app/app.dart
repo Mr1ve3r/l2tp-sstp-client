@@ -92,7 +92,7 @@ class _TunnelForgeAppState extends State<TunnelForgeApp> {
               builder: (context, _) {
                 final language = _languageController.language;
                 return MaterialApp(
-                  title: 'TunnelForge',
+                  title: 'L2/SS/TP',
                   locale: language.locale,
                   supportedLocales: AppLocalizations.supportedLocales,
                   localizationsDelegates: const [
