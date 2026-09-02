@@ -55,6 +55,7 @@
   <a href="#architecture--project-layout">Architecture</a> •
   <a href="#security--privacy">Security</a> •
   <a href="#debugging">Debugging</a> •
+  <a href="#contributing">Contributing</a> •
   <a href="#feedback">Feedback</a> •
   <a href="#licensing">Licensing</a>
 </p>
@@ -71,15 +72,17 @@ store shared by both. Work follows the phased plan in [`SPEC`](SPEC):
 - [x] Phase 4 — `engine-l2tp`
 - [x] Phase 5 — `core-trust`
 - [x] Phase 6 — `engine-sstp`
-- [ ] Phase 7 — single `VpnService` and protocol dispatcher
-- [ ] Phase 8 — profile model, storage, migration
-- [ ] Phase 9 — UI
-- [ ] Phase 10 — failover and protocol auto-selection
-- [ ] Phase 11 — tests, documentation, release
+- [x] Phase 7 — single `VpnService` and protocol dispatcher
+- [x] Phase 8 — profile model, storage, migration
+- [x] Phase 9 — UI
+- [x] Phase 10 — failover ([auto-selection by network was dropped](docs/PHASE10.md))
+- [x] Phase 11 — tests, documentation, release
 
-Until phase 7 lands, a build of this repository is functionally equivalent to
-upstream TunnelForge. Everything below this section describes the L2TP client
-inherited from upstream and still applies.
+Everything below this section describes the L2TP client inherited from
+upstream, and still applies; what the fork adds is listed under
+[SSTP and certificates](#sstp-and-certificates). What is done and what is
+deliberately not done is recorded in [`CHANGELOG.md`](CHANGELOG.md) and, phase
+by phase, in appendix В of the [`SPEC`](SPEC).
 
 ## Overview
 
@@ -97,6 +100,21 @@ TunnelForge is an Android client for those setups. It connects to existing L2TP/
 - Connection status and detailed logs
 - Custom DNS supporting UDP, TCP, TLS and HTTPS
 - Variable MTU
+
+### SSTP and certificates
+
+What this fork adds on top of the above:
+
+- SSTP over TLS on port 443, with PAP, CHAP, MSCHAPv2 and EAP-MSCHAPv2
+- SSTP through an HTTP proxy, with or without proxy authentication
+- A server certificate store with four trust policies — `SYSTEM`,
+  `CUSTOM_ONLY`, `PIN_LEAF`, and `INSECURE` in debug builds only
+- Fingerprint pinning, an `expectedHostname` field for certificates issued to a
+  name the server is not reached by, and a pre-flight check that says what a
+  profile will accept before it connects
+- Failover groups: an ordered list of profiles tried in turn, stopping on an
+  authentication failure rather than walking the list with a wrong password
+- A Quick Settings tile, per-protocol log filtering, and Russian localisation
 
 ## Screenshots
 
@@ -184,6 +202,16 @@ make help
 flutter test --coverage
 ```
 
+`core-trust` holds the trust policies, so it has a floor rather than a report:
+CI fails below 80% of instructions. Reproduce it with
+
+```sh
+cd android && ./gradlew :core-trust:jacocoCoverageVerification
+```
+
+What is measured and what is deliberately left out is explained in
+`core-trust/build.gradle.kts` and in [`docs/PHASE11.md`](docs/PHASE11.md).
+
 ### Local VPN Server
 
 The included [docker-compose.yml](docker-compose.yml) starts a local
@@ -226,7 +254,13 @@ Netty is the local proxy frontend. It accepts HTTP CONNECT and SOCKS5 clients wi
 
 ## Security & Privacy
 
-- VPN credentials are stored on-device with `flutter_secure_storage`.
+- VPN credentials, IPsec pre-shared keys and proxy passwords are encrypted with
+  an AES-GCM key held in the Android Keystore. They are not in the profile
+  database, and profile export omits them unless an encrypted container is
+  asked for.
+- Imported server certificates are copied into internal storage rather than
+  referenced by `Uri`, so an always-on tunnel can read them before the device
+  is unlocked.
 - Debug logs stay local, and sensitive tokens are redacted before display or sharing.
 - No analytics or crash-reporting SDKs are included in this repo.
 - Review debug logs before sharing them in public issues.
@@ -248,6 +282,16 @@ Libreswan and container logs:
 sh tool/vpn_debug.sh pluto-logs --container ipsec-vpn-server
 docker exec -it ipsec-vpn-server tail -f /var/log/auth.log
 ```
+
+## Contributing
+
+- [`CONTRIBUTING.md`](CONTRIBUTING.md) — build, the gates CI runs, and what a
+  change to this codebase is expected to come with
+- [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md)
+- [`SECURITY.md`](SECURITY.md) — **do not report a security problem in a public
+  issue**
+- [`CHANGELOG.md`](CHANGELOG.md)
+- [`docs/TEST_MATRIX.md`](docs/TEST_MATRIX.md) — the manual pass a release needs
 
 ## Feedback
 

@@ -43,6 +43,7 @@ Build-time only; not linked into the shipped artifact.
 | Kotlin Gradle Plugin | Apache-2.0 | Kotlin compilation |
 | `org.jlleitschuh.gradle.ktlint` | Apache-2.0 | Kotlin style checks on the modules added by this fork |
 | `com.google.devtools.ksp` | Apache-2.0 | Runs the Room annotation processor. Its version is bound to the Kotlin version and moves with it |
+| JaCoCo (`jacoco` Gradle plugin) | EPL-2.0 | Coverage for `core-trust`, and the 80% floor SPEC 11.4 sets on it |
 | CMake / Android NDK | BSD-3-Clause / NDK licence | Native L2TP engine |
 | Go toolchain | BSD-3-Clause | `android/gvisor` userspace networking module |
 

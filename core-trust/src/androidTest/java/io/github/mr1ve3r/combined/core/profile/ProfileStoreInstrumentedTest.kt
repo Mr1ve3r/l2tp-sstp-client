@@ -252,6 +252,48 @@ class TrustDatabaseMigrationTest {
         migrated.close()
     }
 
+    /**
+     * The upgrade a real install actually performs (SPEC 11.1).
+     *
+     * Neither single-step test covers this. A phone that last ran the version 1
+     * build and then takes the current release runs both migrations back to
+     * back, in one open, and it is the *sequence* that can break: `MIGRATION_1_2`
+     * rebuilds `profile_certificate_ref`, and `MIGRATION_2_3` then adds tables
+     * with a foreign key on `profiles`. Passing them to Room in one call is the
+     * only way to see the chain the way the device sees it.
+     */
+    @Test
+    fun version1UpgradesToVersion3InOneRun() {
+        helper.createDatabase(NAME, 1).use { database ->
+            database.execSQL(
+                "INSERT INTO server_certificates VALUES ('aa11', 'Work CA', 'ca', 'CN=ca', 'CN=ca', '01', 0, 1, " +
+                    "'aa11', 'bb22', 1, NULL, '[]', 2048, 'SHA256withRSA', 5, 'aa11.pem')",
+            )
+        }
+
+        val migrated = helper.runMigrationsAndValidate(
+            NAME,
+            3,
+            true,
+            TrustDatabase.MIGRATION_1_2,
+            TrustDatabase.MIGRATION_2_3,
+        )
+
+        // Validation against `schemas/3.json` is most of the assertion: it is
+        // what fails if either step leaves the database a shape Room did not
+        // generate. The counts below add the part validation cannot see --
+        // that the certificate the user imported under version 1 is still here.
+        migrated.query("SELECT COUNT(*) FROM server_certificates").use { cursor ->
+            cursor.moveToFirst()
+            assertEquals(1, cursor.getInt(0))
+        }
+        migrated.query("SELECT COUNT(*) FROM failover_groups").use { cursor ->
+            cursor.moveToFirst()
+            assertEquals(0, cursor.getInt(0))
+        }
+        migrated.close()
+    }
+
     private companion object {
         const val NAME = "migration-test.db"
     }

@@ -23,7 +23,19 @@ import java.security.SecureRandom
 import javax.crypto.Cipher
 import javax.crypto.spec.SecretKeySpec
 
-internal class MsChapV2Client(private val bridge: SstpBridge) {
+/**
+ * MSCHAPv2 (RFC 2759) over CHAP or EAP.
+ *
+ * @param fillChallenge fills the 16-octet peer challenge. Production leaves the
+ *   default, which is [SecureRandom]. It is a parameter because RFC 2759 §9.2
+ *   fixes the peer challenge in its test vectors, and a response computed from
+ *   a random one cannot be checked against anything — the vectors are the only
+ *   evidence that the port of this arithmetic is still correct.
+ */
+internal class MsChapV2Client(
+    private val bridge: SstpBridge,
+    private val fillChallenge: (ByteArray) -> Unit = { SecureRandom().nextBytes(it) },
+) {
     private val serverChallenge = ByteArray(16)
     private val clientChallenge = ByteArray(16)
     private val serverResponse = ByteArray(42)
@@ -83,7 +95,7 @@ internal class MsChapV2Client(private val bridge: SstpBridge) {
     }
 
     private fun prepareClientResponse() {
-        SecureRandom().nextBytes(clientChallenge)
+        fillChallenge(clientChallenge)
 
         val userArray = bridge.config.username.toByteArray(Charsets.US_ASCII)
         val passArray = bridge.config.password.toByteArray(Charsets.UTF_16LE)

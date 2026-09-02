@@ -204,6 +204,24 @@ jobs:
             :core-tunnel:testDebugUnitTest \
             :core-trust:testDebugUnitTest
 
+      # SPEC 11.4 puts a floor under this one module: it holds the trust
+      # policies, and a regression there is a silent downgrade of what the
+      # application will accept as a server. The task fails the job below 80%.
+      - name: Verify core-trust coverage
+        working-directory: android
+        run: >-
+          ./gradlew --no-daemon --console=plain --stacktrace
+          -Dorg.gradle.vfs.watch=false :core-trust:jacocoCoverageVerification
+
+      - name: Upload core-trust coverage to Codecov
+        if: ${{ !cancelled() && env.HAS_CODECOV_TOKEN == 'true' }}
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: build/core-trust/reports/jacoco/jacocoTestReport/jacocoTestReport.xml
+          flags: core-trust
+          fail_ci_if_error: true
+
       - name: Upload Android test results to Codecov
         if: ${{ !cancelled() && env.HAS_CODECOV_TOKEN == 'true' }}
         uses: codecov/test-results-action@0fa95f0e1eeaafde2c782583b36b28ad0d8c77d3 # v1.2.1
