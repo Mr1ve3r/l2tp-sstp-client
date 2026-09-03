@@ -1628,7 +1628,7 @@ class TunnelVpnService : VpnService() {
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle(getString(R.string.vpn_notification_title))
             .setContentText(text)
-            .setSmallIcon(android.R.drawable.ic_lock_lock)
+            .setSmallIcon(R.drawable.ic_stat_logo)
             .setContentIntent(pending)
             .setShowWhen(showTimer)
             .setUsesChronometer(showTimer)

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The logo's own plate colour. The foreground layer is the whole logo,
+         plate included, inset inside this one, so the two must be the same
+         value or the inset edge shows as a seam. -->
+    <color name="ic_launcher_background">#D1FAE5</color>
+</resources>

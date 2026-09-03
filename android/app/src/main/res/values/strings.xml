@@ -11,4 +11,5 @@
     <string name="vpn_tile_label">L2/SS/TP VPN</string>
     <string name="vpn_tile_subtitle_connected">Connected</string>
     <string name="vpn_tile_subtitle_disconnected">Tap to connect</string>
+    <string name="proxy_notification_title">L2/SS/TP proxy</string>
 </resources>
