@@ -21,7 +21,8 @@ import java.security.cert.X509Certificate
  * | `caWithoutBasicConstraints` | self-signed, with no `basicConstraints` extension at all |
  * | `leafSignedByCaWithoutBasicConstraints` | `CN=vpn.nbc.example.com`, issued by that one |
  * | `chainCa` | a CA with `keyCertSign`, the anchor for `chain-server.p12` |
- * | `chain-server.p12` | `CN=vpn.example.com` and its key, issued by `chainCa` |
+ * | `chain-server.p12` | `CN=vpn.example.com` and its key, plus `chainCa` and its key |
+ * | `expiredLeafSignedByChainCa` | issued by `chainCa`, lapsed in 2024 while its issuer stayed valid |
  *
  * The last four came from `openssl` rather than `keytool`, because `keytool`
  * cannot emit a self-signed certificate with no `basicConstraints` extension --
@@ -52,6 +53,15 @@ object TestCertificates {
 
     /** The anchor for the certificate and key inside `chain-server.p12`. */
     val chainCa: X509Certificate get() = load("chain-ca.pem")
+
+    /**
+     * A leaf issued by [chainCa] whose validity window closed in early 2024.
+     *
+     * Its issuer is still valid, which is what separates "this certificate has
+     * expired" from "nothing here can be trusted any more" -- the two report
+     * differently and only one of them is the user's to fix.
+     */
+    val expiredLeafSignedByChainCa: X509Certificate get() = load("expired-leaf-signed-by-chain-ca.pem")
 
     /** The CA and the leaf it signed, concatenated in one PEM file. */
     val bundle: List<X509Certificate> get() = CertificateParser.parse(bytesOf("bundle.pem"))
