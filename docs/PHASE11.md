@@ -151,6 +151,39 @@ version `0.1.0+1`. Three decisions inside that:
   files were removed — this fork's codes start at 1 and would eventually collide
   with upstream's.
 
+### Code scanning triage
+
+Bringing this branch to `main` made CodeQL report 120 alerts, because `main`
+had never contained any of the code. 34 of them were above the threshold that
+fails the check; each was reviewed and dismissed in the Security tab with its
+reason recorded there. They fall into four groups:
+
+- **21 in vendored mbedtls.** The CMake configure step fetches it into
+  `build/codeql-native/_deps`, so the C/C++ build compiles it and CodeQL
+  extracts it. The workflow's `paths-ignore` already lists `build/**` and
+  `**/_deps/**` — **and does not apply**: CodeQL honours paths filters for
+  interpreted languages only, and for a compiled language analyses whatever the
+  build compiled. The workflow now says so at each compiled-language job, since
+  the list looks like it works.
+- **9 for legacy cryptography this project cannot choose.** DES in MSCHAPv2
+  (RFC 2759 §8.5 specifies the exact construction), 3DES in IKEv1, SHA-1 in the
+  MSCHAPv2 challenge hash and authenticator response, and HMAC-SHA1 in the SSTP
+  crypto binding when the server advertises it. Replacing any of them means not
+  speaking the protocol. All are covered by RFC vectors.
+- **2 permissive TrustManagers, both deliberate.** `ServerChainFetcher` has to
+  accept an untrusted chain because its whole job is to show the user what a
+  server offers before anything is trusted; it sends nothing and closes the
+  socket. `SslTerminal` is flagged for the `INSECURE` policy, which
+  `TrustManagerFactoryProvider.create` refuses without `allowInsecure` — derived
+  from `FLAG_DEBUGGABLE`, with a release build downgrading the policy rather
+  than obeying it.
+- **1 SHA-1 fingerprint and 1 content-URI read**, both display-only or
+  validated: no trust decision reads the SHA-1 value, and
+  `ProfileImportUriValidator` runs on the line above `openInputStream`.
+
+The remaining 110 are note- and warning-level and do not fail the check. They
+are a backlog, not a clean bill of health.
+
 ---
 
 ## Two open items phase 11 inherited and did not close
