@@ -47,12 +47,12 @@ object TrustManagerFactoryProvider {
 
         TrustPolicy.CUSTOM_ONLY -> {
             require(customCerts.isNotEmpty()) { "CUSTOM_ONLY needs at least one certificate" }
-            pkixTrustManager(customCerts)
+            PathBuildingTrustManager.anchoredOn(customCerts)
         }
 
         TrustPolicy.SYSTEM_PLUS_CUSTOM -> {
             require(customCerts.isNotEmpty()) { "SYSTEM_PLUS_CUSTOM needs at least one certificate" }
-            CompositeTrustManager(systemTrustManager(), pkixTrustManager(customCerts))
+            CompositeTrustManager(systemTrustManager(), PathBuildingTrustManager.anchoredOn(customCerts))
         }
 
         TrustPolicy.STORE_AUTO -> {
@@ -104,7 +104,17 @@ object TrustManagerFactoryProvider {
     /** The platform's own trust store: Android's system CAs, or the JDK's on a JVM. */
     fun systemTrustManager(): X509TrustManager = trustManagerFrom(TrustManagerFactory.getDefaultAlgorithm(), null)
 
-    /** A PKIX trust manager anchored on [certs] and nothing else. */
+    /**
+     * A PKIX trust manager anchored on [certs] and nothing else, validating the
+     * chain as the server sent it.
+     *
+     * No policy uses this any more -- the chain-building ones moved to
+     * [PathBuildingTrustManager], which resolves the same chains and several
+     * that this cannot. It is kept because it is the reference the path-building
+     * tests compare against: the guarantee worth holding onto is that path
+     * building accepts everything this accepted and nothing it refused, and that
+     * is only checkable while both exist.
+     */
     fun pkixTrustManager(certs: List<X509Certificate>): X509TrustManager {
         val keyStore =
             KeyStore.getInstance(KeyStore.getDefaultType()).apply {

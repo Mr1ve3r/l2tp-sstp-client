@@ -251,6 +251,60 @@ class PathBuildingTrustManagerTest {
         )
     }
 
+    /**
+     * Path building accepts everything the manager it replaced accepted.
+     *
+     * The switch of `CUSTOM_ONLY` and `SYSTEM_PLUS_CUSTOM` onto path building is
+     * a behaviour change in a security-critical place, and the direction that
+     * would matter to a user is a profile that connected yesterday and does not
+     * today. Every anchor-and-chain combination the fixtures allow is run
+     * through both; where the old one said yes, the new one must too.
+     *
+     * The converse is deliberately not asserted. Path building accepting more
+     * is the point of it, and each of those cases is pinned down by a test of
+     * its own above.
+     */
+    @Test
+    fun `nothing the previous trust manager accepted is now refused`() {
+        val anchors =
+            listOf(TestCertificates.ca, TestCertificates.selfSigned, TestCertificates.caWithoutBasicConstraints)
+        val chains =
+            listOf(
+                arrayOf(TestCertificates.leafSignedByCa, TestCertificates.ca),
+                arrayOf(TestCertificates.leafSignedByCa),
+                arrayOf(TestCertificates.selfSigned),
+                arrayOf(TestCertificates.ca),
+                TestCertificates.reversedBundle.toTypedArray(),
+                arrayOf(
+                    TestCertificates.leafSignedByCaWithoutBasicConstraints,
+                    TestCertificates.caWithoutBasicConstraints,
+                ),
+            )
+
+        var compared = 0
+        for (anchor in anchors) {
+            for (chain in chains) {
+                val acceptedBefore = accepts(TrustManagerFactoryProvider.pkixTrustManager(listOf(anchor)), chain)
+                if (!acceptedBefore) continue
+
+                compared++
+                val label = "anchor=${anchor.subjectX500Principal.name} chain=${chain.map { it.subjectX500Principal.name }}"
+                assertTrue(
+                    "path building refused something the previous manager accepted: $label",
+                    accepts(PathBuildingTrustManager.anchoredOn(listOf(anchor), clock = { NOW }), chain),
+                )
+            }
+        }
+
+        // Otherwise a fixture change could empty the loop and leave this test
+        // passing while comparing nothing at all.
+        assertTrue("the comparison covered no accepted chain at all", compared >= 4)
+    }
+
+    private fun accepts(manager: javax.net.ssl.X509TrustManager, chain: Array<X509Certificate>): Boolean = runCatching {
+        manager.checkServerTrusted(chain, AUTH_TYPE)
+    }.isSuccess
+
     private companion object {
         const val AUTH_TYPE = "RSA"
 
