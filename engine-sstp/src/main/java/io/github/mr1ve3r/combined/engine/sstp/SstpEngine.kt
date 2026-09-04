@@ -13,6 +13,7 @@ package io.github.mr1ve3r.combined.engine.sstp
 import android.os.ParcelFileDescriptor
 import io.github.mr1ve3r.combined.core.trust.CertificateFingerprint
 import io.github.mr1ve3r.combined.core.trust.CertificateSummary
+import io.github.mr1ve3r.combined.core.trust.CertificateValidator
 import io.github.mr1ve3r.combined.core.trust.PreflightProblem
 import io.github.mr1ve3r.combined.core.trust.PreflightReport
 import io.github.mr1ve3r.combined.core.trust.TrustManagerFactoryProvider
@@ -270,21 +271,24 @@ class SstpEngine internal constructor(
         // pin is the id of a stored certificate, so the store can say whether
         // what was pinned is a CA -- which is the one pin that can never match.
         val preflightIds = (config.trustedCertificateIds + config.pinnedFingerprints).distinct()
+        val wholeStore = if (CertificateValidator.consultsWholeStore(policy)) certificates.allSummaries() else emptyMap()
         val report =
             TrustPreflight.check(
                 policy = policy,
                 selectedCertificateIds = config.trustedCertificateIds,
-                availableCertificates = certificates.summariesFor(preflightIds),
+                availableCertificates = certificates.summariesFor(preflightIds) + wholeStore,
                 pinnedFingerprints = config.pinnedFingerprints,
                 now = clock(),
+                storeSize = if (CertificateValidator.consultsWholeStore(policy)) wholeStore.size else Int.MAX_VALUE,
             )
         reportPreflight(report)
 
         val selected =
-            if (policy == TrustPolicy.SYSTEM || policy == TrustPolicy.PIN_LEAF) {
-                emptyList()
-            } else {
-                certificates.certificatesFor(config.trustedCertificateIds)
+            when (policy) {
+                TrustPolicy.SYSTEM, TrustPolicy.PIN_LEAF, TrustPolicy.INSECURE -> emptyList()
+                TrustPolicy.STORE_AUTO -> certificates.allCertificates()
+                TrustPolicy.SYSTEM_PLUS_CUSTOM, TrustPolicy.CUSTOM_ONLY ->
+                    certificates.certificatesFor(config.trustedCertificateIds)
             }
         logTrustBasis(policy, selected, config.pinnedFingerprints)
 
@@ -320,18 +324,30 @@ class SstpEngine internal constructor(
                 }
             }
 
+            TrustPolicy.STORE_AUTO -> {
+                log(
+                    LogLevel.INFO,
+                    "Trust: STORE_AUTO -- no certificate was picked for this profile, so every one of the " +
+                        "${anchors.size} certificate(s) in this app may anchor the chain, and every one is also " +
+                        "offered as a link in it. The one that vouches is named once the handshake succeeds.",
+                )
+                anchors.forEach(::logAnchor)
+            }
+
             else -> {
                 log(LogLevel.INFO, "Trust: $policy -- the chain is anchored on ${anchors.size} certificate(s) from this app:")
-                anchors.forEach { anchor ->
-                    val summary = CertificateSummary.of(anchor)
-                    log(
-                        LogLevel.INFO,
-                        "  anchor ${if (summary.isCa) "CA" else "not a CA"}: subject=${summary.subjectDn} " +
-                            "sha256=${CertificateFingerprint.formatForDisplay(summary.sha256Fingerprint)}",
-                    )
-                }
+                anchors.forEach(::logAnchor)
             }
         }
+    }
+
+    private fun logAnchor(anchor: X509Certificate) {
+        val summary = CertificateSummary.of(anchor)
+        log(
+            LogLevel.INFO,
+            "  anchor ${if (summary.isCa) "CA" else "not a CA"}: subject=${summary.subjectDn} " +
+                "sha256=${CertificateFingerprint.formatForDisplay(summary.sha256Fingerprint)}",
+        )
     }
 
     private fun reportPreflight(report: PreflightReport) {
@@ -362,6 +378,14 @@ class SstpEngine internal constructor(
 
         PreflightProblem.NoPinsConfigured ->
             "PIN_LEAF needs at least one fingerprint and the profile pins none"
+
+        PreflightProblem.StoreIsEmpty ->
+            "STORE_AUTO anchors on the certificates stored in this app and there are none; " +
+                "import the server's certificate authority first"
+
+        is PreflightProblem.WholeStoreIsTrusted ->
+            "no certificate was picked for this profile, so any of the ${problem.certificateCount} " +
+                "certificate(s) stored in this app may vouch for this server"
 
         is PreflightProblem.CertificatesIgnoredByPolicy ->
             "the ${problem.ids.size} certificate(s) this profile selects are not consulted under ${problem.policy}; " +

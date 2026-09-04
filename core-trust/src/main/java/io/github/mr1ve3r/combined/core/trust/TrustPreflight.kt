@@ -19,6 +19,10 @@ object TrustPreflight {
      * @param availableCertificates what the store actually holds, by id.
      * @param pinnedFingerprints pins configured on the profile.
      * @param now current time in milliseconds since the epoch.
+     * @param storeSize how many certificates the store holds, for
+     *   [TrustPolicy.STORE_AUTO], whose anchors come from there rather than
+     *   from the profile. Defaults to a value that never trips, so callers
+     *   using a selection-based policy need not supply it.
      */
     fun check(
         policy: TrustPolicy,
@@ -26,6 +30,7 @@ object TrustPreflight {
         availableCertificates: Map<String, CertificateSummary>,
         pinnedFingerprints: Set<String>,
         now: Long,
+        storeSize: Int = Int.MAX_VALUE,
     ): PreflightReport {
         val blocking = mutableListOf<PreflightProblem>()
         val confirmations = mutableListOf<PreflightProblem>()
@@ -39,6 +44,13 @@ object TrustPreflight {
             blocking += PreflightProblem.NoCertificatesSelected(policy)
         }
 
+        // Anchoring on the whole store is not a way to connect without any
+        // certificate at all. An empty store means there is nothing to build a
+        // path to, and saying so now beats a handshake failure later.
+        if (CertificateValidator.consultsWholeStore(policy) && storeSize == 0) {
+            blocking += PreflightProblem.StoreIsEmpty
+        }
+
         if (policy == TrustPolicy.PIN_LEAF && pinnedFingerprints.isEmpty()) {
             blocking += PreflightProblem.NoPinsConfigured
         }
@@ -47,8 +59,21 @@ object TrustPreflight {
         // selection when the policy changes, so a profile can carry a
         // certificate and verify against the system store without either the
         // list or the error saying so.
-        if (!CertificateValidator.consultsSelectedCertificates(policy) && selectedCertificateIds.isNotEmpty()) {
+        //
+        // Whole-store policies are excluded because the message would be a lie
+        // there: a leftover selection is still consulted, just not exclusively.
+        if (!CertificateValidator.consultsSelectedCertificates(policy) &&
+            !CertificateValidator.consultsWholeStore(policy) &&
+            selectedCertificateIds.isNotEmpty()
+        ) {
             confirmations += PreflightProblem.CertificatesIgnoredByPolicy(policy, selectedCertificateIds)
+        }
+
+        // What the user gave up by not picking a certificate. Shown every time,
+        // because the set of certificates that can vouch for this server grows
+        // silently every time another one is imported.
+        if (CertificateValidator.consultsWholeStore(policy) && storeSize > 0 && storeSize != Int.MAX_VALUE) {
+            confirmations += PreflightProblem.WholeStoreIsTrusted(storeSize)
         }
 
         // A CA pinned under PIN_LEAF matches only if the server serves that
@@ -150,6 +175,28 @@ sealed interface PreflightProblem {
     /** [TrustPolicy.PIN_LEAF] was chosen without any fingerprint to compare against. */
     data object NoPinsConfigured : PreflightProblem {
         override val messageKey: String get() = "trust.preflight.no_pins_configured"
+    }
+
+    /**
+     * [TrustPolicy.STORE_AUTO] was chosen but the store holds nothing.
+     *
+     * The mirror of [NoCertificatesSelected] for a policy that takes its
+     * anchors from the store: there is no selection to be missing, and nothing
+     * to build a path to either.
+     */
+    data object StoreIsEmpty : PreflightProblem {
+        override val messageKey: String get() = "trust.preflight.store_is_empty"
+    }
+
+    /**
+     * What [TrustPolicy.STORE_AUTO] costs, stated before connecting.
+     *
+     * Not a fault -- it is the policy working as asked -- but the set it names
+     * grows every time a certificate is imported for some other server, and
+     * nothing else in the interface would say so.
+     */
+    data class WholeStoreIsTrusted(val certificateCount: Int) : PreflightProblem {
+        override val messageKey: String get() = "trust.preflight.whole_store_is_trusted"
     }
 
     /**
