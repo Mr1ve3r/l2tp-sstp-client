@@ -1,0 +1,618 @@
+{
+  "@@locale": "en",
+  "appTitle": "L2/SS/TP",
+  "vpn": "VPN",
+  "logs": "Logs",
+  "settings": "Settings",
+  "cancel": "Cancel",
+  "delete": "Delete",
+  "close": "Close",
+  "save": "Save",
+  "done": "Done",
+  "continueLabel": "Continue",
+  "confirm": "Confirm",
+  "confirmInSeconds": "Confirm in {seconds}s",
+  "@confirmInSeconds": {
+    "placeholders": {
+      "seconds": {
+        "type": "int"
+      }
+    }
+  },
+  "dismiss": "Dismiss",
+  "languageLabel": "Language",
+  "chooseLanguage": "Choose your language",
+  "languageSubtitle": "Set the language for every screen before you continue.",
+  "languageBody": "This choice updates the app immediately. You can change it later from Settings.",
+  "english": "English",
+  "notice": "Notice",
+  "onboardingIntroSubtitle": "Legacy L2TP support for modern Android, with setup and connection management in one place.",
+  "onboardingIntroP1": "Create and organize profiles, switch between connections, and keep the essentials close at hand.",
+  "onboardingIntroP2": "Designed for environments that still depend on L2TP, without forcing an outdated setup experience.",
+  "onboardingIntroP3": "A focused way to manage legacy VPN access on current Android devices.",
+  "securityNoticeTitle": "Review security notice",
+  "securityNoticeSubtitle": "L2TP/IPsec is provided for legacy compatibility, is not considered secure by modern standards, and should only be used when stronger protocols are not available.",
+  "securityReadOnlySubtitle": "L2TP should only be used when no stronger option is available.",
+  "securityP1": "This protocol remains available to support older infrastructure, not as a recommended default for new deployments.",
+  "securityP2": "It should be treated as easier to decrypt than modern VPN protocols. If your network supports WireGuard, OpenVPN, or another modern alternative, that should be the preferred choice.",
+  "securityReadOnlyP1": "L2TP/IPsec no longer meets modern security expectations for sensitive traffic.",
+  "securityReadOnlyP2": "Use this option only when compatibility is required and no stronger protocol is available.",
+  "introCheckbox": "Keep VPN profiles organized.",
+  "riskCheckbox": "I understand the L2TP risk.",
+  "compatibilityOnly": "Use only when compatibility requires it",
+  "compatibilityBody": "Proceed only if this connection depends on L2TP/IPsec, you understand that it is not a secure modern protocol, and no stronger option is available for the same service.",
+  "appearance": "Appearance",
+  "system": "System",
+  "light": "Light",
+  "dark": "Dark",
+  "connectionMode": "Connection mode",
+  "localProxy": "Local proxy",
+  "splitTunneling": "Split tunneling",
+  "enableSplitTunneling": "Enable split tunneling",
+  "splitTunnelApply": "Apply the selected app list using {mode} mode.",
+  "@splitTunnelApply": {
+    "placeholders": {
+      "mode": {
+        "type": "String"
+      }
+    }
+  },
+  "splitTunnelRouteAll": "Route all apps through the VPN and keep both app lists saved for later.",
+  "mode": "Mode",
+  "inclusive": "Inclusive",
+  "exclusive": "Exclusive",
+  "inclusiveDescription": "Inclusive routes only the apps you choose through the VPN.",
+  "exclusiveDescription": "Exclusive routes all apps through the VPN except the apps you choose.",
+  "selectAppsUsingVpn": "Select apps using VPN",
+  "selectAppsOutsideVpn": "Select apps outside VPN",
+  "noAppsUseVpn": "No apps selected. Choose at least one app to use the VPN.",
+  "appsWillUseVpn": "{count, plural, =1{1 app will use the VPN.} other{{count} apps will use the VPN.}}",
+  "@appsWillUseVpn": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "noAppsBypassVpn": "No apps selected. All apps will continue using the VPN.",
+  "appsWillBypassVpn": "{count, plural, =1{1 app will bypass the VPN.} other{{count} apps will bypass the VPN.}}",
+  "@appsWillBypassVpn": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "httpPort": "HTTP port",
+  "socksPort": "SOCKS5 port",
+  "allowLan": "Allow connections from LAN",
+  "allowLanOn": "Detect a shareable local IPv4 and expose both listeners to devices on the same Wi-Fi or hotspot when available.",
+  "allowLanOff": "Keep both listeners on this device only.",
+  "proxyPortsDifferent": "HTTP and SOCKS5 ports must be different before connecting.",
+  "proxyEndpoints": "Proxy endpoints",
+  "lanClientsCanUse": "LAN clients on the same Wi-Fi or hotspot can use this address.",
+  "lanSharingEnabled": "LAN sharing is enabled for this session.",
+  "connectToDetectLan": "Connect to detect the current LAN IP for other devices.",
+  "lanDisabled": "LAN access is disabled.",
+  "connectivityCheck": "Connectivity check",
+  "batteryOptimization": "Battery optimization",
+  "batteryOptimizationAllowed": "Allowed for background use.",
+  "batteryOptimizationRestricted": "Restricted in the background.",
+  "batteryOptimizationUnsupported": "Not required on this device.",
+  "batteryOptimizationUnknown": "Status unavailable.",
+  "allowBackgroundVpn": "Allow",
+  "statusCheckUrl": "Status check URL",
+  "statusCheckHelp": "Used for the status check after you connect. Tap the badge anytime to refresh.",
+  "connectivityUrl": "Connectivity URL",
+  "connectivityTimeout": "Connectivity timeout (ms)",
+  "timeoutHelp": "Maximum time to wait before marking the check unreachable.",
+  "l2tpSecurityNotice": "L2TP security notice",
+  "reviewL2tpNotice": "Review the L2TP/IPsec compatibility notice.",
+  "updates": "Updates",
+  "refresh": "Refresh",
+  "openReleasePage": "Open release page",
+  "versionUnavailable": "Version unavailable",
+  "version": "Version {value}",
+  "@version": {
+    "placeholders": {
+      "value": {
+        "type": "String"
+      }
+    }
+  },
+  "about": "About",
+  "aboutText": "L2/SS/TP keeps L2TP/IPsec and SSTP usable on modern Android, with profile management, a server certificate store, failover groups, per-app routing, and clear connection logs in one place.",
+  "telegramTitle": "Telegram",
+  "githubTitle": "GitHub",
+  "checkingUpdates": "Checking for updates",
+  "updateAvailable": "Update available",
+  "buildNewer": "Installed build is newer",
+  "updateCheckUnavailable": "Update check unavailable",
+  "appUpToDate": "App is up to date",
+  "checkForUpdates": "Check for updates",
+  "lookingUpRelease": "Looking up the latest published GitHub release.",
+  "updateCheckConsentTitle": "Check GitHub releases?",
+  "updateCheckConsentMessage": "L2/SS/TP will contact GitHub Releases to compare your installed version with the latest published build. This is used only when you request an update check.",
+  "updateCheckConsentAllow": "Check releases",
+  "latestReleaseRunning": "Latest release: {latest}. You are running {installed}.",
+  "@latestReleaseRunning": {
+    "placeholders": {
+      "latest": {
+        "type": "String"
+      },
+      "installed": {
+        "type": "String"
+      }
+    }
+  },
+  "latestPublished": "You are running the latest published release: {latest}.",
+  "@latestPublished": {
+    "placeholders": {
+      "latest": {
+        "type": "String"
+      }
+    }
+  },
+  "buildNewerThanLatest": "This build is newer than the latest GitHub release ({latest}).",
+  "@buildNewerThanLatest": {
+    "placeholders": {
+      "latest": {
+        "type": "String"
+      }
+    }
+  },
+  "latestCannotCompare": "Latest release: {latest}. {reason}",
+  "@latestCannotCompare": {
+    "placeholders": {
+      "latest": {
+        "type": "String"
+      },
+      "reason": {
+        "type": "String"
+      }
+    }
+  },
+  "unknownBuild": "an unknown build",
+  "couldNotCheckUpdates": "Couldn't check for updates right now.",
+  "checkGithubReleases": "Check GitHub releases to see whether a newer build is available.",
+  "installedVersionUnavailableCompare": "Installed version unavailable, so this build cannot be compared.",
+  "activeProfile": "Active profile",
+  "noSavedProfile": "No saved profile",
+  "quickConnect": "Quick connect",
+  "createFirstProfile": "Create your first profile",
+  "selectSavedProfile": "Select a saved profile",
+  "selectProfile": "Select profile",
+  "ready": "Ready",
+  "connected": "Connected",
+  "proxyReady": "Proxy ready",
+  "working": "Working...",
+  "connectingTapCancel": "Connecting... tap to cancel",
+  "disconnecting": "Disconnecting...",
+  "canceling": "Canceling...",
+  "tapToCheck": "Tap to check",
+  "checking": "Checking...",
+  "unreachable": "Unreachable",
+  "logLevel": "Log level",
+  "wordWrapOff": "Turn off word wrap (wide lines scroll sideways)",
+  "wordWrapOn": "Turn on word wrap",
+  "copyVisible": "Copy visible",
+  "shareDebugLogs": "Share debug logs",
+  "clear": "Clear",
+  "noLogsMatch": "No logs match this level",
+  "noActivityYet": "No activity yet",
+  "differentLogLevel": "Try a different log level to see more entries.",
+  "logsWillAppear": "Connection events and diagnostics will appear here.",
+  "latest": "Latest",
+  "profiles": "Profiles",
+  "addProfile": "Add profile",
+  "createNewProfile": "Create new profile",
+  "importFromFile": "Import from file",
+  "importFromClipboard": "Import from clipboard",
+  "noProfilesYet": "No profiles yet. Tap + to create or import your first profile.",
+  "profileActions": "Profile actions",
+  "copyShareLink": "Copy share link",
+  "exportTfp": "Export .tfp",
+  "editProfile": "Edit profile",
+  "deleteProfile": "Delete profile",
+  "deleteProfileQuestion": "Delete profile?",
+  "deleteProfileBody": "This will remove the server and saved credentials from this device.",
+  "profileSaved": "Profile saved",
+  "profileRefreshTimedOut": "Profile list refresh timed out",
+  "profileImportTimedOut": "Profile import timed out",
+  "couldNotReadSelectedFile": "Couldn't read the selected file",
+  "couldNotImportTfp": "Couldn't import .tfp file",
+  "clipboardEmpty": "Clipboard is empty",
+  "clipboardInvalidProfile": "Clipboard does not contain a valid L2/SS/TP profile",
+  "couldNotImportClipboard": "Couldn't import a profile from the clipboard",
+  "profileDetails": "Profile details",
+  "name": "Name",
+  "nameHint": "e.g. Office VPN",
+  "server": "Server",
+  "serverHint": "Hostname or IP address",
+  "username": "Username",
+  "password": "Password",
+  "showPassword": "Show password",
+  "hidePassword": "Hide password",
+  "ipsecPsk": "IPsec PSK",
+  "showIpsecPsk": "Show IPsec PSK",
+  "hideIpsecPsk": "Hide IPsec PSK",
+  "ipsecPskHint": "Optional",
+  "automatic": "Automatic",
+  "automaticDnsHelp": "Receive DNS configuration automatically from the VPN server during PPP negotiation.",
+  "dnsServers": "DNS servers",
+  "dnsHelp": "DNS 1 is primary. DNS 2 is fallback.",
+  "mtuHelper": "Range {min}-{max}. Use {defaultValue} unless you need a smaller MTU.",
+  "@mtuHelper": {
+    "placeholders": {
+      "min": {
+        "type": "int"
+      },
+      "max": {
+        "type": "int"
+      },
+      "defaultValue": {
+        "type": "int"
+      }
+    }
+  },
+  "selectAll": "Select all",
+  "clearAll": "Clear all",
+  "searchApps": "Search by name or package",
+  "noLaunchableApps": "No launchable apps found. If this is wrong, check that the app can query other packages on your Android version.",
+  "noMatches": "No matches.",
+  "appsUsingVpn": "Apps using VPN",
+  "appsOutsideVpn": "Apps outside VPN",
+  "onlySelectedAppsVpn": "Only the selected apps will use the VPN.",
+  "selectedAppsBypass": "Selected apps will bypass the VPN and use the normal network.",
+  "serverCertificates": "Server certificates",
+  "serverCertificatesSubtitle": "Certificates SSTP profiles trust",
+  "noCertificatesStored": "No certificates yet. Add one to let an SSTP profile trust a server whose certificate no public authority issued.",
+  "addCertificate": "Add certificate",
+  "importCertificateFromFile": "From a file",
+  "importCertificateFromFileHelp": "Pick a .pem, .crt or .der file. A file holding several certificates lets you choose which to keep.",
+  "importFromText": "Paste PEM text",
+  "importFromTextHelp": "Paste everything between BEGIN CERTIFICATE and END CERTIFICATE.",
+  "importFromServer": "Download from server",
+  "importFromServerHelp": "Connect to the server and show what it presents. Nothing is sent and the connection closes immediately.",
+  "importFromServerWarning": "This does not protect you from an attacker in the middle right now. Compare the SHA-256 fingerprint against the one shown on the server itself before you keep it.",
+  "certificateHost": "Host",
+  "certificatePort": "Port",
+  "certificateAlias": "Name",
+  "certificateChainLeaf": "Server certificate",
+  "certificateChainIssuer": "Issuer, level {level}",
+  "@certificateChainIssuer": {
+    "placeholders": {
+      "level": {
+        "type": "int"
+      }
+    }
+  },
+  "keepSelectedCertificates": "Keep selected",
+  "certificatesImported": "{count, plural, =1{1 certificate stored} other{{count} certificates stored}}",
+  "@certificatesImported": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "certificateSubject": "Subject",
+  "certificateIssuer": "Issuer",
+  "certificateSerial": "Serial number",
+  "certificateValidFrom": "Valid from",
+  "certificateValidUntil": "Valid until",
+  "certificateFingerprintSha256": "SHA-256 fingerprint",
+  "certificateFingerprintSha1": "SHA-1 fingerprint",
+  "certificateKeyUsage": "Key usage",
+  "certificateAltNames": "Alternative names",
+  "certificateSignature": "Signature algorithm",
+  "certificatePublicKey": "Public key",
+  "certificateKeyBits": "{bits} bits",
+  "@certificateKeyBits": {
+    "placeholders": {
+      "bits": {
+        "type": "int"
+      }
+    }
+  },
+  "certificateIsCa": "Certificate authority",
+  "certificateIsSelfSigned": "Self-signed",
+  "certificateCopyFingerprint": "Copy fingerprint",
+  "certificateExportPem": "Export PEM",
+  "certificateCopied": "Copied",
+  "certificateExpired": "Expired",
+  "certificateNotYetValid": "Not valid yet",
+  "certificateExpiresInDays": "{days, plural, =1{Expires in 1 day} other{Expires in {days} days}}",
+  "@certificateExpiresInDays": {
+    "placeholders": {
+      "days": {
+        "type": "int"
+      }
+    }
+  },
+  "certificateUsedByProfiles": "{count, plural, =1{Used by 1 profile} other{Used by {count} profiles}}",
+  "@certificateUsedByProfiles": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "certificateUnused": "Not used by any profile",
+  "certificateDeleteConfirm": "Delete \"{name}\"? Profiles that trust it will stop connecting until you fix them.",
+  "@certificateDeleteConfirm": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "certificateWarningExpired": "This certificate has expired.",
+  "certificateWarningExpiringSoon": "{days, plural, =1{This certificate expires in 1 day.} other{This certificate expires in {days} days.}}",
+  "@certificateWarningExpiringSoon": {
+    "placeholders": {
+      "days": {
+        "type": "int"
+      }
+    }
+  },
+  "certificateWarningNotYetValid": "This certificate is not valid yet. Check the clock on both ends.",
+  "certificateWarningNotACa": "This is not a certificate authority. For a single self-signed certificate, pin it instead.",
+  "certificateWarningWeakKey": "The key is {bits} bits, shorter than the 2048 bits considered safe.",
+  "@certificateWarningWeakKey": {
+    "placeholders": {
+      "bits": {
+        "type": "int"
+      }
+    }
+  },
+  "certificateWarningWeakSignature": "Signed with {algorithm}, which is no longer considered safe.",
+  "@certificateWarningWeakSignature": {
+    "placeholders": {
+      "algorithm": {
+        "type": "String"
+      }
+    }
+  },
+  "certificateWarningAlreadyImported": "Already in the store. Importing again only changes the name.",
+  "certificateNothingFound": "No certificate could be read from that.",
+  "certificateStoreFailed": "The certificate could not be stored.",
+  "certificateFetchFailed": "Could not read a certificate from {host}.",
+  "@certificateFetchFailed": {
+    "placeholders": {
+      "host": {
+        "type": "String"
+      }
+    }
+  },
+  "protocolLabel": "Protocol",
+  "l2tpSection": "L2TP/IPsec",
+  "sstpSection": "SSTP",
+  "sstpPortLabel": "Port",
+  "trustPolicyLabel": "Certificate trust",
+  "trustPolicySystem": "System store only",
+  "trustPolicySystemHelp": "For a certificate issued by a public authority.",
+  "trustPolicySystemPlusCustom": "System, then selected",
+  "trustPolicySystemPlusCustomHelp": "System store first; if that fails, the certificates selected below.",
+  "trustPolicyCustomOnly": "Selected only",
+  "trustPolicyCustomOnlyHelp": "Only the certificates selected below — a private authority of your own.",
+  "trustPolicyPinLeaf": "Pin this certificate",
+  "trustPolicyPinLeafHelp": "Accept exactly the selected certificate by fingerprint, ignoring the chain. For a self-signed server.",
+  "trustPolicyInsecure": "No verification",
+  "trustPolicyInsecureHelp": "Debug builds only. Anyone on the path can read this connection.",
+  "trustedCertificates": "Trusted certificates",
+  "trustedCertificatesEmpty": "No certificates in the store yet. Add one on the Server certificates screen in Settings.",
+  "expectedHostnameLabel": "Expected hostname",
+  "expectedHostnameHelp": "Verify the certificate against this name instead of the server address. Leave empty to use the address.",
+  "minTlsVersionLabel": "Minimum TLS version",
+  "pppAuthMethodsLabel": "PPP authentication",
+  "pppAuthMethodsHelp": "Methods offered to the server, strongest first. EAP-MSCHAPv2 is only needed by some Windows RRAS servers.",
+  "httpProxySection": "HTTP proxy",
+  "httpProxyHelp": "Reach the SSTP server through an HTTP CONNECT proxy.",
+  "proxyHostLabel": "Proxy host",
+  "proxyPortLabel": "Proxy port",
+  "proxyUsernameLabel": "Proxy username (optional)",
+  "proxyPasswordLabel": "Proxy password (optional)",
+  "showProxyPassword": "Show proxy password",
+  "hideProxyPassword": "Hide proxy password",
+  "portRangeError": "Port must be between {min} and {max}",
+  "@portRangeError": {
+    "placeholders": {
+      "min": {
+        "type": "int"
+      },
+      "max": {
+        "type": "int"
+      }
+    }
+  },
+  "selectOneAuthMethod": "Select at least one PPP authentication method",
+  "selectOneCertificate": "This trust setting needs at least one selected certificate",
+  "enterProxyHost": "Enter the proxy host",
+  "sessionDetails": "Session",
+  "sessionAddress": "IP address",
+  "sessionDns": "DNS",
+  "sessionMtu": "MTU",
+  "sessionDuration": "Connected for",
+  "sessionReceived": "Received",
+  "sessionSent": "Sent",
+  "sessionViaProxy": "Through proxy",
+  "engineErrorNetworkUnreachable": "The server could not be reached. Check the network and the address.",
+  "engineErrorAuthenticationFailed": "The server rejected the username or password.",
+  "engineErrorTlsHandshakeFailed": "The TLS handshake failed. The server may not speak SSTP on this port.",
+  "engineErrorCertificateRejected": "The server certificate is not trusted by this profile.",
+  "engineErrorCertificateExpired": "The server certificate is outside its validity window.",
+  "engineErrorHostnameMismatch": "The certificate was issued to a different name. Set the expected hostname in the profile.",
+  "engineErrorIpsecFailed": "IPsec negotiation failed. Check the pre-shared key.",
+  "engineErrorPppNegotiationFailed": "PPP negotiation failed. The server may not accept the selected authentication methods.",
+  "engineErrorTimedOut": "The connection attempt timed out.",
+  "engineErrorInternal": "The tunnel engine failed unexpectedly.",
+  "profileNoLongerExists": "This profile no longer exists.",
+  "couldNotOpenIncomingProfile": "Couldn't open the incoming profile",
+  "sourceClipboardShareLink": "a clipboard share link",
+  "sourceClipboard": "the clipboard",
+  "sourceShareLink": "a share link",
+  "sourceTfpFile": "a .tfp file",
+  "importedProfileFromSource": "Imported profile \"{displayName}\" from {source}",
+  "@importedProfileFromSource": {
+    "placeholders": {
+      "displayName": {
+        "type": "Object"
+      },
+      "source": {
+        "type": "Object"
+      }
+    }
+  },
+  "couldNotImportProfile": "Couldn't import profile",
+  "profileRemoved": "Profile removed",
+  "couldNotDeleteProfile": "Couldn't delete profile",
+  "shareLinkCopied": "Share link copied",
+  "couldNotCopyShareLink": "Couldn't copy share link",
+  "profileFileReady": "Profile file ready to save or share",
+  "couldNotExportTfpFile": "Couldn't export .tfp file",
+  "batteryOptimizationUnavailableOnDevice": "Battery optimization settings are not available on this device.",
+  "batteryOptimizationAlreadyDisabled": "Battery optimization is already disabled for L2/SS/TP.",
+  "batteryOptimizationRequestOpened": "Battery optimization request opened.",
+  "batterySettingsOpened": "Battery settings opened.",
+  "couldNotOpenBatterySettings": "Could not open battery settings.",
+  "enterServerHostnameOrAddress": "Enter a server hostname or address",
+  "selectSavedProfileForProxy": "Select a saved profile to start local proxy",
+  "httpAndSocksPortsMustDiffer": "HTTP and SOCKS5 ports must be different",
+  "selectAppsForInclusiveSplitTunnel": "Open \"Select apps\" and choose at least one app for inclusive split tunneling.",
+  "vpnPermissionRequired": "VPN permission is required",
+  "startingProxy": "Starting proxy...",
+  "connecting": "Connecting...",
+  "vpnConnected": "VPN connected",
+  "couldNotEstablishTunnel": "Couldn't establish the tunnel",
+  "releasePageUrlInvalid": "Release page URL is invalid.",
+  "couldNotOpenReleasePage": "Could not open the release page.",
+  "createProfileFirst": "Create a profile first. You will need a server, username, and tunnel settings before connecting.",
+  "chooseSavedProfileBeforeConnecting": "Choose one of your saved profiles before connecting.",
+  "noLogsToCopy": "No logs to copy",
+  "noVisibleLogsToCopy": "No visible logs to copy",
+  "noDebugLogsToShare": "No debug logs to share",
+  "couldNotShareDebugLogs": "Could not share debug logs",
+  "logsCleared": "Logs cleared",
+  "telegramLinkInvalid": "Telegram link is invalid.",
+  "couldNotOpenTelegram": "Could not open Telegram.",
+  "githubLinkInvalid": "GitHub link is invalid.",
+  "couldNotOpenGithub": "Could not open GitHub.",
+  "enterValidHttpUrl": "Enter a valid absolute HTTP or HTTPS URL",
+  "onlyHttpAndHttpsSupported": "Only HTTP and HTTPS URLs are supported",
+  "enterWholeNumberOfMilliseconds": "Enter a whole number of milliseconds",
+  "enterTimeoutGreaterThanZero": "Enter a timeout greater than 0 ms",
+  "dnsRequirementHostnameOrIpv4": "hostname or IPv4",
+  "dnsRequirementHostname": "hostname",
+  "dnsRequirementHostnameOrHttpsUrl": "hostname or HTTPS URL",
+  "dnsUseRequirement": "{label}: use {requirement}",
+  "@dnsUseRequirement": {
+    "placeholders": {
+      "label": {
+        "type": "Object"
+      },
+      "requirement": {
+        "type": "Object"
+      }
+    }
+  },
+  "enterMtuValue": "Enter an MTU value",
+  "mtuMustBeWholeNumber": "MTU must be a whole number",
+  "mtuMustBeBetween": "MTU must be between {minVpnMtu} and {maxVpnMtu}",
+  "@mtuMustBeBetween": {
+    "placeholders": {
+      "minVpnMtu": {
+        "type": "Object"
+      },
+      "maxVpnMtu": {
+        "type": "Object"
+      }
+    }
+  },
+  "newProfile": "New profile",
+  "enterServerAddress": "Enter a server address",
+  "enterAtLeastOneDnsServer": "Enter at least one DNS server or enable Automatic",
+  "couldNotSaveChanges": "Could not save changes",
+  "russian": "Russian",
+  "copiedLinesToClipboard": "{count, plural, =1{Copied 1 line to clipboard} other{Copied {count} lines to clipboard}}",
+  "@copiedLinesToClipboard": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "preparedDebugLinesForSharing": "{count, plural, =1{Prepared 1 debug line for sharing} other{Prepared {count} debug lines for sharing}}",
+  "@preparedDebugLinesForSharing": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "updateCheckErrorHttp": "GitHub Releases returned HTTP {status}.",
+  "@updateCheckErrorHttp": {
+    "placeholders": {
+      "status": {
+        "type": "String"
+      }
+    }
+  },
+  "updateCheckErrorNetwork": "Network error while contacting GitHub Releases.",
+  "updateCheckErrorTimeout": "GitHub Releases request timed out.",
+  "updateCheckErrorTls": "Secure connection to GitHub Releases failed.",
+  "updateCheckErrorMalformed": "GitHub Releases returned malformed data.",
+  "updateCheckErrorNoReleases": "GitHub Releases returned no usable releases.",
+  "updateCheckErrorUnexpected": "Unexpected error while checking GitHub Releases.",
+  "failoverGroups": "Failover groups",
+  "failoverGroup": "Failover group",
+  "newFailoverGroup": "New failover group",
+  "editFailoverGroup": "Edit group",
+  "deleteFailoverGroup": "Delete group",
+  "failoverGroupActions": "Group actions",
+  "deleteFailoverGroupQuestion": "Delete this group?",
+  "deleteFailoverGroupBody": "The profiles in it are kept. Only the group and the order it tries them in are removed.",
+  "noFailoverGroupsYet": "No failover groups yet. A group tries its profiles from the top down until one connects — L2TP/IPsec first, SSTP on 443 behind it, for example.",
+  "failoverGroupNameLabel": "Group name",
+  "failoverGroupNameHint": "Work",
+  "failoverGroupTriesInOrder": "The group tries these profiles from the top down. It moves to the next one when a server is unreachable or runs out of time, and stops when a password is refused.",
+  "failoverGroupMembersLabel": "Profiles, in order",
+  "addProfileToFailoverGroup": "Add a profile",
+  "removeFromFailoverGroup": "Remove from the group",
+  "moveUpInFailoverGroup": "Move up",
+  "moveDownInFailoverGroup": "Move down",
+  "failoverGroupIsEmpty": "No profiles in this group yet.",
+  "everyProfileAlreadyInGroup": "Every saved profile is already in this group.",
+  "failoverGroupNeedsAProfile": "Add at least one profile to the group.",
+  "failoverConnectTimeoutLabel": "Time for each profile",
+  "failoverConnectTimeoutHelp": "How long one profile may take before the group gives up on it and tries the next.",
+  "failoverConnectTimeoutOutOfRange": "Choose between {min} and {max} seconds.",
+  "@failoverConnectTimeoutOutOfRange": {
+    "placeholders": {
+      "min": {
+        "type": "int"
+      },
+      "max": {
+        "type": "int"
+      }
+    }
+  },
+  "seconds": "seconds",
+  "failoverGroupProfileCount": "{count, plural, =0{No profiles} =1{1 profile} other{{count} profiles}}",
+  "@failoverGroupProfileCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "failoverGroupNoLongerExists": "This failover group no longer exists.",
+  "failoverGroupNeedsName": "Give the group a name.",
+  "failoverGroupSaved": "Group saved",
+  "couldNotSaveFailoverGroup": "Could not save the group.",
+  "failoverGroupRemoved": "Group removed",
+  "couldNotDeleteFailoverGroup": "Could not delete the group.",
+  "failoverGroupHasNoProfiles": "This group has no profiles to try. Add one to it first.",
+  "failoverGroupNeedsVpnMode": "A failover group runs as a VPN tunnel. Turn off proxy-only mode to start it.",
+  "chooseSavedProfileOrGroupBeforeConnecting": "Choose a saved profile or a failover group before connecting."
+}

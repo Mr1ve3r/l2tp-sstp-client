@@ -1,0 +1,34 @@
+package io.github.evokelektrique.tunnelforge
+
+/**
+ * A throwaway self-signed certificate for the trust channel tests.
+ *
+ * `:app` has no test resources directory, and adding one for a single
+ * certificate would be more machinery than it saves. The key behind this
+ * certificate was generated for the test suite and discarded.
+ */
+internal object TrustTestCertificate {
+    /** `CN=mikrotik.local`, self-signed. The same fixture the core-trust tests use. */
+    val SELF_SIGNED_PEM: String =
+        """
+-----BEGIN CERTIFICATE-----
+MIIDGzCCAgOgAwIBAgIJAISV1t+zytoVMA0GCSqGSIb3DQEBCwUAMCsxEDAOBgNV
+BAoTB1Rlc3RpbmcxFzAVBgNVBAMTDm1pa3JvdGlrLmxvY2FsMB4XDTI2MDgyNjA3
+MDM1NVoXDTM2MDgyMzA3MDM1NVowKzEQMA4GA1UEChMHVGVzdGluZzEXMBUGA1UE
+AxMObWlrcm90aWsubG9jYWwwggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIB
+AQDSoeoXLM1Sj0tgXHbDNBfG3qfFoadZ7P5atPb8Cxy9nPtFwqnhv8U7d0/tuGf+
+SD0CP0xOwiAcCu5bwk13/Rs0KjUeYrguV8LqxcJIqfWmyvmR0vy2+cj91kwaNvzb
+KD11pxEmukiEixJgySb6lqsSzyOKfB4SqRD80Wq8F9jbtpQmgujM1FX9tXvrDqp/
+JZ5lmQZwV1Hw5G3hg3ZorhJ+RBr0FqT8brbKlsDRa2Kku2ajvnYqaLg7BBq2jA+G
+fOWpwdcNXwaYEt5X5U3AcNSEpAjVam5XWnK1NEj+f8bA7sW0JiDaiIR4GQmOLlqS
+dSTW3jw0CXaVMG1Tww94HqRHAgMBAAGjQjBAMB0GA1UdDgQWBBSk6c/NyJRdyVOj
+3wRbVqAzqoHZdjAfBgNVHREEGDAWgg5taWtyb3Rpay5sb2NhbIcEwKhYATANBgkq
+hkiG9w0BAQsFAAOCAQEAW9Q7dyjWnWbJerXAOhZBgTLvQKXlEenPGKNIJDB2AG/w
+MtPFIhpStG/o19p0EDCoXicFYJhBcE31AtDyRkHPHydZKWnRcnIdCOwg3AfIARNa
+wqgkOBd8zSvxjaVRQ+rDFD9xAoEiXMotOk6DXASMTdDLQJeE0gVJryS/S3VNcULn
+5yQ/08EyvUwr0fE1+cNHs/mv4PwNCN+txf4r5vPvY036sLMkeeKojiKR9urdt7pH
+QcIidMJ2Rv45wnTDvJ0IaRUE0wItbtd/0h+Kwpeu3SeO+lZFO5/Lm8B2qM0E9cEy
+iBhp7cmFEEpRiV7cVkmlNCLEksNMbESVfa4WG+XqTg==
+-----END CERTIFICATE-----
+        """.trimIndent()
+}

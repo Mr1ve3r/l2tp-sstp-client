@@ -5,6 +5,9 @@ import 'package:get_it/get_it.dart';
 import 'package:tunnel_forge/core/network/connectivity_checker.dart';
 import 'package:tunnel_forge/features/profiles/data/profile_store.dart';
 import 'package:tunnel_forge/features/profiles/data/profile_transfer_bridge.dart';
+import 'package:tunnel_forge/features/trust/data/trust_repository_impl.dart';
+import 'package:tunnel_forge/features/trust/domain/trust_repository.dart';
+import 'package:tunnel_forge/features/trust/presentation/bloc/certificates_bloc.dart';
 import 'package:tunnel_forge/features/tunnel/data/vpn_client.dart';
 import 'package:tunnel_forge/features/onboarding/data/shared_prefs_onboarding_repository.dart';
 import 'package:tunnel_forge/features/onboarding/data/system_app_exit_controller.dart';
@@ -28,6 +31,7 @@ GetIt createAppLocator({
   ConnectivityChecker? connectivityChecker,
   VpnClient? vpnClient,
   ProfileTransferBridge? profileTransferBridge,
+  CertificatesRepository? certificatesRepository,
   AppVersionRepository? appVersionRepository,
   AppUpdateRepository? appUpdateRepository,
   OnboardingRepository? onboardingRepository,
@@ -51,7 +55,10 @@ GetIt createAppLocator({
     () => appExitController ?? SystemAppExitController(),
   );
   locator.registerLazySingleton<ProfilesRepository>(
-    () => ProfilesRepositoryImpl(locator<ProfileStore>()),
+    () => ProfilesRepositoryImpl(
+      locator<ProfileStore>(),
+      locator<CertificatesRepository>(),
+    ),
   );
   locator.registerLazySingleton<SettingsRepository>(
     () => SettingsRepositoryImpl(locator<ProfileStore>()),
@@ -74,6 +81,9 @@ GetIt createAppLocator({
     dispose: (repo) => repo.dispose(),
   );
   locator.registerLazySingleton<LogsRepository>(LogsRepositoryImpl.new);
+  locator.registerLazySingleton<CertificatesRepository>(
+    () => certificatesRepository ?? CertificatesRepositoryImpl(),
+  );
 
   locator.registerFactory<AppThemeBloc>(
     () => AppThemeBloc(locator<ThemeRepository>()),
@@ -85,6 +95,9 @@ GetIt createAppLocator({
     ),
   );
   locator.registerFactory<HomeNavBloc>(HomeNavBloc.new);
+  locator.registerFactory<CertificatesBloc>(
+    () => CertificatesBloc(locator<CertificatesRepository>()),
+  );
   locator.registerFactory<ProfilesBloc>(
     () => ProfilesBloc(
       locator<ProfilesRepository>(),

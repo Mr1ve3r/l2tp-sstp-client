@@ -30,7 +30,7 @@ env:
   ANDROID_NDK: '28.2.13676358'
 
   REPRO_ROOT: /home/vagrant/build
-  REPRO_SOURCE_DIR: /home/vagrant/build/io.github.evokelektrique.tunnelforge
+  REPRO_SOURCE_DIR: /home/vagrant/build/io.github.mr1ve3r.l2tpsstp
   REPRO_FLUTTER_DIR: /home/vagrant/build/srclib/flutter
   REPRO_ANDROID_SDK: /opt/android-sdk
 
@@ -240,7 +240,7 @@ jobs:
         run: |
           mkdir -p dist
           cp "${REPRO_SOURCE_DIR}/build/app/outputs/flutter-apk/app-arm64-v8a-release.apk" \
-            "dist/tunnel-forge-${{ steps.tag.outputs.tag }}-android-arm64-v8a.apk"
+            "dist/l2-ss-tp-${{ steps.tag.outputs.tag }}-android-arm64-v8a.apk"
 
       - name: Prepare x86_64 source workspace
         run: |
@@ -286,7 +286,7 @@ jobs:
       - name: Collect x86_64 release APK
         run: |
           cp "${REPRO_SOURCE_DIR}/build/app/outputs/flutter-apk/app-x86_64-release.apk" \
-            "dist/tunnel-forge-${{ steps.tag.outputs.tag }}-android-x86_64.apk"
+            "dist/l2-ss-tp-${{ steps.tag.outputs.tag }}-android-x86_64.apk"
 
       - name: Generate checksums
         run: |
@@ -303,7 +303,7 @@ jobs:
       - name: Upload workflow artifacts
         uses: actions/upload-artifact@v6
         with:
-          name: tunnel-forge-${{ steps.tag.outputs.tag }}-android-release
+          name: l2-ss-tp-${{ steps.tag.outputs.tag }}-android-release
           path: |
             dist/*.apk
             dist/*.sha256
@@ -323,5 +323,5 @@ jobs:
               --repo "${{ github.repository }}" \
               --verify-tag \
               --generate-notes \
-              --title "TunnelForge ${{ steps.tag.outputs.version }}"
+              --title "L2/SS/TP ${{ steps.tag.outputs.version }}"
           fi

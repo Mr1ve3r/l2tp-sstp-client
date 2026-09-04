@@ -6,12 +6,14 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:tunnel_forge/l10n/app_localizations.dart';
 import 'package:tunnel_forge/core/network/connectivity_checker.dart';
 import 'package:tunnel_forge/features/home/domain/home_models.dart';
 import 'package:tunnel_forge/features/home/domain/home_repositories.dart';
 import 'package:tunnel_forge/features/onboarding/domain/onboarding_repository.dart';
 import 'package:tunnel_forge/main.dart';
 import 'package:tunnel_forge/features/profiles/domain/profile_models.dart';
+import 'package:tunnel_forge/features/profiles/data/profile_bridge.dart';
 import 'package:tunnel_forge/features/profiles/data/profile_store.dart';
 import 'package:tunnel_forge/app/theme/app_theme.dart';
 import 'package:tunnel_forge/features/tunnel/data/vpn_contract.dart';
@@ -19,6 +21,10 @@ import 'package:tunnel_forge/features/home/presentation/widgets/connection_panel
 
 import 'support/host_to_dart_channel.dart';
 import 'support/vpn_channel_mock.dart';
+import 'support/fake_certificates_repository.dart';
+import 'package:tunnel_forge/features/trust/domain/trust_models.dart';
+import 'package:tunnel_forge/core/vpn_protocol.dart';
+import 'support/certificate_fixtures.dart';
 
 class FakeConnectivityChecker implements ConnectivityChecker {
   final List<ConnectivityPingRequest> requests = <ConnectivityPingRequest>[];
@@ -136,6 +142,8 @@ void main() {
     final theme = appTheme(brightness);
     await tester.pumpWidget(
       MaterialApp(
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
         home: Theme(
           data: theme,
           child: Scaffold(
@@ -220,6 +228,8 @@ void main() {
     Future<void> pumpPanel(double height) async {
       await tester.pumpWidget(
         MaterialApp(
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
           theme: theme,
           home: Scaffold(
             body: Align(
@@ -417,8 +427,12 @@ void main() {
 
     await tester.pumpWidget(
       TunnelForgeApp(
+        certificatesRepository: FakeCertificatesRepository(),
         onboardingRepository: const _AcceptedOnboardingRepository(),
-        profileStore: ProfileStore(secretsOverride: MemorySecretStore()),
+        profileStore: ProfileStore(
+          secretsOverride: MemorySecretStore(),
+          backendOverride: MemoryProfileBackend(),
+        ),
       ),
     );
 
@@ -477,8 +491,12 @@ void main() {
 
     await tester.pumpWidget(
       TunnelForgeApp(
+        certificatesRepository: FakeCertificatesRepository(),
         onboardingRepository: const _AcceptedOnboardingRepository(),
-        profileStore: ProfileStore(secretsOverride: MemorySecretStore()),
+        profileStore: ProfileStore(
+          secretsOverride: MemorySecretStore(),
+          backendOverride: MemoryProfileBackend(),
+        ),
       ),
     );
 
@@ -526,8 +544,12 @@ void main() {
 
     await tester.pumpWidget(
       TunnelForgeApp(
+        certificatesRepository: FakeCertificatesRepository(),
         onboardingRepository: const _AcceptedOnboardingRepository(),
-        profileStore: ProfileStore(secretsOverride: MemorySecretStore()),
+        profileStore: ProfileStore(
+          secretsOverride: MemorySecretStore(),
+          backendOverride: MemoryProfileBackend(),
+        ),
         connectivityChecker: checker,
         appVersionRepository: const _FakeAppVersionRepository(),
         appUpdateRepository: const _FakeAppUpdateRepository(),
@@ -605,8 +627,12 @@ void main() {
 
     await tester.pumpWidget(
       TunnelForgeApp(
+        certificatesRepository: FakeCertificatesRepository(),
         onboardingRepository: const _AcceptedOnboardingRepository(),
-        profileStore: ProfileStore(secretsOverride: MemorySecretStore()),
+        profileStore: ProfileStore(
+          secretsOverride: MemorySecretStore(),
+          backendOverride: MemoryProfileBackend(),
+        ),
         connectivityChecker: checker,
       ),
     );
@@ -655,8 +681,12 @@ void main() {
 
     await tester.pumpWidget(
       TunnelForgeApp(
+        certificatesRepository: FakeCertificatesRepository(),
         onboardingRepository: const _AcceptedOnboardingRepository(),
-        profileStore: ProfileStore(secretsOverride: MemorySecretStore()),
+        profileStore: ProfileStore(
+          secretsOverride: MemorySecretStore(),
+          backendOverride: MemoryProfileBackend(),
+        ),
         connectivityChecker: checker,
       ),
     );
@@ -707,8 +737,12 @@ void main() {
 
     await tester.pumpWidget(
       TunnelForgeApp(
+        certificatesRepository: FakeCertificatesRepository(),
         onboardingRepository: const _AcceptedOnboardingRepository(),
-        profileStore: ProfileStore(secretsOverride: MemorySecretStore()),
+        profileStore: ProfileStore(
+          secretsOverride: MemorySecretStore(),
+          backendOverride: MemoryProfileBackend(),
+        ),
         connectivityChecker: checker,
       ),
     );
@@ -759,8 +793,12 @@ void main() {
 
     await tester.pumpWidget(
       TunnelForgeApp(
+        certificatesRepository: FakeCertificatesRepository(),
         onboardingRepository: const _AcceptedOnboardingRepository(),
-        profileStore: ProfileStore(secretsOverride: MemorySecretStore()),
+        profileStore: ProfileStore(
+          secretsOverride: MemorySecretStore(),
+          backendOverride: MemoryProfileBackend(),
+        ),
         connectivityChecker: checker,
       ),
     );
@@ -808,8 +846,12 @@ void main() {
 
     await tester.pumpWidget(
       TunnelForgeApp(
+        certificatesRepository: FakeCertificatesRepository(),
         onboardingRepository: const _AcceptedOnboardingRepository(),
-        profileStore: ProfileStore(secretsOverride: MemorySecretStore()),
+        profileStore: ProfileStore(
+          secretsOverride: MemorySecretStore(),
+          backendOverride: MemoryProfileBackend(),
+        ),
         connectivityChecker: checker,
       ),
     );
@@ -868,8 +910,12 @@ void main() {
 
     await tester.pumpWidget(
       TunnelForgeApp(
+        certificatesRepository: FakeCertificatesRepository(),
         onboardingRepository: const _AcceptedOnboardingRepository(),
-        profileStore: ProfileStore(secretsOverride: MemorySecretStore()),
+        profileStore: ProfileStore(
+          secretsOverride: MemorySecretStore(),
+          backendOverride: MemoryProfileBackend(),
+        ),
       ),
     );
     await tester.pump();
@@ -888,10 +934,198 @@ void main() {
     await tester.tap(find.byIcon(Icons.close).first);
     await tester.pumpAndSettle();
 
-    expect(find.text('Profiles'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('profile-list-mode')),
+      findsOneWidget,
+    );
     expect(find.text('Primary'), findsNWidgets(2));
     expect(find.text('primary.example.com'), findsNWidgets(2));
     expect(find.text('Secondary'), findsOneWidget);
+  });
+
+  testWidgets(
+    'a failover group can be built, chosen, and started from the home screen',
+    (WidgetTester tester) async {
+      // SPEC 10.1 end to end above the channel: the group the sheet builds is
+      // the one the host is asked to walk, and it is asked with connectGroup
+      // rather than with a profile's connect.
+      SharedPreferences.setMockInitialValues({});
+      addTearDown(() async {
+        await tester.binding.setSurfaceSize(null);
+      });
+      await tester.binding.setSurfaceSize(const Size(480, 1600));
+
+      final backend = MemoryProfileBackend();
+      await backend.save(
+        const Profile(
+          id: 'l2tp',
+          displayName: 'Work L2TP',
+          server: 'l2tp.example.com',
+          user: 'user',
+        ),
+        password: 'pw',
+        psk: 'psk',
+      );
+      await backend.save(
+        const Profile(
+          id: 'sstp',
+          displayName: 'Work SSTP',
+          server: 'sstp.example.com',
+          user: 'user',
+          protocol: VpnProtocol.sstp,
+        ),
+        password: 'pw',
+        psk: '',
+      );
+
+      final methods = <String>[];
+      final calls = <MethodCall>[];
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(const MethodChannel(VpnContract.channel), (
+            call,
+          ) async {
+            methods.add(call.method);
+            calls.add(call);
+            return call.method == VpnContract.prepareVpn ? true : null;
+          });
+      addTearDown(uninstallVpnChannelMock);
+
+      await tester.pumpWidget(
+        TunnelForgeApp(
+          certificatesRepository: FakeCertificatesRepository(),
+          onboardingRepository: const _AcceptedOnboardingRepository(),
+          profileStore: ProfileStore(
+            secretsOverride: MemorySecretStore(),
+            backendOverride: backend,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('profile_picker_tile')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Failover groups').last);
+      await tester.pumpAndSettle();
+      expect(find.textContaining('No failover groups yet'), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('add_failover_group')));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const Key('failover_group_name')),
+        'Work',
+      );
+      for (final id in const ['l2tp', 'sstp']) {
+        await tester.tap(find.byKey(const Key('failover_group_add_member')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(Key('failover_candidate_$id')));
+        await tester.pumpAndSettle();
+      }
+      await tester.tap(find.byKey(const Key('failover_group_editor_save')));
+      await tester.pumpAndSettle();
+
+      final groups = await backend.listGroups();
+      expect(groups, hasLength(1));
+      expect(groups.single.memberIds, ['l2tp', 'sstp']);
+
+      // Choosing the group closes the sheet and makes it what the button runs.
+      await tester.tap(
+        find.byKey(ValueKey<String>('failover_group_tile_${groups.single.id}')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Work'), findsOneWidget);
+      // The tile says what the group will try and in what order, which is the
+      // part the status line cannot show until the walk has started.
+      expect(find.textContaining('Work L2TP (L2TP)'), findsOneWidget);
+      expect(find.textContaining('Work SSTP (SSTP)'), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('vpn_connect')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+
+      expect(statusText(tester), contains('Connecting'));
+      expect(methods, contains(VpnContract.connectGroup));
+      expect(methods, isNot(contains(VpnContract.connect)));
+      final sent = calls.lastWhere(
+        (call) => call.method == VpnContract.connectGroup,
+      );
+      expect((sent.arguments as Map)[VpnContract.argGroupId], groups.single.id);
+
+      // Which member is active can only come from the host — it resolves the
+      // group itself — so the tile shows what the host reports (SPEC 10.1.3).
+      await simulateHostTunnelState(
+        tester,
+        VpnTunnelState.connecting,
+        'Trying 2 of 2: Work SSTP',
+      );
+      await tester.pump(const Duration(milliseconds: 300));
+
+      expect(find.text('Trying 2 of 2: Work SSTP'), findsOneWidget);
+      expect(find.textContaining('Work L2TP (L2TP)'), findsNothing);
+
+      // Once a member is up the walk is over and the order comes back.
+      await simulateHostTunnelState(
+        tester,
+        VpnTunnelState.connected,
+        'TUN is up',
+      );
+      await tester.pump(const Duration(milliseconds: 300));
+
+      expect(find.text('Trying 2 of 2: Work SSTP'), findsNothing);
+      expect(find.textContaining('Work L2TP (L2TP)'), findsOneWidget);
+    },
+  );
+
+  testWidgets('the SSTP editor lists the certificates the app stores', (
+    WidgetTester tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    installVpnChannelMock(<String>[]);
+    addTearDown(uninstallVpnChannelMock);
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+    await tester.binding.setSurfaceSize(const Size(480, 1600));
+
+    final store = ProfileStore(
+      secretsOverride: MemorySecretStore(),
+      backendOverride: MemoryProfileBackend(),
+    );
+    const profile = Profile(
+      id: 'sstp-profile',
+      displayName: 'Office',
+      server: 'vpn.example.com',
+      user: 'alice',
+      protocol: VpnProtocol.sstp,
+      trustPolicy: TrustPolicy.pinLeaf,
+    );
+    await store.upsertProfile(profile, password: 'pw', psk: '');
+    final certificates = FakeCertificatesRepository()
+      ..stored.add(ServerCertificate.fromMap(CertificateFixtures.stored()));
+
+    await tester.pumpWidget(
+      TunnelForgeApp(
+        certificatesRepository: certificates,
+        onboardingRepository: const _AcceptedOnboardingRepository(),
+        profileStore: store,
+      ),
+    );
+    await tester.pump();
+    for (var i = 0; i < 20; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+
+    await tester.tap(find.byKey(const Key('profile_picker_tile')));
+    await tester.pumpAndSettle();
+    await _openProfileActions(tester, 'Office');
+    await tester.tap(find.text('Edit profile'));
+    await tester.pumpAndSettle();
+
+    final tile = find.byKey(
+      const Key('certificate_${CertificateFixtures.caFingerprint}'),
+    );
+    expect(tile, findsOneWidget);
+    expect(find.text('MikroTik CA'), findsOneWidget);
   });
 
   testWidgets('new profile draft does not persist until save', (
@@ -905,9 +1139,13 @@ void main() {
     });
     await tester.binding.setSurfaceSize(const Size(480, 1200));
 
-    final store = ProfileStore(secretsOverride: MemorySecretStore());
+    final store = ProfileStore(
+      secretsOverride: MemorySecretStore(),
+      backendOverride: MemoryProfileBackend(),
+    );
     await tester.pumpWidget(
       TunnelForgeApp(
+        certificatesRepository: FakeCertificatesRepository(),
         onboardingRepository: const _AcceptedOnboardingRepository(),
         profileStore: store,
       ),
@@ -934,7 +1172,10 @@ void main() {
     await tester.tap(find.byIcon(Icons.close).first);
     await tester.pumpAndSettle();
 
-    expect(find.text('Profiles'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('profile-list-mode')),
+      findsOneWidget,
+    );
     expect(
       find.text(
         'No profiles yet. Tap + to create or import your first profile.',
@@ -955,9 +1196,13 @@ void main() {
     });
     await tester.binding.setSurfaceSize(const Size(480, 1200));
 
-    final store = ProfileStore(secretsOverride: MemorySecretStore());
+    final store = ProfileStore(
+      secretsOverride: MemorySecretStore(),
+      backendOverride: MemoryProfileBackend(),
+    );
     await tester.pumpWidget(
       TunnelForgeApp(
+        certificatesRepository: FakeCertificatesRepository(),
         onboardingRepository: const _AcceptedOnboardingRepository(),
         profileStore: store,
       ),
@@ -981,7 +1226,10 @@ void main() {
     expect(profiles, hasLength(1));
     expect(profiles.single.displayName, 'New profile');
     expect(profiles.single.server, 'vpn.example.com');
-    expect(find.text('Profiles'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('profile-list-mode')),
+      findsOneWidget,
+    );
     expect(find.text('Profile saved'), findsOneWidget);
     expect(find.text('New profile'), findsWidgets);
     expect(find.text('vpn.example.com'), findsWidgets);
@@ -1001,8 +1249,12 @@ void main() {
 
     await tester.pumpWidget(
       TunnelForgeApp(
+        certificatesRepository: FakeCertificatesRepository(),
         onboardingRepository: const _AcceptedOnboardingRepository(),
-        profileStore: ProfileStore(secretsOverride: MemorySecretStore()),
+        profileStore: ProfileStore(
+          secretsOverride: MemorySecretStore(),
+          backendOverride: MemoryProfileBackend(),
+        ),
       ),
     );
 
@@ -1076,8 +1328,12 @@ void main() {
 
     await tester.pumpWidget(
       TunnelForgeApp(
+        certificatesRepository: FakeCertificatesRepository(),
         onboardingRepository: const _AcceptedOnboardingRepository(),
-        profileStore: ProfileStore(secretsOverride: MemorySecretStore()),
+        profileStore: ProfileStore(
+          secretsOverride: MemorySecretStore(),
+          backendOverride: MemoryProfileBackend(),
+        ),
       ),
     );
 
@@ -1131,8 +1387,12 @@ void main() {
 
     await tester.pumpWidget(
       TunnelForgeApp(
+        certificatesRepository: FakeCertificatesRepository(),
         onboardingRepository: const _AcceptedOnboardingRepository(),
-        profileStore: ProfileStore(secretsOverride: MemorySecretStore()),
+        profileStore: ProfileStore(
+          secretsOverride: MemorySecretStore(),
+          backendOverride: MemoryProfileBackend(),
+        ),
       ),
     );
 
@@ -1192,8 +1452,12 @@ void main() {
 
     await tester.pumpWidget(
       TunnelForgeApp(
+        certificatesRepository: FakeCertificatesRepository(),
         onboardingRepository: const _AcceptedOnboardingRepository(),
-        profileStore: ProfileStore(secretsOverride: MemorySecretStore()),
+        profileStore: ProfileStore(
+          secretsOverride: MemorySecretStore(),
+          backendOverride: MemoryProfileBackend(),
+        ),
       ),
     );
 
@@ -1268,8 +1532,12 @@ void main() {
 
     await tester.pumpWidget(
       TunnelForgeApp(
+        certificatesRepository: FakeCertificatesRepository(),
         onboardingRepository: const _AcceptedOnboardingRepository(),
-        profileStore: ProfileStore(secretsOverride: MemorySecretStore()),
+        profileStore: ProfileStore(
+          secretsOverride: MemorySecretStore(),
+          backendOverride: MemoryProfileBackend(),
+        ),
       ),
     );
 
@@ -1321,8 +1589,12 @@ void main() {
 
     await tester.pumpWidget(
       TunnelForgeApp(
+        certificatesRepository: FakeCertificatesRepository(),
         onboardingRepository: const _AcceptedOnboardingRepository(),
-        profileStore: ProfileStore(secretsOverride: MemorySecretStore()),
+        profileStore: ProfileStore(
+          secretsOverride: MemorySecretStore(),
+          backendOverride: MemoryProfileBackend(),
+        ),
       ),
     );
 
@@ -1387,8 +1659,12 @@ void main() {
 
     await tester.pumpWidget(
       TunnelForgeApp(
+        certificatesRepository: FakeCertificatesRepository(),
         onboardingRepository: const _AcceptedOnboardingRepository(),
-        profileStore: ProfileStore(secretsOverride: MemorySecretStore()),
+        profileStore: ProfileStore(
+          secretsOverride: MemorySecretStore(),
+          backendOverride: MemoryProfileBackend(),
+        ),
       ),
     );
 
@@ -1425,8 +1701,12 @@ void main() {
 
     await tester.pumpWidget(
       TunnelForgeApp(
+        certificatesRepository: FakeCertificatesRepository(),
         onboardingRepository: const _AcceptedOnboardingRepository(),
-        profileStore: ProfileStore(secretsOverride: MemorySecretStore()),
+        profileStore: ProfileStore(
+          secretsOverride: MemorySecretStore(),
+          backendOverride: MemoryProfileBackend(),
+        ),
       ),
     );
 
@@ -1488,8 +1768,12 @@ void main() {
 
     await tester.pumpWidget(
       TunnelForgeApp(
+        certificatesRepository: FakeCertificatesRepository(),
         onboardingRepository: const _AcceptedOnboardingRepository(),
-        profileStore: ProfileStore(secretsOverride: MemorySecretStore()),
+        profileStore: ProfileStore(
+          secretsOverride: MemorySecretStore(),
+          backendOverride: MemoryProfileBackend(),
+        ),
       ),
     );
 
@@ -1545,8 +1829,12 @@ void main() {
 
     await tester.pumpWidget(
       TunnelForgeApp(
+        certificatesRepository: FakeCertificatesRepository(),
         onboardingRepository: const _AcceptedOnboardingRepository(),
-        profileStore: ProfileStore(secretsOverride: MemorySecretStore()),
+        profileStore: ProfileStore(
+          secretsOverride: MemorySecretStore(),
+          backendOverride: MemoryProfileBackend(),
+        ),
       ),
     );
 
@@ -1608,8 +1896,12 @@ void main() {
 
     await tester.pumpWidget(
       TunnelForgeApp(
+        certificatesRepository: FakeCertificatesRepository(),
         onboardingRepository: const _AcceptedOnboardingRepository(),
-        profileStore: ProfileStore(secretsOverride: MemorySecretStore()),
+        profileStore: ProfileStore(
+          secretsOverride: MemorySecretStore(),
+          backendOverride: MemoryProfileBackend(),
+        ),
       ),
     );
 

@@ -14,10 +14,15 @@ import 'package:tunnel_forge/l10n/app_localizations.dart';
 import 'package:tunnel_forge/features/profiles/domain/profile_models.dart';
 import 'package:tunnel_forge/features/profiles/presentation/profile_picker_sheet.dart';
 import 'package:tunnel_forge/features/profiles/data/profile_store.dart';
+import 'package:tunnel_forge/features/profiles/domain/failover_group.dart';
 import 'package:tunnel_forge/core/logging/log_entry.dart';
+import 'package:tunnel_forge/core/vpn_protocol.dart';
 import 'package:tunnel_forge/features/home/presentation/widgets/connection_panel.dart';
 import 'package:tunnel_forge/features/home/presentation/widgets/logs_panel.dart';
 import 'package:tunnel_forge/features/home/presentation/widgets/settings_panel.dart';
+import 'package:tunnel_forge/features/trust/domain/trust_repository.dart';
+import 'package:tunnel_forge/features/trust/presentation/bloc/certificates_bloc.dart';
+import 'package:tunnel_forge/features/trust/presentation/pages/certificates_page.dart';
 import '../../../app_theme/presentation/bloc/app_theme_bloc.dart';
 import '../../../home/domain/home_models.dart';
 import '../../../home/domain/home_repositories.dart';
@@ -73,9 +78,9 @@ class _VpnHomePageView extends StatefulWidget {
 class _VpnHomePageViewState extends State<_VpnHomePageView>
     with WidgetsBindingObserver {
   static const String _kGithubReleasesUrl =
-      'https://github.com/evokelektrique/tunnel-forge/releases';
+      'https://github.com/Mr1ve3r/l2tp-sstp-client/releases';
   static const String _kProjectGithubUrl =
-      'https://github.com/evokelektrique/tunnel-forge';
+      'https://github.com/Mr1ve3r/l2tp-sstp-client';
   static const String _kTelegramUrl = 'https://t.me/TunnelForge';
 
   final ScrollController _logsScroll = ScrollController();
@@ -216,6 +221,7 @@ class _VpnHomePageViewState extends State<_VpnHomePageView>
       context,
       profilesBloc: profilesBloc,
       store: widget.locator<ProfileStore>(),
+      certificates: widget.locator<CertificatesRepository>(),
     );
   }
 
@@ -252,6 +258,20 @@ class _VpnHomePageViewState extends State<_VpnHomePageView>
     );
   }
 
+  /// Opens the server certificate store (SPEC 5.9).
+  Future<void> _openServerCertificates() async {
+    await Navigator.of(context, rootNavigator: true).push(
+      MaterialPageRoute<void>(
+        builder: (_) => BlocProvider<CertificatesBloc>(
+          create: (_) =>
+              widget.locator<CertificatesBloc>()
+                ..add(const CertificatesStarted()),
+          child: const CertificatesPage(),
+        ),
+      ),
+    );
+  }
+
   Future<void> _openL2tpSecurityNotice() async {
     await Navigator.of(context, rootNavigator: true).push(
       MaterialPageRoute<void>(
@@ -285,27 +305,25 @@ class _VpnHomePageViewState extends State<_VpnHomePageView>
   Future<void> _openReleasePage(String url) {
     return _openExternalUrl(
       url,
-      invalidMessage: AppText.pick(
-        'Release page URL is invalid.',
-        'نشانی صفحه انتشار معتبر نیست.',
-      ),
-      failureMessage: AppText.pick(
-        'Could not open the release page.',
-        'صفحه انتشار باز نشد.',
-      ),
+      invalidMessage: AppText.current.releasePageUrlInvalid,
+      failureMessage: AppText.current.couldNotOpenReleasePage,
     );
   }
 
   void _handleMissingProfileTap(ProfilesState profilesState) {
-    final message = profilesState.profiles.isEmpty
-        ? AppText.pick(
-            'Create a profile first. You will need a server, username, and tunnel settings before connecting.',
-            'ابتدا یک پروفایل بسازید. پیش از اتصال به سرور، نام کاربری و تنظیمات تونل نیاز دارید.',
-          )
-        : AppText.pick(
-            'Choose one of your saved profiles before connecting.',
-            'پیش از اتصال یکی از پروفایل‌های ذخیره‌شده را انتخاب کنید.',
-          );
+    // An empty group is its own case: something *is* chosen, so telling the
+    // user to choose something would be wrong advice.
+    final emptyGroup =
+        profilesState.activeGroup != null && !profilesState.hasActiveGroup;
+    final message = emptyGroup
+        ? AppText.current.failoverGroupHasNoProfiles
+        : (profilesState.profiles.isEmpty
+              ? AppText.current.createProfileFirst
+              : (profilesState.groups.isEmpty
+                    ? AppText.current.chooseSavedProfileBeforeConnecting
+                    : AppText
+                          .current
+                          .chooseSavedProfileOrGroupBeforeConnecting));
     _toast(message, error: true);
     widget.locator<LogsRepository>().append(
       LogEntry(
@@ -329,6 +347,11 @@ class _VpnHomePageViewState extends State<_VpnHomePageView>
     if (tunnelState.tunnelUp ||
         (tunnelState.awaitingTunnel && !tunnelState.tunnelUp)) {
       context.read<TunnelBloc>().add(const TunnelDisconnectRequested());
+      return;
+    }
+    final group = profilesState.activeGroup;
+    if (group != null) {
+      _startFailoverGroup(group, profilesState, settingsState);
       return;
     }
     final row = profilesState.activeProfileRow;
@@ -357,6 +380,11 @@ class _VpnHomePageViewState extends State<_VpnHomePageView>
           activeProfileId: profile.id,
           profileName: trimmedName.isEmpty ? null : trimmedName,
           server: profile.server,
+          protocol: profile.protocol,
+          sstp: SstpConnectSettings.fromProfile(
+            profile,
+            proxyPassword: row.proxyPassword,
+          ),
           user: profile.user,
           password: row.password,
           psk: row.psk,
@@ -371,16 +399,46 @@ class _VpnHomePageViewState extends State<_VpnHomePageView>
     );
   }
 
+  /// Starts a failover group (SPEC 10.1).
+  ///
+  /// Nothing about the members is read here. They are whole profiles the host
+  /// resolves for itself as it walks the list, so passing a snapshot of them
+  /// from this side would only be a second copy that could already be stale.
+  void _startFailoverGroup(
+    FailoverGroup group,
+    ProfilesState profilesState,
+    SettingsState settingsState,
+  ) {
+    if (!profilesState.hasActiveGroup) {
+      _handleMissingProfileTap(profilesState);
+      return;
+    }
+    if (settingsState.connectionMode == ConnectionMode.vpnTunnel) {
+      context.read<SettingsBloc>().add(
+        const SettingsBatteryOptimizationVpnConnectAttempted(),
+      );
+    }
+    context.read<TunnelBloc>().add(
+      TunnelConnectGroupRequested(
+        TunnelGroupConnectRequest(
+          groupId: group.id,
+          groupName: group.displayName,
+          memberCount: profilesState.activeGroupMembers.length,
+          connectTimeoutSec: group.connectTimeoutSec,
+          connectionMode: settingsState.connectionMode,
+          proxySettings: settingsState.proxySettings,
+        ),
+      ),
+    );
+  }
+
   Future<void> _copyLogs(LogsState logsState) async {
     final visibleLogs = logsState.visibleLogs;
     if (visibleLogs.isEmpty) {
       _toast(
         logsState.entries.isEmpty
-            ? AppText.pick('No logs to copy', 'گزارشی برای کپی نیست')
-            : AppText.pick(
-                'No visible logs to copy',
-                'گزارش نمایانی برای کپی نیست',
-              ),
+            ? AppText.current.noLogsToCopy
+            : AppText.current.noVisibleLogsToCopy,
       );
       return;
     }
@@ -390,24 +448,14 @@ class _VpnHomePageViewState extends State<_VpnHomePageView>
       ),
     );
     final count = visibleLogs.length;
-    _toast(
-      AppText.pick(
-        'Copied $count ${count == 1 ? 'line' : 'lines'} to clipboard',
-        '$count خط در کلیپ‌بورد کپی شد',
-      ),
-    );
+    _toast(AppText.current.copiedLinesToClipboard(count));
   }
 
   Future<void> _shareDebugLogs(LogsState logsState) async {
     // Debug display level includes all severities, so export all buffered logs.
     final debugLevelLogs = logsState.entries;
     if (debugLevelLogs.isEmpty) {
-      _toast(
-        AppText.pick(
-          'No debug logs to share',
-          'گزارش دیباگی برای اشتراک‌گذاری نیست',
-        ),
-      );
+      _toast(AppText.current.noDebugLogsToShare);
       return;
     }
     final content = debugLevelLogs
@@ -431,27 +479,16 @@ class _VpnHomePageViewState extends State<_VpnHomePageView>
         ),
       );
       final count = debugLevelLogs.length;
-      _toast(
-        AppText.pick(
-          'Prepared $count ${count == 1 ? 'debug line' : 'debug lines'} for sharing',
-          '$count خط دیباگ برای اشتراک‌گذاری آماده شد',
-        ),
-      );
+      _toast(AppText.current.preparedDebugLinesForSharing(count));
     } catch (_) {
-      _toast(
-        AppText.pick(
-          'Could not share debug logs',
-          'اشتراک‌گذاری گزارش‌های دیباگ انجام نشد',
-        ),
-        error: true,
-      );
+      _toast(AppText.current.couldNotShareDebugLogs, error: true);
     }
   }
 
   void _clearLogs() {
     context.read<LogsBloc>().add(const LogsCleared());
     setState(() => _logsStickToBottom = true);
-    _toast(AppText.pick('Logs cleared', 'گزارش‌ها پاک شد'));
+    _toast(AppText.current.logsCleared);
   }
 
   String _connectButtonLabel(
@@ -513,14 +550,36 @@ class _VpnHomePageViewState extends State<_VpnHomePageView>
         }
       }
     }
-    final profileSummaryTitle = activeProfile != null
-        ? activeProfile.displayName
-        : (profilesState.profiles.isEmpty ? t.noSavedProfile : t.quickConnect);
-    final profileSummarySubtitle = activeProfile != null
-        ? activeProfile.server
-        : (profilesState.profiles.isEmpty
-              ? t.createFirstProfile
-              : t.selectSavedProfile);
+    // A failover group can be what the button starts instead of a profile
+    // (SPEC 10.1.3). The tile shows what it will try and in what order, which
+    // is the part the status line cannot say until the walk has begun.
+    final activeGroup = profilesState.activeGroup;
+    final groupMemberLine = profilesState.activeGroupMembers
+        .map((profile) => '${profile.displayName} (${profile.protocol.label})')
+        .join('  →  ');
+    final profileSummaryTitle = activeGroup != null
+        ? activeGroup.displayName
+        : (activeProfile != null
+              ? activeProfile.displayName
+              : (profilesState.profiles.isEmpty
+                    ? t.noSavedProfile
+                    : t.quickConnect));
+    // While a group is walking its list the host says which member it is on;
+    // that replaces the static order, because it is the one thing the user
+    // cannot work out for themselves (SPEC 10.1.3).
+    final walkingDetail = tunnelState.awaitingTunnel && !tunnelState.tunnelUp
+        ? tunnelState.connectingDetail
+        : null;
+    final profileSummarySubtitle = activeGroup != null
+        ? (walkingDetail ??
+              (groupMemberLine.isEmpty
+                  ? t.failoverGroupIsEmpty
+                  : groupMemberLine))
+        : (activeProfile != null
+              ? activeProfile.server
+              : (profilesState.profiles.isEmpty
+                    ? t.createFirstProfile
+                    : t.selectSavedProfile));
     final appBarTitle = switch (navState.index) {
       0 => t.appTitle,
       1 => t.logs,
@@ -594,6 +653,49 @@ class _VpnHomePageViewState extends State<_VpnHomePageView>
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
+                    PopupMenuButton<VpnProtocolFilter>(
+                      tooltip: 'Protocol',
+                      initialValue: logsState.protocolFilter,
+                      onSelected: (filter) => context.read<LogsBloc>().add(
+                        LogsProtocolFilterChangeRequested(filter),
+                      ),
+                      itemBuilder: (context) => const [
+                        PopupMenuItem<VpnProtocolFilter>(
+                          value: VpnProtocolFilter.all,
+                          child: Text('ALL'),
+                        ),
+                        PopupMenuItem<VpnProtocolFilter>(
+                          value: VpnProtocolFilter.l2tp,
+                          child: Text('L2TP'),
+                        ),
+                        PopupMenuItem<VpnProtocolFilter>(
+                          value: VpnProtocolFilter.sstp,
+                          child: Text('SSTP'),
+                        ),
+                      ],
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 8,
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.vpn_lock_rounded, size: 20),
+                            const SizedBox(width: 6),
+                            Text(
+                              logsState.protocolLabel,
+                              style: Theme.of(context).textTheme.labelMedium
+                                  ?.copyWith(
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.onSurfaceVariant,
+                                  ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
                     PopupMenuButton<LogDisplayLevel>(
                       tooltip: t.logLevel,
                       initialValue: logsState.level,
@@ -716,10 +818,13 @@ class _VpnHomePageViewState extends State<_VpnHomePageView>
                       tunnelUp: tunnelState.tunnelUp,
                       awaitingTunnel: tunnelState.awaitingTunnel,
                       stopRequested: tunnelState.stopRequested,
-                      canStartConnection: profilesState.hasActiveProfile,
+                      canStartConnection:
+                          profilesState.hasActiveProfile ||
+                          profilesState.hasActiveGroup,
                       connectButtonLabel: _connectButtonLabel(
                         tunnelState,
-                        profilesState.hasActiveProfile,
+                        profilesState.hasActiveProfile ||
+                            profilesState.hasActiveGroup,
                         settingsState.connectionMode,
                       ),
                       onPrimary: () => _primaryAction(
@@ -729,6 +834,7 @@ class _VpnHomePageViewState extends State<_VpnHomePageView>
                       ),
                       onUnavailablePrimaryTap: () =>
                           _handleMissingProfileTap(profilesState),
+                      session: tunnelState.session,
                       connectivityBadgeState: connectivityState.badgeState,
                       connectivityBadgeLabel: _connectivityBadgeLabel(
                         connectivityState,
@@ -794,6 +900,7 @@ class _VpnHomePageViewState extends State<_VpnHomePageView>
                         .add(const SettingsBatteryOptimizationRequestPressed()),
                     onChooseApps: _pickAppsForVpn,
                     onOpenL2tpSecurityNotice: _openL2tpSecurityNotice,
+                    onOpenServerCertificates: _openServerCertificates,
                     installedVersion: settingsState.installedVersion,
                     installedVersionError: settingsState.installedVersionError,
                     updateCheckConsentGranted:
@@ -812,25 +919,13 @@ class _VpnHomePageViewState extends State<_VpnHomePageView>
                     ),
                     onOpenTelegram: () => _openExternalUrl(
                       _kTelegramUrl,
-                      invalidMessage: AppText.pick(
-                        'Telegram link is invalid.',
-                        'پیوند تلگرام معتبر نیست.',
-                      ),
-                      failureMessage: AppText.pick(
-                        'Could not open Telegram.',
-                        'تلگرام باز نشد.',
-                      ),
+                      invalidMessage: AppText.current.telegramLinkInvalid,
+                      failureMessage: AppText.current.couldNotOpenTelegram,
                     ),
                     onOpenGithub: () => _openExternalUrl(
                       _kProjectGithubUrl,
-                      invalidMessage: AppText.pick(
-                        'GitHub link is invalid.',
-                        'پیوند GitHub معتبر نیست.',
-                      ),
-                      failureMessage: AppText.pick(
-                        'Could not open GitHub.',
-                        'GitHub باز نشد.',
-                      ),
+                      invalidMessage: AppText.current.githubLinkInvalid,
+                      failureMessage: AppText.current.couldNotOpenGithub,
                     ),
                     routingLocked:
                         profilesState.loading ||

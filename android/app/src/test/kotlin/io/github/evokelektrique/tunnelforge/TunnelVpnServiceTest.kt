@@ -5,11 +5,15 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.net.InetAddress
 
 class TunnelVpnServiceTest {
 
+    // Upstream TunnelForge added this application to the inclusive list, and
+    // these two tests asserted it. SPEC 3.1 asks for the opposite and the
+    // project owner confirmed that choice, so they now assert the exclusion.
     @Test
-    fun effectiveInclusivePackagesAddsTunnelForgePackage() {
+    fun effectiveInclusivePackagesLeavesOutTunnelForgePackage() {
         val effective =
             TunnelVpnService.effectiveInclusivePackages(
                 splitTunnelEnabled = true,
@@ -18,18 +22,11 @@ class TunnelVpnServiceTest {
                 selfPackageName = "io.github.evokelektrique.tunnelforge",
             )
 
-        assertEquals(
-            listOf(
-                "com.example.alpha",
-                "com.example.beta",
-                "io.github.evokelektrique.tunnelforge",
-            ),
-            effective,
-        )
+        assertEquals(listOf("com.example.alpha", "com.example.beta"), effective)
     }
 
     @Test
-    fun effectiveInclusivePackagesDoesNotDuplicateTunnelForgePackage() {
+    fun effectiveInclusivePackagesDropsTunnelForgePackageEvenWhenSelected() {
         val effective =
             TunnelVpnService.effectiveInclusivePackages(
                 splitTunnelEnabled = true,
@@ -43,10 +40,7 @@ class TunnelVpnServiceTest {
                 selfPackageName = "io.github.evokelektrique.tunnelforge",
             )
 
-        assertEquals(
-            listOf("io.github.evokelektrique.tunnelforge", "com.example.alpha"),
-            effective,
-        )
+        assertEquals(listOf("com.example.alpha"), effective)
     }
 
     @Test
@@ -104,40 +98,77 @@ class TunnelVpnServiceTest {
         assertEquals(exposure, runtimeConfig.exposure)
     }
 
+    // The negotiated servers now arrive as addresses from the engine's
+    // TunnelParams rather than as resolved DNS configs read out of the intent.
     @Test
     fun manualVpnDnsAdvertisesVirtualResolver() {
         val dnsServers =
-            TunnelVpnService.tunDnsServersForBuilder(
+            TunnelVpnService.tunDnsServers(
                 dnsAutomatic = false,
-                automaticDnsServers =
-                    listOf(
-                        ResolvedDnsServerConfig(
-                            host = "172.20.21.22",
-                            protocol = DnsProtocol.dnsOverUdp,
-                            resolvedIpv4 = "172.20.21.22",
-                        ),
-                    ),
+                protocol = TunnelProtocol.L2TP,
+                negotiatedDnsServers = listOf(InetAddress.getByName("172.20.21.22")),
             )
 
-        assertEquals(listOf(TunnelVpnService.MANUAL_DNS_VIRTUAL_IPV4), dnsServers)
+        assertEquals(listOf(InetAddress.getByName(TunnelVpnService.MANUAL_DNS_VIRTUAL_IPV4)), dnsServers)
     }
 
     @Test
     fun automaticVpnDnsAdvertisesNegotiatedResolvers() {
+        val negotiated = listOf(InetAddress.getByName("172.20.21.22"))
+
         val dnsServers =
-            TunnelVpnService.tunDnsServersForBuilder(
+            TunnelVpnService.tunDnsServers(
                 dnsAutomatic = true,
-                automaticDnsServers =
+                protocol = TunnelProtocol.L2TP,
+                negotiatedDnsServers = negotiated,
+            )
+
+        assertEquals(negotiated, dnsServers)
+    }
+
+    // SSTP has no native poll loop to divert packets to a virtual resolver, so
+    // manual DNS goes on the interface as the user's own servers (SPEC В.12).
+    @Test
+    fun manualSstpDnsAdvertisesTheUpstreamServersThemselves() {
+        val dnsServers =
+            TunnelVpnService.tunDnsServers(
+                dnsAutomatic = false,
+                protocol = TunnelProtocol.SSTP,
+                negotiatedDnsServers = listOf(InetAddress.getByName("172.20.21.22")),
+                manualDnsServers =
                     listOf(
                         ResolvedDnsServerConfig(
-                            host = "172.20.21.22",
+                            host = "9.9.9.9",
                             protocol = DnsProtocol.dnsOverUdp,
-                            resolvedIpv4 = "172.20.21.22",
+                            resolvedIpv4 = "9.9.9.9",
                         ),
                     ),
             )
 
-        assertEquals(listOf("172.20.21.22"), dnsServers)
+        assertEquals(listOf(InetAddress.getByName("9.9.9.9")), dnsServers)
+    }
+
+    @Test
+    fun reconnectBackoffDoublesAndThenStops() {
+        val delays = (1..6).map { TunnelVpnService.reconnectDelayMs(it) }
+
+        assertEquals(listOf(1_000L, 2_000L, 4_000L, 8_000L, 8_000L, 8_000L), delays)
+    }
+
+    @Test
+    fun connectedNotificationNamesTheProtocolAndTheProfile() {
+        assertEquals(
+            "SSTP · Office",
+            TunnelVpnService.notificationLabel(TunnelProtocol.SSTP, "Office", "vpn.example.org"),
+        )
+    }
+
+    @Test
+    fun connectedNotificationFallsBackToTheServer() {
+        assertEquals(
+            "L2TP/IPsec · vpn.example.org",
+            TunnelVpnService.notificationLabel(TunnelProtocol.L2TP, null, "vpn.example.org"),
+        )
     }
 
     @Test
@@ -146,7 +177,7 @@ class TunnelVpnServiceTest {
             TunnelVpnServiceStopPolicy.shouldEmitStoppedOnActionStop(
                 running = false,
                 hasSetupThread = false,
-                hasEngineThread = false,
+                hasEngine = false,
                 hasTunInterface = false,
                 hasDnsServer = false,
                 hasLocalProxyRuntime = false,
@@ -160,7 +191,7 @@ class TunnelVpnServiceTest {
             TunnelVpnServiceStopPolicy.shouldEmitStoppedOnActionStop(
                 running = false,
                 hasSetupThread = false,
-                hasEngineThread = true,
+                hasEngine = true,
                 hasTunInterface = false,
                 hasDnsServer = false,
                 hasLocalProxyRuntime = false,
@@ -170,7 +201,7 @@ class TunnelVpnServiceTest {
             TunnelVpnServiceStopPolicy.shouldEmitStoppedOnActionStop(
                 running = false,
                 hasSetupThread = false,
-                hasEngineThread = false,
+                hasEngine = false,
                 hasTunInterface = true,
                 hasDnsServer = false,
                 hasLocalProxyRuntime = false,
@@ -180,7 +211,7 @@ class TunnelVpnServiceTest {
             TunnelVpnServiceStopPolicy.shouldEmitStoppedOnActionStop(
                 running = false,
                 hasSetupThread = true,
-                hasEngineThread = false,
+                hasEngine = false,
                 hasTunInterface = false,
                 hasDnsServer = false,
                 hasLocalProxyRuntime = false,

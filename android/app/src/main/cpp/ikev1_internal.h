@@ -22,6 +22,20 @@
 #define IKE_PT_SIG 9
 #define IKE_PT_NONCE 10
 #define IKE_PT_NOTIFY 11
+
+/*
+ * RFC 2408 section 3.14.1 splits NOTIFY message types into errors (1..16383)
+ * and status messages (16384 and up). RFC 2407 section 4.6.3 assigns
+ * INITIAL-CONTACT (24578), RESPONDER-LIFETIME (24576) and REPLAY-STATUS
+ * (24577) in the status range. A status notification is informational and
+ * must not be mistaken for a rejected proposal.
+ */
+#define IKE_NOTIFY_STATUS_MIN 16384u
+
+/* How many interleaved Informational exchanges to tolerate while waiting for
+   Quick Mode msg2, and how long to keep waiting after each one. */
+#define IKE_QM_MAX_INFO_BEFORE_QM2 4
+#define IKE_QM_INFO_WAIT_MS 8000
 #define IKE_PT_DELETE 12
 #define IKE_PT_VID 13
 #define IKE_PT_NAT_D 20 /* RFC 3947 */

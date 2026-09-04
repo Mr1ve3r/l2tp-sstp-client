@@ -36,6 +36,8 @@ void main() {
   }) {
     final theme = ThemeData.light();
     return MaterialApp(
+      localizationsDelegates: AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
       home: Scaffold(
         body: SettingsPanel(
           language: AppLanguage.english,

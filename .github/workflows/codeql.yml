@@ -89,6 +89,15 @@ jobs:
           queries: security-extended,security-and-quality
           paths: |
             android/gvisor
+          # NOTE: paths-ignore below is honoured for `actions` only.
+          # CodeQL applies paths/paths-ignore to interpreted languages; for a
+          # compiled language it analyses whatever the build actually compiled,
+          # so the entries here do not keep third-party sources out. The C/C++
+          # build pulls mbedtls into build/codeql-native/_deps and its alerts
+          # therefore appear despite `build/**` and `**/_deps/**` being listed.
+          # They are triaged as dismissed in the Security tab, per alert, with
+          # the reason recorded there. Do not "fix" this by deleting the list:
+          # it is what stops the interpreted analysis walking those trees.
           paths-ignore: |
             .dart_tool/**
             build/**
@@ -149,6 +158,15 @@ jobs:
           build-mode: manual
           dependency-caching: true
           queries: security-extended,security-and-quality
+          # NOTE: paths-ignore below is honoured for `actions` only.
+          # CodeQL applies paths/paths-ignore to interpreted languages; for a
+          # compiled language it analyses whatever the build actually compiled,
+          # so the entries here do not keep third-party sources out. The C/C++
+          # build pulls mbedtls into build/codeql-native/_deps and its alerts
+          # therefore appear despite `build/**` and `**/_deps/**` being listed.
+          # They are triaged as dismissed in the Security tab, per alert, with
+          # the reason recorded there. Do not "fix" this by deleting the list:
+          # it is what stops the interpreted analysis walking those trees.
           paths-ignore: |
             .dart_tool/**
             build/**
@@ -217,6 +235,15 @@ jobs:
           build-mode: manual
           dependency-caching: true
           queries: security-extended,security-and-quality
+          # NOTE: paths-ignore below is honoured for `actions` only.
+          # CodeQL applies paths/paths-ignore to interpreted languages; for a
+          # compiled language it analyses whatever the build actually compiled,
+          # so the entries here do not keep third-party sources out. The C/C++
+          # build pulls mbedtls into build/codeql-native/_deps and its alerts
+          # therefore appear despite `build/**` and `**/_deps/**` being listed.
+          # They are triaged as dismissed in the Security tab, per alert, with
+          # the reason recorded there. Do not "fix" this by deleting the list:
+          # it is what stops the interpreted analysis walking those trees.
           paths-ignore: |
             .dart_tool/**
             build/**

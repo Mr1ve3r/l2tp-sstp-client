@@ -1,0 +1,12 @@
+# Localisation is English and Russian, every string in ARB (SPEC 9.1.10).
+#
+# The generated class goes to lib/l10n/generated/ rather than straight to
+# lib/l10n/app_localizations.dart, because that path is the hand-written file
+# every screen already imports: it re-exports what is generated here and adds
+# the language controller the application drives the locale with.
+arb-dir: lib/l10n
+template-arb-file: app_en.arb
+output-dir: lib/l10n/generated
+output-localization-file: app_localizations.dart
+output-class: AppLocalizations
+nullable-getter: false

@@ -4,10 +4,13 @@ import 'package:bloc/bloc.dart';
 import 'package:equatable/equatable.dart';
 import 'package:flutter/services.dart';
 
+import 'package:tunnel_forge/core/vpn_protocol.dart';
 import 'package:tunnel_forge/features/profiles/domain/profile_models.dart';
 import 'package:tunnel_forge/l10n/app_localizations.dart';
 import 'package:tunnel_forge/core/logging/log_entry.dart';
 import 'package:tunnel_forge/features/tunnel/data/vpn_contract.dart';
+import 'package:tunnel_forge/features/tunnel/domain/engine_error_text.dart';
+import 'package:tunnel_forge/features/tunnel/domain/tunnel_runtime_state.dart';
 import '../../../home/domain/home_models.dart';
 import '../../../home/domain/home_repositories.dart';
 import '../../../home/domain/log_redaction.dart';
@@ -27,6 +30,16 @@ final class TunnelConnectRequested extends TunnelEvent {
   const TunnelConnectRequested(this.request);
 
   final TunnelConnectRequest request;
+
+  @override
+  List<Object?> get props => [request];
+}
+
+/// Starts a failover group rather than one profile (SPEC 10.1).
+final class TunnelConnectGroupRequested extends TunnelEvent {
+  const TunnelConnectGroupRequested(this.request);
+
+  final TunnelGroupConnectRequest request;
 
   @override
   List<Object?> get props => [request];
@@ -81,6 +94,11 @@ final class TunnelDisconnectTimedOut extends TunnelEvent {
   List<Object?> get props => [attemptId];
 }
 
+/// One reading of the live session, taken while the tunnel is up.
+final class TunnelSessionPolled extends TunnelEvent {
+  const TunnelSessionPolled();
+}
+
 class TunnelState extends Equatable {
   const TunnelState({
     this.busy = false,
@@ -91,7 +109,9 @@ class TunnelState extends Equatable {
     this.connectionMode = ConnectionMode.vpnTunnel,
     this.activeAttemptId,
     this.connectStartedAt,
+    this.connectingDetail,
     this.proxyExposure,
+    this.session,
     this.message,
   });
 
@@ -103,7 +123,20 @@ class TunnelState extends Equatable {
   final ConnectionMode connectionMode;
   final String? activeAttemptId;
   final DateTime? connectStartedAt;
+
+  /// What the host last said it was doing while coming up, or null when it has
+  /// said nothing this attempt.
+  ///
+  /// For one profile this is barely more than "connecting". For a failover
+  /// group it is the member being tried — `Trying 2 of 2: Work SSTP` — which is
+  /// the only place the interface can learn which member is active
+  /// (SPEC 10.1.3), because a group's members are resolved on the host.
+  final String? connectingDetail;
+
   final ProxyExposure? proxyExposure;
+
+  /// What the running tunnel negotiated, refreshed while it is up (SPEC 9.1.7).
+  final TunnelSession? session;
   final HomeMessage? message;
 
   TunnelState copyWith({
@@ -117,8 +150,12 @@ class TunnelState extends Equatable {
     bool clearActiveAttemptId = false,
     DateTime? connectStartedAt,
     bool clearConnectStartedAt = false,
+    String? connectingDetail,
+    bool clearConnectingDetail = false,
     ProxyExposure? proxyExposure,
     bool clearProxyExposure = false,
+    TunnelSession? session,
+    bool clearSession = false,
     HomeMessage? message,
     bool clearMessage = false,
   }) {
@@ -135,9 +172,13 @@ class TunnelState extends Equatable {
       connectStartedAt: clearConnectStartedAt
           ? null
           : (connectStartedAt ?? this.connectStartedAt),
+      connectingDetail: clearConnectingDetail
+          ? null
+          : (connectingDetail ?? this.connectingDetail),
       proxyExposure: clearProxyExposure
           ? null
           : (proxyExposure ?? this.proxyExposure),
+      session: clearSession ? null : (session ?? this.session),
       message: clearMessage ? null : (message ?? this.message),
     );
   }
@@ -152,7 +193,9 @@ class TunnelState extends Equatable {
     connectionMode,
     activeAttemptId,
     connectStartedAt,
+    connectingDetail,
     proxyExposure,
+    session,
     message,
   ];
 }
@@ -162,10 +205,12 @@ class TunnelBloc extends Bloc<TunnelEvent, TunnelState> {
     : super(const TunnelState()) {
     on<TunnelStarted>(_onStarted);
     on<TunnelConnectRequested>(_onConnectRequested);
+    on<TunnelConnectGroupRequested>(_onConnectGroupRequested);
     on<TunnelDisconnectRequested>(_onDisconnectRequested);
     on<TunnelHostStateReceived>(_onHostStateReceived);
     on<TunnelEngineLogReceived>(_onEngineLogReceived);
     on<TunnelProxyExposureReceived>(_onProxyExposureReceived);
+    on<TunnelSessionPolled>(_onSessionPolled);
     on<TunnelAwaitTimedOut>(_onAwaitTimedOut);
     on<TunnelDisconnectTimedOut>(_onDisconnectTimedOut);
   }
@@ -177,7 +222,15 @@ class TunnelBloc extends Bloc<TunnelEvent, TunnelState> {
   StreamSubscription<ProxyExposure>? _proxyExposureSub;
   Future<void>? _runtimeBootstrapFuture;
   Timer? _awaitTimer;
+
+  /// How long this attempt may stay in "connecting" before the interface gives
+  /// up on it. A profile gets [_defaultAwaitTimeout]; a failover group gets as
+  /// long as walking its whole list can honestly take (SPEC 10.1.2), because
+  /// giving up at 60 seconds on a group still trying its third member would
+  /// report a timeout the host does not agree with.
+  Duration _awaitTimeout = _defaultAwaitTimeout;
   Timer? _disconnectTimer;
+  Timer? _sessionTimer;
   int _messageId = 0;
 
   Future<void> _onStarted(
@@ -225,26 +278,12 @@ class TunnelBloc extends Bloc<TunnelEvent, TunnelState> {
     final proxyMode = request.connectionMode == ConnectionMode.proxyOnly;
     final host = request.server.trim();
     if (!proxyMode && host.isEmpty) {
-      _toast(
-        emit,
-        AppText.pick(
-          'Enter a server hostname or address',
-          'نام میزبان یا نشانی سرور را وارد کنید',
-        ),
-        error: true,
-      );
+      _toast(emit, AppText.current.enterServerHostnameOrAddress, error: true);
       _logWarning('Connect blocked: empty server', tag: 'tunnel');
       return;
     }
     if (proxyMode && request.activeProfileId == null) {
-      _toast(
-        emit,
-        AppText.pick(
-          'Select a saved profile to start local proxy',
-          'برای شروع پروکسی محلی یک پروفایل ذخیره‌شده انتخاب کنید',
-        ),
-        error: true,
-      );
+      _toast(emit, AppText.current.selectSavedProfileForProxy, error: true);
       _logWarning(
         'Connect blocked: proxy mode requires a saved profile',
         tag: 'tunnel',
@@ -252,14 +291,7 @@ class TunnelBloc extends Bloc<TunnelEvent, TunnelState> {
       return;
     }
     if (request.proxySettings.httpPort == request.proxySettings.socksPort) {
-      _toast(
-        emit,
-        AppText.pick(
-          'HTTP and SOCKS5 ports must be different',
-          'درگاه‌های HTTP و SOCKS5 باید متفاوت باشند',
-        ),
-        error: true,
-      );
+      _toast(emit, AppText.current.httpAndSocksPortsMustDiffer, error: true);
       _logWarning(
         'Connect blocked: proxy ports collide http=${request.proxySettings.httpPort} socks=${request.proxySettings.socksPort}',
         tag: 'tunnel',
@@ -273,10 +305,7 @@ class TunnelBloc extends Bloc<TunnelEvent, TunnelState> {
         splitTunnelSettings.inclusivePackages.isEmpty) {
       _toast(
         emit,
-        AppText.pick(
-          'Open "Select apps" and choose at least one app for inclusive split tunneling.',
-          '«انتخاب برنامه‌ها» را باز کنید و حداقل یک برنامه برای تونل‌سازی شامل انتخاب کنید.',
-        ),
+        AppText.current.selectAppsForInclusiveSplitTunnel,
         error: true,
       );
       _logWarning(
@@ -287,6 +316,7 @@ class TunnelBloc extends Bloc<TunnelEvent, TunnelState> {
     }
 
     final attemptId = _newAttemptId();
+    _awaitTimeout = _defaultAwaitTimeout;
     emit(
       state.copyWith(
         busy: true,
@@ -295,6 +325,7 @@ class TunnelBloc extends Bloc<TunnelEvent, TunnelState> {
         connectStartedAt: DateTime.now(),
         stopRequested: false,
         timedOutThisAttempt: false,
+        clearConnectingDetail: true,
         clearProxyExposure: true,
         clearMessage: true,
       ),
@@ -312,20 +343,15 @@ class TunnelBloc extends Bloc<TunnelEvent, TunnelState> {
             'VPN permission denied or cancelled attempt=$attemptId',
             tag: 'tunnel',
           );
-          _toast(
-            emit,
-            AppText.pick(
-              'VPN permission is required',
-              'مجوز وی‌پی‌ان لازم است',
-            ),
-            error: true,
-          );
+          _toast(emit, AppText.current.vpnPermissionRequired, error: true);
           emit(
             state.copyWith(
               busy: false,
               clearActiveAttemptId: true,
               clearConnectStartedAt: true,
+              clearConnectingDetail: true,
               clearProxyExposure: true,
+              clearSession: true,
             ),
           );
           return;
@@ -343,9 +369,21 @@ class TunnelBloc extends Bloc<TunnelEvent, TunnelState> {
           : request.dnsServers
                 .map((entry) => '${entry.host}[${entry.protocol.shortLabel}]')
                 .join(', ');
+      // What the SSTP session will be judged against, so a trust or auth
+      // failure can be read back against what the profile actually asked for.
+      final sstp = request.sstp;
+      final sstpLog = request.protocol != VpnProtocol.sstp
+          ? ''
+          : 'sstpPort=${sstp.port} trust=${sstp.trustPolicy.wireName} '
+                'certs=${sstp.trustedCertificateIds.length} pins=${sstp.pinnedFingerprints.length} '
+                'hostname=${sstp.expectedHostname.isEmpty ? "(server)" : sstp.expectedHostname} '
+                'minTls=${sstp.minTlsVersion.wireName} '
+                'auth=${sstp.pppAuthMethods.map((m) => m.wireName).join("/")} '
+                'proxy=${sstp.proxyHost.isEmpty ? "off" : "on"} ';
       _logDebug(
-        'Profile: server=$host user=${request.user.isEmpty ? '(empty)' : request.user} dns=$dnsLog mtu=${request.mtu} '
+        'Profile: protocol=${request.protocol.wireValue} server=$host user=${request.user.isEmpty ? '(empty)' : request.user} dns=$dnsLog mtu=${request.mtu} '
         'psk=${request.psk.isEmpty ? 'off (cleartext L2TP if server allows)' : 'on'} '
+        '$sstpLog'
         'mode=${request.connectionMode.jsonValue} splitTunnelEnabled=${splitTunnelSettings.enabled} splitTunnelMode=${splitTunnelSettings.mode.jsonValue} '
         'inclusiveApps=${splitTunnelSettings.inclusivePackages.length} exclusiveApps=${splitTunnelSettings.exclusivePackages.length} '
         'http=${request.proxySettings.httpPort} socks=${request.proxySettings.socksPort} lan=${request.proxySettings.allowLanConnections ? 'on' : 'off'} '
@@ -357,6 +395,8 @@ class TunnelBloc extends Bloc<TunnelEvent, TunnelState> {
           activeProfileId: request.activeProfileId,
           profileName: request.profileName,
           server: request.server,
+          protocol: request.protocol,
+          sstp: request.sstp,
           user: request.user,
           password: request.password,
           psk: request.psk,
@@ -384,9 +424,7 @@ class TunnelBloc extends Bloc<TunnelEvent, TunnelState> {
       _scheduleAwaitTimeout(attemptId);
       _toast(
         emit,
-        proxyMode
-            ? AppText.pick('Starting proxy...', 'در حال شروع پروکسی...')
-            : AppText.pick('Connecting...', 'در حال اتصال...'),
+        proxyMode ? AppText.current.startingProxy : AppText.current.connecting,
       );
     } on PlatformException catch (error) {
       _logError(
@@ -399,6 +437,152 @@ class TunnelBloc extends Bloc<TunnelEvent, TunnelState> {
           busy: false,
           clearActiveAttemptId: true,
           clearConnectStartedAt: true,
+          clearConnectingDetail: true,
+          clearProxyExposure: true,
+        ),
+      );
+    }
+  }
+
+  /// Starts a failover group (SPEC 10.1).
+  ///
+  /// Deliberately short next to [_onConnectRequested]: a group carries no
+  /// server, no credentials and no split-tunnel choice of its own. Its members
+  /// are whole profiles the host reads for itself, so everything that would be
+  /// validated about a connection is validated per member, on the host, as it
+  /// is tried. What is left here is the two things a group can be wrong about
+  /// before it starts — being empty, and being asked for in a mode it cannot
+  /// run in — plus the proxy ports, which belong to the application.
+  Future<void> _onConnectGroupRequested(
+    TunnelConnectGroupRequested event,
+    Emitter<TunnelState> emit,
+  ) async {
+    final runtimeBootstrap = _runtimeBootstrapFuture;
+    if (runtimeBootstrap != null) {
+      await runtimeBootstrap;
+    }
+    if (state.busy ||
+        state.stopRequested ||
+        state.tunnelUp ||
+        (state.awaitingTunnel && !state.tunnelUp)) {
+      return;
+    }
+    final request = event.request;
+    if (request.groupId.isEmpty || request.memberCount <= 0) {
+      _toast(emit, AppText.current.failoverGroupHasNoProfiles, error: true);
+      _logWarning(
+        'Connect blocked: failover group "${request.groupName}" has no members',
+        tag: 'tunnel',
+      );
+      return;
+    }
+    if (request.connectionMode == ConnectionMode.proxyOnly) {
+      // The host stops the proxy service and starts the VPN one regardless.
+      // Saying so is better than changing a setting the user chose.
+      _toast(emit, AppText.current.failoverGroupNeedsVpnMode, error: true);
+      _logWarning(
+        'Connect blocked: a failover group cannot run in proxy-only mode',
+        tag: 'tunnel',
+      );
+      return;
+    }
+    if (request.proxySettings.httpPort == request.proxySettings.socksPort) {
+      _toast(emit, AppText.current.httpAndSocksPortsMustDiffer, error: true);
+      _logWarning(
+        'Connect blocked: proxy ports collide http=${request.proxySettings.httpPort} socks=${request.proxySettings.socksPort}',
+        tag: 'tunnel',
+      );
+      return;
+    }
+
+    final attemptId = _newAttemptId();
+    final worstCase = request.worstCaseDuration + _failoverAwaitSlack;
+    _awaitTimeout = worstCase > _defaultAwaitTimeout
+        ? worstCase
+        : _defaultAwaitTimeout;
+    emit(
+      state.copyWith(
+        busy: true,
+        connectionMode: ConnectionMode.vpnTunnel,
+        activeAttemptId: attemptId,
+        connectStartedAt: DateTime.now(),
+        stopRequested: false,
+        timedOutThisAttempt: false,
+        clearConnectingDetail: true,
+        clearProxyExposure: true,
+        clearMessage: true,
+      ),
+    );
+
+    try {
+      _logDebug(
+        'Requesting VPN permission (if needed)... attempt=$attemptId',
+        tag: 'tunnel',
+      );
+      final ok = await _tunnelRepository.prepareVpn();
+      if (!ok) {
+        _logWarning(
+          'VPN permission denied or cancelled attempt=$attemptId',
+          tag: 'tunnel',
+        );
+        _toast(emit, AppText.current.vpnPermissionRequired, error: true);
+        emit(
+          state.copyWith(
+            busy: false,
+            clearActiveAttemptId: true,
+            clearConnectStartedAt: true,
+            clearConnectingDetail: true,
+            clearProxyExposure: true,
+            clearSession: true,
+          ),
+        );
+        return;
+      }
+      _logDebug('VPN permission OK attempt=$attemptId', tag: 'tunnel');
+      _logDebug(
+        'Failover group: name=${request.groupName} members=${request.memberCount} budgetSec=${request.connectTimeoutSec} '
+        'http=${request.proxySettings.httpPort} socks=${request.proxySettings.socksPort} '
+        'lan=${request.proxySettings.allowLanConnections ? 'on' : 'off'} '
+        'waitSec=${_awaitTimeout.inSeconds} attempt=$attemptId',
+        tag: 'tunnel',
+      );
+      await _tunnelRepository.connectGroup(
+        TunnelGroupConnectRequest(
+          attemptId: attemptId,
+          groupId: request.groupId,
+          groupName: request.groupName,
+          memberCount: request.memberCount,
+          connectTimeoutSec: request.connectTimeoutSec,
+          connectionMode: ConnectionMode.vpnTunnel,
+          proxySettings: request.proxySettings,
+        ),
+      );
+      _logDebug(
+        'Connect acknowledged; waiting for the group to bring a member up... attempt=$attemptId',
+        tag: 'tunnel',
+      );
+      emit(
+        state.copyWith(
+          busy: false,
+          awaitingTunnel: true,
+          tunnelUp: false,
+          stopRequested: false,
+        ),
+      );
+      _scheduleAwaitTimeout(attemptId);
+      _toast(emit, AppText.current.connecting);
+    } on PlatformException catch (error) {
+      _logError(
+        'Platform error: ${error.code} ${error.message ?? ''} attempt=$attemptId',
+        tag: 'tunnel',
+      );
+      _toast(emit, error.message ?? error.code, error: true);
+      emit(
+        state.copyWith(
+          busy: false,
+          clearActiveAttemptId: true,
+          clearConnectStartedAt: true,
+          clearConnectingDetail: true,
           clearProxyExposure: true,
         ),
       );
@@ -506,6 +690,10 @@ class TunnelBloc extends Bloc<TunnelEvent, TunnelState> {
           source: LogSource.kotlin,
           tag: 'TunnelState',
         );
+        final detail = update.detail.trim();
+        if (detail.isNotEmpty && detail != state.connectingDetail) {
+          emit(state.copyWith(connectingDetail: detail));
+        }
         if (state.awaitingTunnel && !state.tunnelUp && !state.stopRequested) {
           _scheduleAwaitTimeout(state.activeAttemptId ?? '');
         }
@@ -518,8 +706,10 @@ class TunnelBloc extends Bloc<TunnelEvent, TunnelState> {
             tunnelUp: true,
             stopRequested: state.stopRequested,
             timedOutThisAttempt: false,
+            clearConnectingDetail: true,
           ),
         );
+        _startSessionPolling();
         _logInfo(
           'Android${state.activeAttemptId == null ? '' : ' attempt=${state.activeAttemptId!}'}: ${proxyMode ? 'proxy ready' : 'TUN is up'}: ${update.detail}',
           source: LogSource.kotlin,
@@ -532,9 +722,28 @@ class TunnelBloc extends Bloc<TunnelEvent, TunnelState> {
                 ? update.detail
                 : proxyMode
                 ? t.proxyReady
-                : AppText.pick('VPN connected', 'وی‌پی‌ان متصل شد'),
+                : AppText.current.vpnConnected,
           );
         }
+        break;
+      case VpnTunnelState.reconnecting:
+        // The host is rebuilding the tunnel after a network change (SPEC В.4).
+        // No await timer is started: the reconnect has its own attempt limit,
+        // and a timeout here would race it and report a failure it recovers
+        // from on its own.
+        _cancelAwaitTimer();
+        emit(
+          state.copyWith(
+            awaitingTunnel: true,
+            tunnelUp: false,
+            timedOutThisAttempt: false,
+          ),
+        );
+        _logWarning(
+          'Android${state.activeAttemptId == null ? '' : ' attempt=${state.activeAttemptId!}'}: ${update.detail}',
+          source: LogSource.kotlin,
+          tag: 'TunnelState',
+        );
         break;
       case VpnTunnelState.failed:
         _cancelAwaitTimer();
@@ -548,7 +757,9 @@ class TunnelBloc extends Bloc<TunnelEvent, TunnelState> {
               timedOutThisAttempt: false,
               clearActiveAttemptId: true,
               clearConnectStartedAt: true,
+              clearConnectingDetail: true,
               clearProxyExposure: true,
+              clearSession: true,
             ),
           );
           _logInfo(
@@ -566,7 +777,9 @@ class TunnelBloc extends Bloc<TunnelEvent, TunnelState> {
             timedOutThisAttempt: false,
             clearActiveAttemptId: true,
             clearConnectStartedAt: true,
+            clearConnectingDetail: true,
             clearProxyExposure: true,
+            clearSession: true,
           ),
         );
         _logError(
@@ -576,12 +789,10 @@ class TunnelBloc extends Bloc<TunnelEvent, TunnelState> {
         );
         _toast(
           emit,
-          update.detail.isEmpty
-              ? AppText.pick(
-                  'Couldn\'t establish the tunnel',
-                  'تونل برقرار نشد',
-                )
-              : update.detail,
+          engineErrorText(t, update.errorKey) ??
+              (update.detail.isEmpty
+                  ? AppText.current.couldNotEstablishTunnel
+                  : update.detail),
           error: true,
         );
         break;
@@ -596,7 +807,9 @@ class TunnelBloc extends Bloc<TunnelEvent, TunnelState> {
             timedOutThisAttempt: false,
             clearActiveAttemptId: true,
             clearConnectStartedAt: true,
+            clearConnectingDetail: true,
             clearProxyExposure: true,
+            clearSession: true,
           ),
         );
         _logInfo(
@@ -699,6 +912,7 @@ class TunnelBloc extends Bloc<TunnelEvent, TunnelState> {
           timedOutThisAttempt: false,
           clearActiveAttemptId: true,
           clearConnectStartedAt: true,
+          clearConnectingDetail: true,
           clearProxyExposure: true,
         ),
       );
@@ -716,10 +930,18 @@ class TunnelBloc extends Bloc<TunnelEvent, TunnelState> {
 
   void _scheduleAwaitTimeout(String attemptId) {
     _cancelAwaitTimer();
-    _awaitTimer = Timer(const Duration(seconds: 60), () {
+    _awaitTimer = Timer(_awaitTimeout, () {
       add(TunnelAwaitTimedOut(attemptId));
     });
   }
+
+  /// What one profile gets, and the floor for a group.
+  static const Duration _defaultAwaitTimeout = Duration(seconds: 60);
+
+  /// Room for the parts of a walk that are not a member's own budget: the
+  /// permission dialog, resolving the members, and the gap between one member
+  /// giving up and the next one opening a socket.
+  static const Duration _failoverAwaitSlack = Duration(seconds: 20);
 
   void _scheduleDisconnectTimeout(
     String attemptId, {
@@ -759,9 +981,12 @@ class TunnelBloc extends Bloc<TunnelEvent, TunnelState> {
         clearConnectStartedAt: connected,
         proxyExposure: runtimeState.proxyExposure,
         clearProxyExposure: runtimeState.proxyExposure == null,
+        session: runtimeState.session,
+        clearSession: runtimeState.session == null,
         clearMessage: true,
       ),
     );
+    if (connected) _startSessionPolling();
     if (connecting) {
       _scheduleAwaitTimeout(runtimeState.attemptId);
     } else {
@@ -771,6 +996,39 @@ class TunnelBloc extends Bloc<TunnelEvent, TunnelState> {
       'Recovered runtime state from Android: state=${runtimeState.state} mode=${runtimeState.connectionMode.jsonValue}${runtimeState.attemptId.isEmpty ? '' : ' attempt=${runtimeState.attemptId}'}',
       tag: 'TunnelState',
     );
+  }
+
+  /// Polls the host once a second while the tunnel is up.
+  ///
+  /// The session's byte counters and its timer move on their own; a state event
+  /// only arrives when the tunnel changes, so the status screen has to ask.
+  void _startSessionPolling() {
+    if (_sessionTimer != null) return;
+    add(const TunnelSessionPolled());
+    _sessionTimer = Timer.periodic(
+      const Duration(seconds: 1),
+      (_) => add(const TunnelSessionPolled()),
+    );
+  }
+
+  void _stopSessionPolling() {
+    _sessionTimer?.cancel();
+    _sessionTimer = null;
+  }
+
+  Future<void> _onSessionPolled(
+    TunnelSessionPolled event,
+    Emitter<TunnelState> emit,
+  ) async {
+    if (!state.tunnelUp) {
+      _stopSessionPolling();
+      if (state.session != null) emit(state.copyWith(clearSession: true));
+      return;
+    }
+    final runtimeState = await _tunnelRepository.getRuntimeState();
+    final session = runtimeState.session;
+    if (session == null) return;
+    emit(state.copyWith(session: session));
   }
 
   void _cancelAwaitTimer() {
@@ -851,6 +1109,7 @@ class TunnelBloc extends Bloc<TunnelEvent, TunnelState> {
   Future<void> close() async {
     _cancelAwaitTimer();
     _cancelDisconnectTimer();
+    _stopSessionPolling();
     await _tunnelStatesSub?.cancel();
     await _engineLogsSub?.cancel();
     await _proxyExposureSub?.cancel();

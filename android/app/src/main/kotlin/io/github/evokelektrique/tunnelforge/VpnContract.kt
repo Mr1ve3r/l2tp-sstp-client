@@ -6,6 +6,10 @@ object VpnContract {
 
     const val PREPARE_VPN = "prepareVpn"
     const val CONNECT = "connect"
+
+    /** Connects a failover group by id, rather than one profile (SPEC 10.1). */
+    const val CONNECT_GROUP = "connectGroup"
+    const val ARG_GROUP_ID = "groupId"
     const val DISCONNECT = "disconnect"
     const val SET_LOG_LEVEL = "setLogLevel"
     const val GET_RUNTIME_STATE = "getRuntimeState"
@@ -33,6 +37,18 @@ object VpnContract {
     const val ARG_DNS_SERVER_HOST = "host"
     const val ARG_DNS_SERVER_PROTOCOL = "protocol"
     const val ARG_MTU = "mtu"
+    const val ARG_PROTOCOL = "protocol"
+    const val ARG_SSTP_PORT = "sstpPort"
+    const val ARG_SSTP_TRUST_POLICY = "sstpTrustPolicy"
+    const val ARG_SSTP_CERTIFICATE_IDS = "sstpCertificateIds"
+    const val ARG_SSTP_PINNED_FINGERPRINTS = "sstpPinnedFingerprints"
+    const val ARG_SSTP_EXPECTED_HOSTNAME = "sstpExpectedHostname"
+    const val ARG_SSTP_MIN_TLS_VERSION = "sstpMinTlsVersion"
+    const val ARG_SSTP_AUTH_METHODS = "sstpAuthMethods"
+    const val ARG_SSTP_PROXY_HOST = "sstpProxyHost"
+    const val ARG_SSTP_PROXY_PORT = "sstpProxyPort"
+    const val ARG_SSTP_PROXY_USERNAME = "sstpProxyUsername"
+    const val ARG_SSTP_PROXY_PASSWORD = "sstpProxyPassword"
     const val ARG_PROFILE_NAME = "profileName"
     const val ARG_CONNECTION_MODE = "connectionMode"
     const val ARG_PROXY_HTTP_PORT = "proxyHttpPort"
@@ -59,12 +75,36 @@ object VpnContract {
     const val ARG_TUNNEL_STATE = "tunnelState"
     const val ARG_TUNNEL_DETAIL = "tunnelDetail"
 
+    /** `l2tp`, `sstp`, or absent when no session is running (SPEC 9.1.9). */
+    const val ARG_TUNNEL_PROTOCOL = "tunnelProtocol"
+
+    /**
+     * `EngineError.messageKey` of a failure, so the app can phrase it in the
+     * user's language instead of showing the engine's technical detail
+     * (SPEC 9.2).
+     */
+    const val ARG_TUNNEL_ERROR_KEY = "tunnelErrorKey"
+
+    // What the running session negotiated, for the status screen (SPEC 9.1.7).
+    const val ARG_SESSION_ADDRESS = "sessionAddress"
+    const val ARG_SESSION_DNS = "sessionDns"
+    const val ARG_SESSION_MTU = "sessionMtu"
+    const val ARG_SESSION_SINCE = "sessionSince"
+    const val ARG_SESSION_RX_BYTES = "sessionRxBytes"
+    const val ARG_SESSION_TX_BYTES = "sessionTxBytes"
+
+    /** Host of the HTTP proxy the transport goes through, or absent. */
+    const val ARG_SESSION_PROXY_HOST = "sessionProxyHost"
+
     const val ON_ENGINE_LOG = "onEngineLog"
 
     const val ARG_ENGINE_LOG_LEVEL = "engineLogLevel"
     const val ARG_ENGINE_LOG_SOURCE = "engineLogSource"
     const val ARG_ENGINE_LOG_TAG = "engineLogTag"
     const val ARG_ENGINE_LOG_MESSAGE = "engineLogMessage"
+
+    /** `l2tp`, `sstp`, or absent for a line that belongs to neither. */
+    const val ARG_ENGINE_LOG_PROTOCOL = "engineLogProtocol"
 
     const val ON_PROXY_EXPOSURE_CHANGED = "onProxyExposureChanged"
 
@@ -83,6 +123,7 @@ object VpnContract {
 
     const val TUNNEL_CONNECTING = "connecting"
     const val TUNNEL_CONNECTED = "connected"
+    const val TUNNEL_RECONNECTING = "reconnecting"
     const val TUNNEL_FAILED = "failed"
     const val TUNNEL_STOPPED = "stopped"
 }

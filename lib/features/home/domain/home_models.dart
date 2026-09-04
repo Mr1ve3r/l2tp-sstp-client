@@ -1,8 +1,10 @@
 import 'package:equatable/equatable.dart';
 
 import 'package:tunnel_forge/features/profiles/domain/profile_models.dart';
+import 'package:tunnel_forge/features/trust/domain/trust_models.dart';
 import 'package:tunnel_forge/features/profiles/domain/profile_transfer.dart';
 import 'package:tunnel_forge/core/logging/log_entry.dart';
+import 'package:tunnel_forge/core/vpn_protocol.dart';
 
 class HomeMessage extends Equatable {
   const HomeMessage({required this.id, required this.text, this.error = false});
@@ -20,14 +22,34 @@ class ProfileSecretRow extends Equatable {
     required this.profile,
     required this.password,
     required this.psk,
+    this.proxyPassword = '',
   });
 
   final Profile profile;
   final String password;
   final String psk;
 
+  /// The HTTP proxy password of an SSTP profile (SPEC 9.1.3).
+  final String proxyPassword;
+
   @override
-  List<Object?> get props => [profile, password, psk];
+  List<Object?> get props => [profile, password, psk, proxyPassword];
+}
+
+/// The certificate store as the profile editor needs it (SPEC 9.1.2).
+class TrustOptions extends Equatable {
+  const TrustOptions({
+    this.certificates = const <ServerCertificate>[],
+    this.policies = const <TrustPolicy>[],
+  });
+
+  final List<ServerCertificate> certificates;
+
+  /// The policies this build offers; a release build omits INSECURE.
+  final List<TrustPolicy> policies;
+
+  @override
+  List<Object?> get props => [certificates, policies];
 }
 
 class TunnelHostUpdate extends Equatable {
@@ -35,14 +57,19 @@ class TunnelHostUpdate extends Equatable {
     required this.state,
     required this.detail,
     this.attemptId = '',
+    this.errorKey,
   });
 
   final String state;
   final String detail;
   final String attemptId;
 
+  /// `EngineError.messageKey` when the host reported a failure, so the message
+  /// the user reads is phrased here rather than by the engine (SPEC 9.2).
+  final String? errorKey;
+
   @override
-  List<Object?> get props => [state, detail, attemptId];
+  List<Object?> get props => [state, detail, attemptId, errorKey];
 }
 
 class EngineLogMessage extends Equatable {
@@ -52,6 +79,7 @@ class EngineLogMessage extends Equatable {
     required this.source,
     required this.tag,
     required this.message,
+    this.protocol,
   });
 
   final DateTime timestamp;
@@ -59,6 +87,7 @@ class EngineLogMessage extends Equatable {
   final LogSource source;
   final String tag;
   final String message;
+  final VpnProtocol? protocol;
 
   LogEntry toLogEntry() {
     return LogEntry(
@@ -67,11 +96,12 @@ class EngineLogMessage extends Equatable {
       source: source,
       tag: tag,
       message: message,
+      protocol: protocol,
     );
   }
 
   @override
-  List<Object?> get props => [timestamp, level, source, tag, message];
+  List<Object?> get props => [timestamp, level, source, tag, message, protocol];
 }
 
 class TunnelConnectRequest extends Equatable {
@@ -89,6 +119,8 @@ class TunnelConnectRequest extends Equatable {
     required this.connectionMode,
     required this.splitTunnelSettings,
     required this.proxySettings,
+    this.protocol = VpnProtocol.l2tp,
+    this.sstp = const SstpConnectSettings(),
   });
 
   final String attemptId;
@@ -105,6 +137,12 @@ class TunnelConnectRequest extends Equatable {
   final SplitTunnelSettings splitTunnelSettings;
   final ProxySettings proxySettings;
 
+  /// What the host dispatches on (SPEC 7.1.1).
+  final VpnProtocol protocol;
+
+  /// Read only when [protocol] is [VpnProtocol.sstp].
+  final SstpConnectSettings sstp;
+
   @override
   List<Object?> get props => [
     attemptId,
@@ -119,6 +157,61 @@ class TunnelConnectRequest extends Equatable {
     mtu,
     connectionMode,
     splitTunnelSettings,
+    proxySettings,
+    protocol,
+    sstp,
+  ];
+}
+
+/// A request to start a failover group rather than one profile (SPEC 10.1).
+///
+/// It carries almost nothing: the members are whole profiles in the host's
+/// store, with their own servers, protocols and secrets, and the host reads
+/// them itself. What is here is the group to run, the proxy listener settings
+/// — which belong to this application and to no profile — and enough about the
+/// group to say what is happening before the host answers.
+class TunnelGroupConnectRequest extends Equatable {
+  const TunnelGroupConnectRequest({
+    this.attemptId = '',
+    required this.groupId,
+    required this.groupName,
+    required this.memberCount,
+    required this.connectTimeoutSec,
+    required this.connectionMode,
+    required this.proxySettings,
+  });
+
+  final String attemptId;
+  final String groupId;
+  final String groupName;
+
+  /// How many members the group had when the button was pressed, and the budget
+  /// each of them gets. Neither is sent to the host — it reads the group again
+  /// and is the authority — but together they say how long the whole walk may
+  /// take, which is how long this side is willing to wait for it.
+  final int memberCount;
+  final int connectTimeoutSec;
+
+  /// What the user has the application set to. A group is always a VPN tunnel;
+  /// this is here so that a group started in proxy-only mode is refused with a
+  /// sentence rather than quietly changing the mode underneath the setting.
+  final ConnectionMode connectionMode;
+
+  final ProxySettings proxySettings;
+
+  /// The longest a whole walk can honestly take: every member getting its full
+  /// budget, one after another.
+  Duration get worstCaseDuration =>
+      Duration(seconds: memberCount * connectTimeoutSec);
+
+  @override
+  List<Object?> get props => [
+    attemptId,
+    groupId,
+    groupName,
+    memberCount,
+    connectTimeoutSec,
+    connectionMode,
     proxySettings,
   ];
 }

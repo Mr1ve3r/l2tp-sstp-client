@@ -1,11 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">TunnelForge</string>
-    <string name="vpn_session_name">TunnelForge</string>
-    <string name="vpn_notification_title">TunnelForge VPN</string>
+    <string name="app_name">L2/SS/TP</string>
+    <string name="vpn_session_name">L2/SS/TP</string>
+    <string name="vpn_notification_title">L2/SS/TP VPN</string>
     <string name="vpn_notification_connecting">Connecting...</string>
     <string name="vpn_notification_connected">VPN active</string>
     <string name="vpn_notification_connected_profile">Connected: %1$s</string>
     <string name="vpn_notification_action_disconnect">Disconnect</string>
     <string name="vpn_notification_channel_name">VPN</string>
+    <string name="vpn_tile_label">L2/SS/TP VPN</string>
+    <string name="vpn_tile_subtitle_connected">Connected</string>
+    <string name="vpn_tile_subtitle_disconnected">Tap to connect</string>
+    <string name="proxy_notification_title">L2/SS/TP proxy</string>
 </resources>

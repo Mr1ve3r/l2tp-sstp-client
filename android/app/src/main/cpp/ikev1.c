@@ -314,6 +314,55 @@ static int ike_send_recv(int fd, const struct sockaddr *peer, socklen_t peer_len
   return -1;
 }
 
+/**
+ * Receive one more datagram without re-sending anything.
+ *
+ * A peer may interleave an Informational exchange with the exchange we are
+ * waiting on, so the first datagram back is not necessarily the reply. Retrying
+ * through ike_send_recv() would re-send the request, which is wrong here: the
+ * request was delivered, we simply have another message to read first.
+ *
+ * @return bytes received, 0 on timeout, -1 on error or cancellation.
+ */
+static int ike_recv_only(int fd, uint8_t *in, size_t in_cap, int timeout_ms, int prefix4500) {
+  struct pollfd pfd = {.fd = fd, .events = POLLIN};
+  int waited = 0;
+  while (waited < timeout_ms) {
+    if (tunnel_should_stop()) {
+      tunnel_engine_log(ANDROID_LOG_INFO, LOG_TAG, "ike_recv_only: canceled while waiting");
+      return -1;
+    }
+    int slice = timeout_ms - waited;
+    if (slice > 200)
+      slice = 200;
+    int pr = poll(&pfd, 1, slice);
+    waited += slice;
+    if (pr < 0) {
+      if (tunnel_should_stop()) {
+        tunnel_engine_log(ANDROID_LOG_INFO, LOG_TAG, "ike_recv_only: canceled after poll interruption");
+        return -1;
+      }
+      tunnel_engine_log(ANDROID_LOG_ERROR, LOG_TAG, "ike_recv_only: poll errno=%d", errno);
+      return -1;
+    }
+    if (pr == 0)
+      continue;
+    ssize_t n = recv(fd, in, in_cap, 0);
+    if (n <= 0) {
+      tunnel_engine_log(ANDROID_LOG_ERROR, LOG_TAG, "ike_recv_only: recv ret=%zd errno=%d", n, errno);
+      return -1;
+    }
+    /* Same NAT-T handling as ike_send_recv: strip the RFC 3948 non-ESP marker. */
+    if (prefix4500 && n >= 4 && util_read_be32(in) == 0u) {
+      memmove(in, in + 4, (size_t)n - 4);
+      n -= 4;
+    }
+    tunnel_engine_log(ANDROID_LOG_DEBUG, LOG_TAG, "ike_recv_only: got UDP reply %zd bytes nat_t=%d", n, prefix4500);
+    return (int)n;
+  }
+  return 0;
+}
+
 static int isakmp_3des_decrypt(const uint8_t key24[24], const uint8_t iv_in[8], const uint8_t *ct, size_t ct_len,
                                uint8_t *plain, size_t *plain_len, uint8_t iv_out[8]);
 static int isakmp_aes128_decrypt(const uint8_t key16[16], const uint8_t iv_in[16], const uint8_t *ct, size_t ct_len,
@@ -2011,9 +2060,19 @@ static int ipsec_negotiate(const char *server, const char *psk, ike_session_t *i
   }
   ike_log_isakmp_summary("Quick Mode reply (msg2)", in, inlen);
 
-  if (in[18] == IKE_EXCH_INFO && (in[19] & IKE_FLAG_ENC)) {
+  /*
+   * A peer is free to send an Informational exchange at any time, and it may
+   * arrive between our QM1 and the server's QM2. RFC 2408 splits NOTIFY types
+   * into errors (1..16383) and status messages (16384 and up); RFC 2407 puts
+   * INITIAL-CONTACT, RESPONDER-LIFETIME and REPLAY-STATUS in the status range.
+   * A status notification says nothing about our proposal, so treating any
+   * Informational as a Quick Mode failure aborts a negotiation that was fine.
+   * Keep reading for QM2 instead, and fail only on an error notification.
+   */
+  for (int info_seen = 0; in[18] == IKE_EXCH_INFO && (in[19] & IKE_FLAG_ENC); info_seen++) {
     uint32_t info_mid = util_read_be32(in + 20);
     size_t info_enc_len = (size_t)inlen - 28;
+    int had_error_notify = 0;
     if (info_enc_len >= 16) {
       uint8_t info_plain[256];
       size_t info_plain_len = 0;
@@ -2036,9 +2095,17 @@ static int ipsec_negotiate(const char *server, const char *psk, ike_session_t *i
           break;
         if (info_np == IKE_PT_NOTIFY && pl >= 12) {
           uint16_t ntype = util_read_be16(info_plain + w + 4 + 6);
-          tunnel_engine_log(ANDROID_LOG_ERROR, LOG_TAG,
-                            "Quick Mode: server sent NOTIFY type=%u (0x%04x) - proposal rejected", (unsigned)ntype,
-                            (unsigned)ntype);
+          if (ntype < IKE_NOTIFY_STATUS_MIN) {
+            had_error_notify = 1;
+            tunnel_engine_log(ANDROID_LOG_ERROR, LOG_TAG,
+                              "Quick Mode: server sent error NOTIFY type=%u (0x%04x); ESP proposal rejected",
+                              (unsigned)ntype, (unsigned)ntype);
+          } else {
+            tunnel_engine_log(ANDROID_LOG_INFO, LOG_TAG,
+                              "Quick Mode: server sent status NOTIFY type=%u (0x%04x); not an error, still waiting "
+                              "for QM2",
+                              (unsigned)ntype, (unsigned)ntype);
+          }
         }
         info_np = info_plain[w];
         w += pl;
@@ -2046,9 +2113,29 @@ static int ipsec_negotiate(const char *server, const char *psk, ike_session_t *i
           break;
       }
     }
-    tunnel_engine_log(ANDROID_LOG_ERROR, LOG_TAG,
-                      "Quick Mode: server replied with Informational Exchange (not QM2); ESP proposal likely rejected");
-    goto fail_fd;
+    if (had_error_notify) {
+      tunnel_engine_log(ANDROID_LOG_ERROR, LOG_TAG, "Quick Mode: ESP proposal rejected by the server");
+      goto fail_fd;
+    }
+    if (info_seen + 1 >= IKE_QM_MAX_INFO_BEFORE_QM2) {
+      tunnel_engine_log(ANDROID_LOG_ERROR, LOG_TAG,
+                        "Quick Mode: %d Informational exchanges and still no QM2; giving up",
+                        IKE_QM_MAX_INFO_BEFORE_QM2);
+      goto fail_fd;
+    }
+    /* Read the next datagram without re-sending QM1: it was delivered, this
+       Informational simply arrived ahead of the reply. */
+    inlen = ike_recv_only(fd, in, sizeof(in), IKE_QM_INFO_WAIT_MS, prefix);
+    if (inlen == 0) {
+      tunnel_engine_log(ANDROID_LOG_ERROR, LOG_TAG, "Quick Mode: no QM2 within %d ms after Informational exchange",
+                        IKE_QM_INFO_WAIT_MS);
+      goto fail_fd;
+    }
+    if (inlen < 28) {
+      tunnel_engine_log(ANDROID_LOG_ERROR, LOG_TAG, "Quick Mode: short or failed read after Informational exchange");
+      goto fail_fd;
+    }
+    ike_log_isakmp_summary("Quick Mode reply (msg2, after Informational)", in, inlen);
   }
 
   if ((in[19] & IKE_FLAG_ENC) == 0 || util_read_be32(in + 20) != qm_mid) {

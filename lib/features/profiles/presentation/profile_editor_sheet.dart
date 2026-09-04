@@ -6,8 +6,11 @@ import 'package:tunnel_forge/app/ui/app_scaffold_messenger.dart';
 import 'package:tunnel_forge/features/home/data/home_repositories_impl.dart';
 import 'package:tunnel_forge/features/profile_form/presentation/bloc/profile_form_bloc.dart';
 import 'package:tunnel_forge/l10n/app_localizations.dart';
+import 'package:tunnel_forge/core/vpn_protocol.dart';
 import 'package:tunnel_forge/features/profiles/domain/profile_models.dart';
 import 'package:tunnel_forge/features/profiles/data/profile_store.dart';
+import 'package:tunnel_forge/features/trust/domain/trust_models.dart';
+import 'package:tunnel_forge/features/trust/domain/trust_repository.dart';
 
 /// Modal sheet to view or edit one [Profile] and its stored secrets.
 class ProfileEditorSheet extends StatelessWidget {
@@ -20,15 +23,21 @@ class ProfileEditorSheet extends StatelessWidget {
     super.key,
     required this.profileId,
     required this.store,
+    this.certificates,
   });
 
   final String profileId;
   final ProfileStore store;
 
+  /// The certificate store, so an SSTP profile can pick what it trusts
+  /// (SPEC 9.1.2). Absent in tests and in callers that have none.
+  final CertificatesRepository? certificates;
+
   static Future<bool> show(
     BuildContext context, {
     required String profileId,
     required ProfileStore store,
+    CertificatesRepository? certificates,
   }) {
     final theme = Theme.of(context);
     final sheetColor =
@@ -42,7 +51,11 @@ class ProfileEditorSheet extends StatelessWidget {
       useSafeArea: true,
       sheetAnimationStyle: _kSheetAnimationStyle,
       backgroundColor: sheetColor,
-      builder: (ctx) => ProfileEditorSheet(profileId: profileId, store: store),
+      builder: (ctx) => ProfileEditorSheet(
+        profileId: profileId,
+        store: store,
+        certificates: certificates,
+      ),
     ).then((value) => value ?? false);
   }
 
@@ -50,7 +63,7 @@ class ProfileEditorSheet extends StatelessWidget {
   Widget build(BuildContext context) {
     return BlocProvider(
       create: (_) =>
-          ProfileFormBloc(ProfilesRepositoryImpl(store))
+          ProfileFormBloc(ProfilesRepositoryImpl(store, certificates))
             ..add(ProfileFormStarted(profileId)),
       child: ProfileEditorView(
         onClose: () => Navigator.of(context).pop(false),
@@ -84,8 +97,15 @@ class _ProfileEditorViewState extends State<ProfileEditorView> {
   late final TextEditingController _dns1Controller;
   late final TextEditingController _dns2Controller;
   late final TextEditingController _mtuController;
+  late final TextEditingController _portController;
+  late final TextEditingController _expectedHostnameController;
+  late final TextEditingController _proxyHostController;
+  late final TextEditingController _proxyPortController;
+  late final TextEditingController _proxyUsernameController;
+  late final TextEditingController _proxyPasswordController;
   bool _passwordVisible = false;
   bool _pskVisible = false;
+  bool _proxyPasswordVisible = false;
   int _lastMessageId = 0;
 
   @override
@@ -99,6 +119,12 @@ class _ProfileEditorViewState extends State<ProfileEditorView> {
     _dns1Controller = TextEditingController();
     _dns2Controller = TextEditingController();
     _mtuController = TextEditingController();
+    _portController = TextEditingController();
+    _expectedHostnameController = TextEditingController();
+    _proxyHostController = TextEditingController();
+    _proxyPortController = TextEditingController();
+    _proxyUsernameController = TextEditingController();
+    _proxyPasswordController = TextEditingController();
   }
 
   @override
@@ -111,6 +137,12 @@ class _ProfileEditorViewState extends State<ProfileEditorView> {
     _dns1Controller.dispose();
     _dns2Controller.dispose();
     _mtuController.dispose();
+    _portController.dispose();
+    _expectedHostnameController.dispose();
+    _proxyHostController.dispose();
+    _proxyPortController.dispose();
+    _proxyUsernameController.dispose();
+    _proxyPasswordController.dispose();
     super.dispose();
   }
 
@@ -153,6 +185,9 @@ class _ProfileEditorViewState extends State<ProfileEditorView> {
       obscureText: !visible,
       enableSuggestions: false,
       autocorrect: false,
+      textCapitalization: TextCapitalization.none,
+      smartDashesType: SmartDashesType.disabled,
+      smartQuotesType: SmartQuotesType.disabled,
       onChanged: onChanged,
       decoration: _deco(context, label: label, hint: hint).copyWith(
         suffixIcon: IconButton(
@@ -186,6 +221,11 @@ class _ProfileEditorViewState extends State<ProfileEditorView> {
             controller: controller,
             enabled: !dnsAutomatic,
             keyboardType: TextInputType.text,
+            autocorrect: false,
+            enableSuggestions: false,
+            textCapitalization: TextCapitalization.none,
+            smartDashesType: SmartDashesType.disabled,
+            smartQuotesType: SmartQuotesType.disabled,
             onChanged: onChanged,
             decoration: _deco(
               context,
@@ -231,6 +271,280 @@ class _ProfileEditorViewState extends State<ProfileEditorView> {
             ),
           ),
         ),
+      ],
+    );
+  }
+
+  static String _policyLabel(AppLocalizations t, TrustPolicy policy) {
+    return switch (policy) {
+      TrustPolicy.system => t.trustPolicySystem,
+      TrustPolicy.systemPlusCustom => t.trustPolicySystemPlusCustom,
+      TrustPolicy.customOnly => t.trustPolicyCustomOnly,
+      TrustPolicy.pinLeaf => t.trustPolicyPinLeaf,
+      TrustPolicy.insecure => t.trustPolicyInsecure,
+    };
+  }
+
+  static String _policyHelp(AppLocalizations t, TrustPolicy policy) {
+    return switch (policy) {
+      TrustPolicy.system => t.trustPolicySystemHelp,
+      TrustPolicy.systemPlusCustom => t.trustPolicySystemPlusCustomHelp,
+      TrustPolicy.customOnly => t.trustPolicyCustomOnlyHelp,
+      TrustPolicy.pinLeaf => t.trustPolicyPinLeafHelp,
+      TrustPolicy.insecure => t.trustPolicyInsecureHelp,
+    };
+  }
+
+  Widget _sectionCard({
+    required Key key,
+    required Color color,
+    required String title,
+    required TextTheme tt,
+    required List<Widget> children,
+  }) {
+    return Container(
+      key: key,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(title, style: tt.titleSmall),
+          const SizedBox(height: 12),
+          ...children,
+        ],
+      ),
+    );
+  }
+
+  Widget _numberField({
+    required BuildContext context,
+    required Key key,
+    required TextEditingController controller,
+    required String label,
+    required String? errorText,
+    required ValueChanged<String> onChanged,
+  }) {
+    return TextField(
+      key: key,
+      controller: controller,
+      keyboardType: TextInputType.number,
+      inputFormatters: <TextInputFormatter>[
+        FilteringTextInputFormatter.digitsOnly,
+      ],
+      onChanged: onChanged,
+      decoration: _deco(
+        context,
+        label: label,
+      ).copyWith(errorText: errorText, errorMaxLines: 2),
+    );
+  }
+
+  /// The SSTP half of the form (SPEC 9.1.2).
+  Widget _sstpSection(
+    BuildContext context,
+    ProfileFormState state,
+    ThemeData theme,
+    TextTheme tt,
+    Color sectionColor,
+  ) {
+    final t = AppLocalizations.of(context);
+    final bloc = context.read<ProfileFormBloc>();
+    final muted = tt.bodySmall?.copyWith(
+      color: theme.colorScheme.onSurfaceVariant,
+    );
+    return _sectionCard(
+      key: const Key('sstp_section'),
+      color: sectionColor,
+      title: t.sstpSection,
+      tt: tt,
+      children: [
+        _numberField(
+          context: context,
+          key: const Key('sstp_port_field'),
+          controller: _portController,
+          label: t.sstpPortLabel,
+          errorText: state.portErrorText,
+          onChanged: (value) => bloc.add(ProfileFormPortChanged(value)),
+        ),
+        const SizedBox(height: 12),
+        DropdownButtonFormField<TrustPolicy>(
+          key: const Key('trust_policy_dropdown'),
+          initialValue: state.trustPolicies.contains(state.trustPolicy)
+              ? state.trustPolicy
+              : state.trustPolicies.first,
+          isExpanded: true,
+          decoration: _deco(context, label: t.trustPolicyLabel),
+          items: state.trustPolicies
+              .map(
+                (policy) => DropdownMenuItem<TrustPolicy>(
+                  value: policy,
+                  child: Text(_policyLabel(t, policy)),
+                ),
+              )
+              .toList(growable: false),
+          onChanged: (value) => value == null
+              ? null
+              : bloc.add(ProfileFormTrustPolicyChanged(value)),
+        ),
+        const SizedBox(height: 4),
+        Text(_policyHelp(t, state.trustPolicy), style: muted),
+        if (state.showsCertificatePicker) ...[
+          const SizedBox(height: 12),
+          Text(t.trustedCertificates, style: tt.titleSmall),
+          if (state.trustOptions.certificates.isEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(t.trustedCertificatesEmpty, style: muted),
+            )
+          else
+            ...state.trustOptions.certificates.map(
+              (certificate) => CheckboxListTile(
+                key: ValueKey('certificate_${certificate.id}'),
+                value: state.trustedCertificateIds.contains(certificate.id),
+                controlAffinity: ListTileControlAffinity.leading,
+                contentPadding: EdgeInsets.zero,
+                title: Text(
+                  certificate.alias.isEmpty
+                      ? certificate.fields.displayName
+                      : certificate.alias,
+                ),
+                subtitle: Text(
+                  CertificateFields.formatFingerprint(
+                    certificate.fields.sha256Fingerprint,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: muted,
+                ),
+                onChanged: (value) => bloc.add(
+                  ProfileFormCertificateToggled(certificate.id, value ?? false),
+                ),
+              ),
+            ),
+        ],
+        const SizedBox(height: 12),
+        TextField(
+          key: const Key('expected_hostname_field'),
+          controller: _expectedHostnameController,
+          keyboardType: TextInputType.url,
+          autocorrect: false,
+          enableSuggestions: false,
+          textCapitalization: TextCapitalization.none,
+          smartDashesType: SmartDashesType.disabled,
+          smartQuotesType: SmartQuotesType.disabled,
+          onChanged: (value) =>
+              bloc.add(ProfileFormExpectedHostnameChanged(value)),
+          decoration: _deco(
+            context,
+            label: t.expectedHostnameLabel,
+          ).copyWith(helperText: t.expectedHostnameHelp, helperMaxLines: 3),
+        ),
+        const SizedBox(height: 12),
+        DropdownButtonFormField<TlsVersion>(
+          key: const Key('min_tls_dropdown'),
+          initialValue: state.minTlsVersion,
+          isExpanded: true,
+          decoration: _deco(context, label: t.minTlsVersionLabel),
+          items: TlsVersion.values
+              .map(
+                (version) => DropdownMenuItem<TlsVersion>(
+                  value: version,
+                  child: Text(version.label),
+                ),
+              )
+              .toList(growable: false),
+          onChanged: (value) => value == null
+              ? null
+              : bloc.add(ProfileFormMinTlsVersionChanged(value)),
+        ),
+        const SizedBox(height: 12),
+        Text(t.pppAuthMethodsLabel, style: tt.titleSmall),
+        const SizedBox(height: 4),
+        Text(t.pppAuthMethodsHelp, style: muted),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          runSpacing: 4,
+          children: PppAuthMethod.values
+              .map(
+                (method) => FilterChip(
+                  key: ValueKey('auth_method_${method.wireName}'),
+                  label: Text(method.wireName.replaceAll('_', '-')),
+                  selected: state.authMethods.contains(method),
+                  onSelected: (selected) =>
+                      bloc.add(ProfileFormAuthMethodToggled(method, selected)),
+                ),
+              )
+              .toList(growable: false),
+        ),
+        const SizedBox(height: 12),
+        SwitchListTile(
+          key: const Key('proxy_toggle'),
+          value: state.proxyEnabled,
+          contentPadding: EdgeInsets.zero,
+          title: Text(t.httpProxySection),
+          subtitle: Text(t.httpProxyHelp),
+          onChanged: (value) => bloc.add(ProfileFormProxyEnabledChanged(value)),
+        ),
+        if (state.proxyEnabled) ...[
+          const SizedBox(height: 8),
+          Column(
+            key: const Key('proxy_section'),
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              TextField(
+                controller: _proxyHostController,
+                keyboardType: TextInputType.url,
+                autocorrect: false,
+                enableSuggestions: false,
+                textCapitalization: TextCapitalization.none,
+                smartDashesType: SmartDashesType.disabled,
+                smartQuotesType: SmartQuotesType.disabled,
+                onChanged: (value) =>
+                    bloc.add(ProfileFormProxyHostChanged(value)),
+                decoration: _deco(context, label: t.proxyHostLabel),
+              ),
+              const SizedBox(height: 12),
+              _numberField(
+                context: context,
+                key: const Key('proxy_port_field'),
+                controller: _proxyPortController,
+                label: t.proxyPortLabel,
+                errorText: state.proxyPortErrorText,
+                onChanged: (value) =>
+                    bloc.add(ProfileFormProxyPortChanged(value)),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _proxyUsernameController,
+                autocorrect: false,
+                enableSuggestions: false,
+                textCapitalization: TextCapitalization.none,
+                onChanged: (value) =>
+                    bloc.add(ProfileFormProxyUsernameChanged(value)),
+                decoration: _deco(context, label: t.proxyUsernameLabel),
+              ),
+              const SizedBox(height: 12),
+              _secretField(
+                context: context,
+                controller: _proxyPasswordController,
+                label: t.proxyPasswordLabel,
+                visible: _proxyPasswordVisible,
+                showTooltip: t.showProxyPassword,
+                hideTooltip: t.hideProxyPassword,
+                onToggle: () => setState(
+                  () => _proxyPasswordVisible = !_proxyPasswordVisible,
+                ),
+                onChanged: (value) =>
+                    bloc.add(ProfileFormProxyPasswordChanged(value)),
+              ),
+            ],
+          ),
+        ],
       ],
     );
   }
@@ -336,6 +650,12 @@ class _ProfileEditorViewState extends State<ProfileEditorView> {
         _syncController(_dns1Controller, state.dns1);
         _syncController(_dns2Controller, state.dns2);
         _syncController(_mtuController, state.mtu);
+        _syncController(_portController, state.port);
+        _syncController(_expectedHostnameController, state.expectedHostname);
+        _syncController(_proxyHostController, state.proxyHost);
+        _syncController(_proxyPortController, state.proxyPort);
+        _syncController(_proxyUsernameController, state.proxyUsername);
+        _syncController(_proxyPasswordController, state.proxyPassword);
 
         if (state.loadError != null) {
           return Padding(
@@ -406,6 +726,11 @@ class _ProfileEditorViewState extends State<ProfileEditorView> {
                             controller: _serverController,
                             textInputAction: TextInputAction.next,
                             keyboardType: TextInputType.url,
+                            autocorrect: false,
+                            enableSuggestions: false,
+                            textCapitalization: TextCapitalization.none,
+                            smartDashesType: SmartDashesType.disabled,
+                            smartQuotesType: SmartQuotesType.disabled,
                             onChanged: (value) => context
                                 .read<ProfileFormBloc>()
                                 .add(ProfileFormServerChanged(value)),
@@ -419,6 +744,11 @@ class _ProfileEditorViewState extends State<ProfileEditorView> {
                           TextField(
                             controller: _userController,
                             textInputAction: TextInputAction.next,
+                            autocorrect: false,
+                            enableSuggestions: false,
+                            textCapitalization: TextCapitalization.none,
+                            smartDashesType: SmartDashesType.disabled,
+                            smartQuotesType: SmartQuotesType.disabled,
                             onChanged: (value) => context
                                 .read<ProfileFormBloc>()
                                 .add(ProfileFormUserChanged(value)),
@@ -440,20 +770,53 @@ class _ProfileEditorViewState extends State<ProfileEditorView> {
                                 .add(ProfileFormPasswordChanged(value)),
                           ),
                           const SizedBox(height: 12),
-                          _secretField(
-                            context: context,
-                            controller: _pskController,
-                            label: t.ipsecPsk,
-                            hint: t.ipsecPskHint,
-                            visible: _pskVisible,
-                            showTooltip: t.showIpsecPsk,
-                            hideTooltip: t.hideIpsecPsk,
-                            onToggle: () =>
-                                setState(() => _pskVisible = !_pskVisible),
-                            onChanged: (value) => context
-                                .read<ProfileFormBloc>()
-                                .add(ProfileFormPskChanged(value)),
+                          SegmentedButton<VpnProtocol>(
+                            key: const Key('protocol_selector'),
+                            segments: VpnProtocol.values
+                                .map(
+                                  (protocol) => ButtonSegment<VpnProtocol>(
+                                    value: protocol,
+                                    label: Text(protocol.label),
+                                  ),
+                                )
+                                .toList(growable: false),
+                            selected: {state.protocol},
+                            showSelectedIcon: false,
+                            onSelectionChanged: (selection) =>
+                                context.read<ProfileFormBloc>().add(
+                                  ProfileFormProtocolChanged(selection.first),
+                                ),
                           ),
+                          const SizedBox(height: 12),
+                          if (state.isSstp)
+                            _sstpSection(
+                              context,
+                              state,
+                              theme,
+                              tt,
+                              dnsSectionColor,
+                            )
+                          else
+                            // The L2TP half is the pre-shared key and nothing
+                            // else, drawn exactly as it was before the selector
+                            // existed (SPEC 9.1.4).
+                            KeyedSubtree(
+                              key: const Key('l2tp_section'),
+                              child: _secretField(
+                                context: context,
+                                controller: _pskController,
+                                label: t.ipsecPsk,
+                                hint: t.ipsecPskHint,
+                                visible: _pskVisible,
+                                showTooltip: t.showIpsecPsk,
+                                hideTooltip: t.hideIpsecPsk,
+                                onToggle: () =>
+                                    setState(() => _pskVisible = !_pskVisible),
+                                onChanged: (value) => context
+                                    .read<ProfileFormBloc>()
+                                    .add(ProfileFormPskChanged(value)),
+                              ),
+                            ),
                           const SizedBox(height: 12),
                           CheckboxListTile(
                             value: state.dnsAutomatic,

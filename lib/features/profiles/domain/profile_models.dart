@@ -1,3 +1,7 @@
+import 'package:equatable/equatable.dart';
+
+import 'package:tunnel_forge/core/vpn_protocol.dart';
+import 'package:tunnel_forge/features/trust/domain/trust_models.dart';
 import 'package:tunnel_forge/l10n/app_localizations.dart';
 
 /// Connection surface: Android VPN/TUN vs. local proxy listeners only.
@@ -334,17 +338,11 @@ class ConnectivityCheckSettings {
     final normalized = normalizeUrl(text);
     final uri = Uri.tryParse(normalized);
     if (uri == null || !uri.hasScheme || uri.host.isEmpty) {
-      return AppText.pick(
-        'Enter a valid absolute HTTP or HTTPS URL',
-        'یک نشانی کامل و معتبر HTTP یا HTTPS وارد کنید',
-      );
+      return AppText.current.enterValidHttpUrl;
     }
     final scheme = uri.scheme.toLowerCase();
     if (scheme != 'http' && scheme != 'https') {
-      return AppText.pick(
-        'Only HTTP and HTTPS URLs are supported',
-        'فقط نشانی‌های HTTP و HTTPS پشتیبانی می‌شوند',
-      );
+      return AppText.current.onlyHttpAndHttpsSupported;
     }
     return null;
   }
@@ -353,16 +351,10 @@ class ConnectivityCheckSettings {
     if (text.trim().isEmpty) return null;
     final value = int.tryParse(text.trim());
     if (value == null) {
-      return AppText.pick(
-        'Enter a whole number of milliseconds',
-        'یک عدد صحیح بر حسب میلی‌ثانیه وارد کنید',
-      );
+      return AppText.current.enterWholeNumberOfMilliseconds;
     }
     if (value <= 0) {
-      return AppText.pick(
-        'Enter a timeout greater than 0 ms',
-        'مهلت باید بیشتر از ۰ میلی‌ثانیه باشد',
-      );
+      return AppText.current.enterTimeoutGreaterThanZero;
     }
     return null;
   }
@@ -403,6 +395,146 @@ class CandidateApp {
   }
 }
 
+/// Which applications a profile routes through the tunnel (SPEC 8.1).
+enum PerAppMode {
+  off('OFF'),
+  include('INCLUDE'),
+  exclude('EXCLUDE');
+
+  const PerAppMode(this.wireName);
+
+  /// The name the host uses. Matches the Kotlin `PerAppMode` enum.
+  final String wireName;
+
+  static PerAppMode fromWire(Object? raw) {
+    final value = raw?.toString().trim().toUpperCase();
+    for (final mode in PerAppMode.values) {
+      if (mode.wireName == value) return mode;
+    }
+    return PerAppMode.off;
+  }
+}
+
+/// Lowest TLS version an SSTP profile negotiates (SPEC 6.4).
+enum TlsVersion {
+  tls12('TLS_1_2', 'TLS 1.2'),
+  tls13('TLS_1_3', 'TLS 1.3');
+
+  const TlsVersion(this.wireName, this.label);
+
+  final String wireName;
+  final String label;
+
+  static TlsVersion fromWire(Object? raw) {
+    final value = raw?.toString().trim().toUpperCase();
+    for (final version in TlsVersion.values) {
+      if (version.wireName == value) return version;
+    }
+    return TlsVersion.tls12;
+  }
+}
+
+/// A PPP authentication method an SSTP profile may offer (SPEC 9.1).
+enum PppAuthMethod {
+  pap('PAP'),
+  chap('CHAP'),
+  mschapv2('MSCHAPV2'),
+  eapMschapv2('EAP_MSCHAPV2');
+
+  const PppAuthMethod(this.wireName);
+
+  final String wireName;
+
+  /// What a new profile offers: EAP is carried but off by default (SPEC 9.1.2).
+  static const List<PppAuthMethod> defaults = <PppAuthMethod>[
+    PppAuthMethod.mschapv2,
+    PppAuthMethod.chap,
+    PppAuthMethod.pap,
+  ];
+
+  static List<PppAuthMethod> fromWire(Object? raw) {
+    if (raw is! List) return defaults;
+    final out = <PppAuthMethod>[];
+    for (final entry in raw) {
+      final value = entry?.toString().trim().toUpperCase();
+      for (final method in PppAuthMethod.values) {
+        if (method.wireName == value && !out.contains(method)) out.add(method);
+      }
+    }
+    return out.isEmpty ? defaults : out;
+  }
+}
+
+/// The SSTP half of a connection request (SPEC 9.1.2, 9.1.3).
+///
+/// One object rather than eleven parameters on every layer between the profile
+/// and the method channel: the host reads these only when the request names
+/// SSTP, and an L2TP request carries none of them.
+class SstpConnectSettings extends Equatable {
+  const SstpConnectSettings({
+    this.port = Profile.defaultSstpPort,
+    this.trustPolicy = TrustPolicy.system,
+    this.trustedCertificateIds = const <String>[],
+    this.pinnedFingerprints = const <String>[],
+    this.expectedHostname = '',
+    this.minTlsVersion = TlsVersion.tls12,
+    this.pppAuthMethods = PppAuthMethod.defaults,
+    this.proxyHost = '',
+    this.proxyPort = Profile.defaultProxyPort,
+    this.proxyUsername = '',
+    this.proxyPassword = '',
+  });
+
+  /// What [profile] asks of SSTP, with the proxy dropped when it is switched
+  /// off so the host sees no proxy at all rather than a disabled one.
+  factory SstpConnectSettings.fromProfile(
+    Profile profile, {
+    String proxyPassword = '',
+  }) {
+    final proxyOn = profile.proxyEnabled && profile.proxyHost.trim().isNotEmpty;
+    return SstpConnectSettings(
+      port: profile.port,
+      trustPolicy: profile.trustPolicy,
+      trustedCertificateIds: profile.trustedCertificateIds,
+      pinnedFingerprints: profile.pinnedFingerprints,
+      expectedHostname: profile.expectedHostname,
+      minTlsVersion: profile.minTlsVersion,
+      pppAuthMethods: profile.pppAuthMethods,
+      proxyHost: proxyOn ? profile.proxyHost.trim() : '',
+      proxyPort: proxyOn ? profile.proxyPort : Profile.defaultProxyPort,
+      proxyUsername: proxyOn ? profile.proxyUsername : '',
+      proxyPassword: proxyOn ? proxyPassword : '',
+    );
+  }
+
+  final int port;
+  final TrustPolicy trustPolicy;
+  final List<String> trustedCertificateIds;
+  final List<String> pinnedFingerprints;
+  final String expectedHostname;
+  final TlsVersion minTlsVersion;
+  final List<PppAuthMethod> pppAuthMethods;
+  final String proxyHost;
+  final int proxyPort;
+  final String proxyUsername;
+  final String proxyPassword;
+
+  @override
+  List<Object?> get props => [
+    port,
+    trustPolicy,
+    trustedCertificateIds,
+    pinnedFingerprints,
+    expectedHostname,
+    minTlsVersion,
+    pppAuthMethods,
+    proxyHost,
+    proxyPort,
+    proxyUsername,
+    proxyPassword,
+  ];
+}
+
 /// Saved VPN identity: public fields only; password and PSK live in [ProfileStore] secrets.
 class Profile {
   const Profile({
@@ -416,6 +548,27 @@ class Profile {
     this.dns2Host = '',
     this.dns2Protocol = DnsProtocol.dnsOverUdp,
     this.mtu = defaultVpnMtu,
+    this.createdAt = 0,
+    this.protocol = VpnProtocol.l2tp,
+    this.perAppMode = PerAppMode.off,
+    this.appList = const <String>[],
+    this.killSwitch = false,
+    this.autoReconnect = true,
+    this.ipsecEnabled = true,
+    this.localIdentifier = '',
+    this.phase1Proposals = const <String>[],
+    this.phase2Proposals = const <String>[],
+    this.port = defaultSstpPort,
+    this.trustPolicy = TrustPolicy.system,
+    this.trustedCertificateIds = const <String>[],
+    this.pinnedFingerprints = const <String>[],
+    this.expectedHostname = '',
+    this.minTlsVersion = TlsVersion.tls12,
+    this.pppAuthMethods = PppAuthMethod.defaults,
+    this.proxyEnabled = false,
+    this.proxyHost = '',
+    this.proxyPort = defaultProxyPort,
+    this.proxyUsername = '',
   });
 
   /// TUN interface MTU (bytes). Shared default for new profiles and quick-connect.
@@ -436,6 +589,117 @@ class Profile {
 
   /// Android VpnService [Builder.setMtu]; clamped [minVpnMtu]–[maxVpnMtu].
   final int mtu;
+
+  /// Milliseconds since the epoch, and the order the profile list is drawn in.
+  final int createdAt;
+
+  /// Which engine connects this profile (SPEC 7.1.1).
+  final VpnProtocol protocol;
+
+  // Applies to both protocols.
+  final PerAppMode perAppMode;
+  final List<String> appList;
+  final bool killSwitch;
+  final bool autoReconnect;
+
+  // L2TP/IPsec. The native engine does not yet read the last three (SPEC B.5).
+  final bool ipsecEnabled;
+  final String localIdentifier;
+  final List<String> phase1Proposals;
+  final List<String> phase2Proposals;
+
+  // SSTP.
+  final int port;
+  final TrustPolicy trustPolicy;
+  final List<String> trustedCertificateIds;
+  final List<String> pinnedFingerprints;
+  final String expectedHostname;
+  final TlsVersion minTlsVersion;
+  final List<PppAuthMethod> pppAuthMethods;
+  final bool proxyEnabled;
+  final String proxyHost;
+  final int proxyPort;
+  final String proxyUsername;
+
+  /// Where an SSTP server listens when a profile names no port.
+  static const int defaultSstpPort = 443;
+
+  /// Where an HTTP proxy listens when a profile names no port.
+  static const int defaultProxyPort = 8080;
+
+  /// A copy with [changes] applied.
+  ///
+  /// Every field is here so that an editor which shows only some of them
+  /// cannot quietly drop the rest: a form that rebuilds a profile from the
+  /// fields it draws would reset an SSTP profile to L2TP defaults.
+  Profile copyWith({
+    String? id,
+    String? displayName,
+    String? server,
+    String? user,
+    bool? dnsAutomatic,
+    String? dns1Host,
+    DnsProtocol? dns1Protocol,
+    String? dns2Host,
+    DnsProtocol? dns2Protocol,
+    int? mtu,
+    int? createdAt,
+    VpnProtocol? protocol,
+    PerAppMode? perAppMode,
+    List<String>? appList,
+    bool? killSwitch,
+    bool? autoReconnect,
+    bool? ipsecEnabled,
+    String? localIdentifier,
+    List<String>? phase1Proposals,
+    List<String>? phase2Proposals,
+    int? port,
+    TrustPolicy? trustPolicy,
+    List<String>? trustedCertificateIds,
+    List<String>? pinnedFingerprints,
+    String? expectedHostname,
+    TlsVersion? minTlsVersion,
+    List<PppAuthMethod>? pppAuthMethods,
+    bool? proxyEnabled,
+    String? proxyHost,
+    int? proxyPort,
+    String? proxyUsername,
+  }) {
+    return Profile(
+      id: id ?? this.id,
+      displayName: displayName ?? this.displayName,
+      server: server ?? this.server,
+      user: user ?? this.user,
+      dnsAutomatic: dnsAutomatic ?? this.dnsAutomatic,
+      dns1Host: dns1Host ?? this.dns1Host,
+      dns1Protocol: dns1Protocol ?? this.dns1Protocol,
+      dns2Host: dns2Host ?? this.dns2Host,
+      dns2Protocol: dns2Protocol ?? this.dns2Protocol,
+      mtu: mtu ?? this.mtu,
+      createdAt: createdAt ?? this.createdAt,
+      protocol: protocol ?? this.protocol,
+      perAppMode: perAppMode ?? this.perAppMode,
+      appList: appList ?? this.appList,
+      killSwitch: killSwitch ?? this.killSwitch,
+      autoReconnect: autoReconnect ?? this.autoReconnect,
+      ipsecEnabled: ipsecEnabled ?? this.ipsecEnabled,
+      localIdentifier: localIdentifier ?? this.localIdentifier,
+      phase1Proposals: phase1Proposals ?? this.phase1Proposals,
+      phase2Proposals: phase2Proposals ?? this.phase2Proposals,
+      port: port ?? this.port,
+      trustPolicy: trustPolicy ?? this.trustPolicy,
+      trustedCertificateIds:
+          trustedCertificateIds ?? this.trustedCertificateIds,
+      pinnedFingerprints: pinnedFingerprints ?? this.pinnedFingerprints,
+      expectedHostname: expectedHostname ?? this.expectedHostname,
+      minTlsVersion: minTlsVersion ?? this.minTlsVersion,
+      pppAuthMethods: pppAuthMethods ?? this.pppAuthMethods,
+      proxyEnabled: proxyEnabled ?? this.proxyEnabled,
+      proxyHost: proxyHost ?? this.proxyHost,
+      proxyPort: proxyPort ?? this.proxyPort,
+      proxyUsername: proxyUsername ?? this.proxyUsername,
+    );
+  }
 
   List<DnsServerConfig> get manualDnsServers => orderedDnsServers(
     dns1Host: dns1Host,
@@ -558,20 +822,13 @@ class Profile {
   ) {
     if (invalidDnsServer(text, protocol) == null) return '';
     final requirement = switch (protocol) {
-      DnsProtocol.dnsOverTcp || DnsProtocol.dnsOverUdp => AppText.pick(
-        'hostname or IPv4',
-        'نام میزبان یا IPv4',
-      ),
-      DnsProtocol.dnsOverTls => AppText.pick('hostname', 'نام میزبان'),
-      DnsProtocol.dnsOverHttps => AppText.pick(
-        'hostname or HTTPS URL',
-        'نام میزبان یا نشانی HTTPS',
-      ),
+      DnsProtocol.dnsOverTcp ||
+      DnsProtocol.dnsOverUdp => AppText.current.dnsRequirementHostnameOrIpv4,
+      DnsProtocol.dnsOverTls => AppText.current.dnsRequirementHostname,
+      DnsProtocol.dnsOverHttps =>
+        AppText.current.dnsRequirementHostnameOrHttpsUrl,
     };
-    return AppText.pick(
-      '$label: use $requirement',
-      '$label: از $requirement استفاده کنید',
-    );
+    return AppText.current.dnsUseRequirement(label, requirement);
   }
 
   static List<DnsServerConfig> orderedDnsServers({
@@ -602,6 +859,11 @@ class Profile {
     return configs;
   }
 
+  /// The map the host stores and the export writes.
+  ///
+  /// One shape for both: the method channel and the export file describe the
+  /// same profile, and a second spelling of it would be a second thing to keep
+  /// in step. Keys match `ProfileContract` on the Kotlin side.
   Map<String, dynamic> toJson() => {
     'id': id,
     'displayName': displayName,
@@ -613,6 +875,51 @@ class Profile {
     'dns2Host': normalizeDnsServerForProtocol(dns2Host, dns2Protocol),
     'dns2Protocol': dns2Protocol.jsonValue,
     'mtu': mtu,
+    'createdAt': createdAt,
+    'protocol': protocol.wireValue,
+    'perAppMode': perAppMode.wireName,
+    'appList': appList,
+    'killSwitch': killSwitch,
+    'autoReconnect': autoReconnect,
+    'ipsecEnabled': ipsecEnabled,
+    'localIdentifier': localIdentifier,
+    'phase1Proposals': phase1Proposals,
+    'phase2Proposals': phase2Proposals,
+    'port': port,
+    'trustPolicy': trustPolicy.wireName,
+    'trustedCertificateIds': trustedCertificateIds,
+    'pinnedFingerprints': pinnedFingerprints,
+    'expectedHostname': expectedHostname,
+    'minTlsVersion': minTlsVersion.wireName,
+    'pppAuthMethods': pppAuthMethods.map((m) => m.wireName).toList(),
+    'proxyEnabled': proxyEnabled,
+    'proxyHost': proxyHost,
+    'proxyPort': proxyPort,
+    'proxyUsername': proxyUsername,
+  };
+
+  /// The strings in [raw], trimmed, without blanks or repeats.
+  static List<String> stringList(Object? raw) {
+    if (raw is! List) return const <String>[];
+    final out = <String>[];
+    for (final entry in raw) {
+      final value = entry?.toString().trim() ?? '';
+      if (value.isNotEmpty && !out.contains(value)) out.add(value);
+    }
+    return out;
+  }
+
+  static int _intOr(Object? raw, int fallback) => switch (raw) {
+    int value => value,
+    num value => value.toInt(),
+    String value => int.tryParse(value.trim()) ?? fallback,
+    _ => fallback,
+  };
+
+  static bool _boolOr(Object? raw, bool fallback) => switch (raw) {
+    bool value => value,
+    String value => bool.tryParse(value) ?? fallback,
+    _ => fallback,
   };
 
   static Profile? tryFromJson(Object? raw) {
@@ -661,6 +968,34 @@ class Profile {
       dns2Host: normalizeDnsServerForProtocol(dns2Host, parsedDns2Protocol),
       dns2Protocol: parsedDns2Protocol,
       mtu: mtu,
+      // Everything below arrived with phase 8. A profile written before it has
+      // none of these keys, and the defaults are what it always meant: L2TP
+      // over IPsec, every application in the tunnel.
+      createdAt: _intOr(m['createdAt'], 0),
+      protocol: VpnProtocol.parse(m['protocol']) ?? VpnProtocol.l2tp,
+      perAppMode: PerAppMode.fromWire(m['perAppMode']),
+      appList: stringList(m['appList']),
+      killSwitch: _boolOr(m['killSwitch'], false),
+      autoReconnect: _boolOr(m['autoReconnect'], true),
+      ipsecEnabled: _boolOr(m['ipsecEnabled'], true),
+      localIdentifier: (m['localIdentifier'] as String?)?.trim() ?? '',
+      phase1Proposals: stringList(m['phase1Proposals']),
+      phase2Proposals: stringList(m['phase2Proposals']),
+      port: _intOr(m['port'], defaultSstpPort),
+      trustPolicy:
+          TrustPolicy.tryFromWire(m['trustPolicy'] as String?) ??
+          TrustPolicy.system,
+      trustedCertificateIds: stringList(m['trustedCertificateIds']),
+      pinnedFingerprints: stringList(
+        m['pinnedFingerprints'],
+      ).map((value) => value.toLowerCase()).toList(),
+      expectedHostname: (m['expectedHostname'] as String?)?.trim() ?? '',
+      minTlsVersion: TlsVersion.fromWire(m['minTlsVersion']),
+      pppAuthMethods: PppAuthMethod.fromWire(m['pppAuthMethods']),
+      proxyEnabled: _boolOr(m['proxyEnabled'], false),
+      proxyHost: (m['proxyHost'] as String?)?.trim() ?? '',
+      proxyPort: _intOr(m['proxyPort'], defaultProxyPort),
+      proxyUsername: (m['proxyUsername'] as String?) ?? '',
     );
   }
 }

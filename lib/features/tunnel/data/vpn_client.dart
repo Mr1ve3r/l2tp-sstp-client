@@ -3,17 +3,29 @@ import 'package:flutter/services.dart';
 
 import 'package:tunnel_forge/features/profiles/domain/profile_models.dart';
 import 'package:tunnel_forge/core/logging/log_entry.dart';
+import 'package:tunnel_forge/core/vpn_protocol.dart';
 import 'package:tunnel_forge/features/home/domain/home_models.dart';
 import 'package:tunnel_forge/features/tunnel/data/vpn_contract.dart';
 import 'package:tunnel_forge/features/tunnel/domain/tunnel_runtime_state.dart';
 
 /// Host -> Dart: [VpnTunnelState] value, a human-readable [detail], and the originating [attemptId].
 typedef VpnTunnelHostCallback =
-    void Function(String state, String detail, String attemptId);
+    void Function(
+      String state,
+      String detail,
+      String attemptId, {
+      String? errorKey,
+    });
 
 /// Host -> Dart: one engine log line ([VpnContract.argEngineLogLevel] is an Android log priority).
 typedef VpnEngineLogCallback =
-    void Function(LogLevel level, LogSource source, String tag, String message);
+    void Function(
+      LogLevel level,
+      LogSource source,
+      String tag,
+      String message,
+      VpnProtocol? protocol,
+    );
 
 /// Host -> Dart: current proxy listener exposure after startup or shutdown.
 typedef VpnProxyExposureCallback = void Function(ProxyExposure exposure);
@@ -43,7 +55,13 @@ class VpnClient {
         final state = raw[VpnContract.argTunnelState]?.toString() ?? '';
         final detail = raw[VpnContract.argTunnelDetail]?.toString() ?? '';
         final attemptId = raw[VpnContract.argAttemptId]?.toString() ?? '';
-        _onTunnelState?.call(state, detail, attemptId);
+        final errorKey = raw[VpnContract.argTunnelErrorKey]?.toString();
+        _onTunnelState?.call(
+          state,
+          detail,
+          attemptId,
+          errorKey: errorKey == null || errorKey.isEmpty ? null : errorKey,
+        );
       }
       return;
     }
@@ -66,6 +84,7 @@ class VpnClient {
           source,
           tag,
           message,
+          VpnProtocol.parse(raw[VpnContract.argEngineLogProtocol]),
         );
       }
       return;
@@ -127,6 +146,7 @@ class VpnClient {
         connectionMode: mode,
         attemptId: attemptId,
         proxyExposure: exposure,
+        session: TunnelSession.tryFromMap(raw),
       );
     } on PlatformException {
       return const TunnelRuntimeState.idle();
@@ -199,6 +219,10 @@ class VpnClient {
   Future<void> connect({
     String attemptId = '',
     required String server,
+    // The protocol the host dispatches on (SPEC 7.1.1), and the fields it reads
+    // only when that protocol is SSTP.
+    VpnProtocol protocol = VpnProtocol.l2tp,
+    SstpConnectSettings sstp = const SstpConnectSettings(),
     String? profileName,
     ConnectionMode connectionMode = ConnectionMode.vpnTunnel,
     String user = '',
@@ -234,6 +258,32 @@ class VpnClient {
       VpnContract.argDnsAutomatic: dnsAutomatic,
       VpnContract.argDnsServers: normalizedDnsServers,
       VpnContract.argMtu: mtuClamped,
+      VpnContract.argProtocol: protocol.wireValue,
+      if (protocol == VpnProtocol.sstp) ...<String, Object?>{
+        VpnContract.argSstpPort: ProxySettings.normalizePort(
+          sstp.port,
+          fallback: Profile.defaultSstpPort,
+        ),
+        VpnContract.argSstpTrustPolicy: sstp.trustPolicy.wireName,
+        VpnContract.argSstpCertificateIds: List<String>.from(
+          sstp.trustedCertificateIds,
+        ),
+        VpnContract.argSstpPinnedFingerprints: List<String>.from(
+          sstp.pinnedFingerprints,
+        ),
+        VpnContract.argSstpExpectedHostname: sstp.expectedHostname.trim(),
+        VpnContract.argSstpMinTlsVersion: sstp.minTlsVersion.wireName,
+        VpnContract.argSstpAuthMethods: sstp.pppAuthMethods
+            .map((method) => method.wireName)
+            .toList(growable: false),
+        VpnContract.argSstpProxyHost: sstp.proxyHost.trim(),
+        VpnContract.argSstpProxyPort: ProxySettings.normalizePort(
+          sstp.proxyPort,
+          fallback: Profile.defaultProxyPort,
+        ),
+        VpnContract.argSstpProxyUsername: sstp.proxyUsername,
+        VpnContract.argSstpProxyPassword: sstp.proxyPassword,
+      },
       VpnContract.argConnectionMode: connectionMode.jsonValue,
       VpnContract.argSplitTunnelEnabled: splitTunnelSettings.enabled,
       VpnContract.argSplitTunnelMode: splitTunnelSettings.mode.jsonValue,
@@ -253,6 +303,34 @@ class VpnClient {
       ),
       VpnContract.argProxyAllowLan: proxySettings.allowLanConnections,
     });
+  }
+
+  /// Connects a failover group: its members in order, until one comes up
+  /// (SPEC 10.1).
+  ///
+  /// The group's members carry their own servers, protocols and secrets, so
+  /// none of that is sent here — only the proxy listener settings, which are
+  /// this application's and not any profile's. Progress arrives as ordinary
+  /// tunnel state, with the member being tried named in the detail.
+  Future<void> connectGroup({
+    required String groupId,
+    String attemptId = '',
+    ProxySettings proxySettings = const ProxySettings(),
+  }) {
+    return _channel
+        .invokeMethod<void>(VpnContract.connectGroup, <String, Object?>{
+          VpnContract.argGroupId: groupId,
+          if (attemptId.isNotEmpty) VpnContract.argAttemptId: attemptId,
+          VpnContract.argProxyHttpPort: ProxySettings.normalizePort(
+            proxySettings.httpPort,
+            fallback: ProxySettings.defaultHttpPort,
+          ),
+          VpnContract.argProxySocksPort: ProxySettings.normalizePort(
+            proxySettings.socksPort,
+            fallback: ProxySettings.defaultSocksPort,
+          ),
+          VpnContract.argProxyAllowLan: proxySettings.allowLanConnections,
+        });
   }
 
   /// Launcher icon as PNG bytes, or null (Android; missing plugin returns null).

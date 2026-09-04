@@ -11,6 +11,7 @@ import android.os.Build
 import android.os.IBinder
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import io.github.mr1ve3r.combined.engine.l2tp.L2tpExitCode
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
@@ -203,7 +204,7 @@ class ProxyTunnelService : Service() {
                     negotiatedSecondaryDns,
                 )
             VpnTunnelEvents.emitEngineLog(Log.DEBUG, TAG, "${prefixAttempt(attemptId)}nativeNegotiate finished with exit code=$negResult")
-            if (negResult == TunnelVpnService.DEFAULT_NATIVE_EXIT_STOPPED && stopRequested) {
+            if (negResult == L2tpExitCode.STOPPED && stopRequested) {
                 VpnTunnelEvents.emitEngineLog(
                     Log.INFO,
                     TAG,
@@ -784,9 +785,9 @@ class ProxyTunnelService : Service() {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("TunnelForge proxy")
+            .setContentTitle(getString(R.string.proxy_notification_title))
             .setContentText(text)
-            .setSmallIcon(android.R.drawable.ic_menu_share)
+            .setSmallIcon(R.drawable.ic_stat_logo)
             .setContentIntent(pending)
             .setOngoing(true)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)

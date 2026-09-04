@@ -5,11 +5,24 @@ import android.os.Looper
 import android.util.Log
 import androidx.annotation.Keep
 import io.flutter.plugin.common.MethodChannel
+import io.github.mr1ve3r.combined.engine.Protocol
+import io.github.mr1ve3r.combined.engine.l2tp.L2tpNativeCallbacks
 
 /** Pushes tunnel lifecycle updates to Flutter on the main thread (same [MethodChannel] as [MainActivity]). */
 object VpnTunnelEvents {
     @Volatile
     private var channel: MethodChannel? = null
+
+    /**
+     * The protocol of the running session, used for log lines that come from
+     * the host rather than from an engine.
+     *
+     * The host's own lines are about whichever tunnel is up, and one buffer
+     * holding both protocols is only filterable if every line carries one
+     * (SPEC 7.1.7). `null` means no session, and those lines show as neither.
+     */
+    @Volatile
+    var sessionProtocol: Protocol? = null
 
     private val noopResult =
         object : MethodChannel.Result {
@@ -55,13 +68,20 @@ object VpnTunnelEvents {
         }
     }
 
-    fun emit(state: String, detail: String?, attemptId: String? = null) {
+    fun emit(
+        state: String,
+        detail: String?,
+        attemptId: String? = null,
+        errorKey: String? = null,
+    ) {
         invokeOnMain(
             VpnContract.ON_TUNNEL_STATE,
             mapOf(
                 VpnContract.ARG_ATTEMPT_ID to (attemptId ?: ""),
                 VpnContract.ARG_TUNNEL_STATE to state,
                 VpnContract.ARG_TUNNEL_DETAIL to (detail ?: ""),
+                VpnContract.ARG_TUNNEL_PROTOCOL to sessionProtocol?.name?.lowercase(),
+                VpnContract.ARG_TUNNEL_ERROR_KEY to errorKey,
             ),
         )
     }
@@ -88,6 +108,7 @@ object VpnTunnelEvents {
         tag: String,
         message: String,
         source: String = VpnContract.LOG_SOURCE_KOTLIN,
+        protocol: Protocol? = sessionProtocol,
     ) {
         val sanitizedMessage = sanitizeLogMessage(message)
         if (!shouldForwardEngineLog(priority)) return
@@ -98,14 +119,23 @@ object VpnTunnelEvents {
                 VpnContract.ARG_ENGINE_LOG_SOURCE to source,
                 VpnContract.ARG_ENGINE_LOG_TAG to tag,
                 VpnContract.ARG_ENGINE_LOG_MESSAGE to sanitizedMessage,
+                VpnContract.ARG_ENGINE_LOG_PROTOCOL to protocol?.name?.lowercase(),
             ),
         )
     }
 
+    /**
+     * Called from JNI by name. The C layer resolves this method at load time,
+     * so its class, name and signature are fixed.
+     */
     @Keep
     @JvmStatic
     fun emitEngineLogFromNative(priority: Int, tag: String, message: String) {
-        emitEngineLog(priority, tag, message, source = VpnContract.LOG_SOURCE_NATIVE)
+        // The running engine republishes the line as an EngineLogEvent with
+        // protocol = L2TP (SPEC 4.1.5). Forwarding here rather than from the C
+        // layer keeps the native sources untouched, as phase 4 requires.
+        L2tpNativeCallbacks.nativeLog(priority, tag, message)
+        emitEngineLog(priority, tag, message, source = VpnContract.LOG_SOURCE_NATIVE, protocol = Protocol.L2TP)
     }
 
     internal fun shouldForwardEngineLog(priority: Int): Boolean =

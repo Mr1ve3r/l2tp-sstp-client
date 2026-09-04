@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import 'package:tunnel_forge/l10n/app_localizations.dart';
+import 'package:tunnel_forge/features/tunnel/domain/tunnel_runtime_state.dart';
 import 'package:tunnel_forge/app/theme/app_theme.dart';
 
 enum _ConnectionVisualState {
@@ -147,6 +148,7 @@ class ConnectionPanel extends StatelessWidget {
     required this.onConnectivityTap,
     required this.colorScheme,
     required this.textTheme,
+    this.session,
   });
 
   final bool profilesLoading;
@@ -166,6 +168,9 @@ class ConnectionPanel extends StatelessWidget {
   final VoidCallback onConnectivityTap;
   final ColorScheme colorScheme;
   final TextTheme textTheme;
+
+  /// What the running tunnel negotiated, or null when nothing is up.
+  final TunnelSession? session;
 
   @override
   Widget build(BuildContext context) {
@@ -215,6 +220,14 @@ class ConnectionPanel extends StatelessWidget {
                   colorScheme: colorScheme,
                   textTheme: textTheme,
                 ),
+                if (session != null) ...[
+                  const SizedBox(height: 12),
+                  _SessionCard(
+                    session: session!,
+                    colorScheme: colorScheme,
+                    textTheme: textTheme,
+                  ),
+                ],
                 SizedBox(height: centerGap),
                 Builder(
                   builder: (context) {
@@ -589,6 +602,129 @@ class ConnectionPanel extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+}
+
+/// What the running session negotiated: protocol, address, DNS, MTU, how long
+/// it has been up and what it has carried (SPEC 9.1.7).
+class _SessionCard extends StatefulWidget {
+  const _SessionCard({
+    required this.session,
+    required this.colorScheme,
+    required this.textTheme,
+  });
+
+  final TunnelSession session;
+  final ColorScheme colorScheme;
+  final TextTheme textTheme;
+
+  @override
+  State<_SessionCard> createState() => _SessionCardState();
+}
+
+class _SessionCardState extends State<_SessionCard> {
+  Timer? _ticker;
+
+  @override
+  void initState() {
+    super.initState();
+    // The counters arrive from the host; the clock is ours to advance.
+    _ticker = Timer.periodic(
+      const Duration(seconds: 1),
+      (_) => setState(() {}),
+    );
+  }
+
+  @override
+  void dispose() {
+    _ticker?.cancel();
+    super.dispose();
+  }
+
+  static String formatDuration(Duration value) {
+    final seconds = value.isNegative ? 0 : value.inSeconds;
+    final hours = seconds ~/ 3600;
+    final minutes = (seconds % 3600) ~/ 60;
+    final rest = seconds % 60;
+    final mm = minutes.toString().padLeft(2, '0');
+    final ss = rest.toString().padLeft(2, '0');
+    return hours == 0 ? '$mm:$ss' : '$hours:$mm:$ss';
+  }
+
+  static String formatBytes(int bytes) {
+    if (bytes < 1024) return '$bytes B';
+    const units = ['KB', 'MB', 'GB', 'TB'];
+    var value = bytes / 1024;
+    var unit = 0;
+    while (value >= 1024 && unit < units.length - 1) {
+      value /= 1024;
+      unit += 1;
+    }
+    return '${value.toStringAsFixed(value >= 100 ? 0 : 1)} ${units[unit]}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final t = AppLocalizations.of(context);
+    final session = widget.session;
+    final cs = widget.colorScheme;
+    final tt = widget.textTheme;
+    final rows = <(String, String)>[
+      (t.protocolLabel, session.protocol.label),
+      (t.sessionAddress, session.address),
+      if (session.dnsServers.isNotEmpty)
+        (t.sessionDns, session.dnsServers.join(', ')),
+      (t.sessionMtu, '${session.mtu}'),
+      (
+        t.sessionDuration,
+        formatDuration(DateTime.now().difference(session.since)),
+      ),
+      (t.sessionReceived, formatBytes(session.rxBytes)),
+      (t.sessionSent, formatBytes(session.txBytes)),
+      if (session.proxyHost != null) (t.sessionViaProxy, session.proxyHost!),
+    ];
+    return Container(
+      key: const Key('session_card'),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: cs.surfaceContainerHighest.withValues(alpha: 0.45),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(t.sessionDetails, style: tt.titleSmall),
+          const SizedBox(height: 8),
+          ...rows.map(
+            (row) => Padding(
+              padding: const EdgeInsets.symmetric(vertical: 2),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Text(
+                      row.$1,
+                      style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      row.$2,
+                      textAlign: TextAlign.end,
+                      style: tt.bodySmall?.copyWith(
+                        fontWeight: FontWeight.w600,
+                        fontFeatures: const [FontFeature.tabularFigures()],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

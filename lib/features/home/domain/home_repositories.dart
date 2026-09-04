@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:tunnel_forge/core/network/connectivity_checker.dart';
+import 'package:tunnel_forge/features/profiles/domain/failover_group.dart';
 import 'package:tunnel_forge/features/profiles/domain/profile_models.dart';
 import 'package:tunnel_forge/features/profiles/domain/profile_transfer.dart';
 import 'package:tunnel_forge/core/logging/log_entry.dart';
@@ -16,14 +17,40 @@ abstract class ProfilesRepository {
     Profile profile, {
     required String password,
     required String psk,
+    String proxyPassword,
   });
   Future<Profile> saveImportedProfile(
     ProfileTransferEnvelope envelope, {
     bool selectAsLastProfile = true,
   });
   Future<void> deleteProfile(String id);
+
+  /// Failover groups: an ordered list of profiles tried until one comes up
+  /// (SPEC 10.1). The members are profile ids, resolved against [loadProfiles].
+  Future<List<FailoverGroup>> loadFailoverGroups();
+  Future<FailoverGroup> saveFailoverGroup(FailoverGroup group);
+  Future<void> deleteFailoverGroup(String id);
+
+  /// The group the connect button would start, when one is chosen instead of a
+  /// profile. Null and a null [loadLastProfileId] are different states: the
+  /// first means no group is chosen, not that nothing is.
+  Future<String?> loadLastGroupId();
+  Future<void> setLastGroupId(String? id);
+
+  /// What the SSTP section of the editor offers: the certificates in the
+  /// store, and the trust policies this build allows (SPEC 5.5, 9.1.2).
+  Future<TrustOptions> loadTrustOptions();
   Future<void> copyProfileShareLink(String id);
-  Future<void> exportProfileFile(String id);
+
+  /// Writes the profile out. Without [password] the file carries no secret;
+  /// with one, the secrets go inside an encrypted container (SPEC 8.1.4).
+  Future<void> exportProfileFile(String id, {String? password});
+
+  /// Reads a container written by [exportProfileFile] with a password.
+  Future<ProfileTransferEnvelope> openSealedTransfer(
+    String payload,
+    String password,
+  );
   String newProfileId();
 }
 
@@ -62,6 +89,11 @@ abstract class TunnelRepository {
   Future<bool> prepareVpn();
   Future<TunnelRuntimeState> getRuntimeState();
   Future<void> connect(TunnelConnectRequest request);
+
+  /// Starts a failover group: its members in order, until one comes up
+  /// (SPEC 10.1). The members carry their own servers and secrets, so none of
+  /// that is passed — the host reads it from the store.
+  Future<void> connectGroup(TunnelGroupConnectRequest request);
   Future<void> disconnect({
     required ConnectionMode connectionMode,
     String attemptId = '',

@@ -1,16 +1,21 @@
-TunnelForge is an Android VPN client for networks that still rely on L2TP/IPsec with IKEv1.
+L2/SS/TP is an Android VPN client for networks that still rely on L2TP/IPsec with IKEv1, and for networks where those protocols are blocked.
 
-Android 12 removed the built-in L2TP and PPTP VPN options. TunnelForge provides a maintained client path for organizations, schools, universities, and personal networks that cannot immediately replace existing L2TP/IPsec servers.
+Android 12 removed the built-in L2TP and PPTP VPN options. L2/SS/TP provides a maintained client path for organizations, schools, universities, and personal networks that cannot immediately replace existing servers. SSTP is there for the case L2TP cannot handle: it runs over TLS on port 443, and works on networks where UDP/500 and ESP are filtered.
 
 Features:
 
 * L2TP with optional IPsec IKEv1
+* SSTP over TLS, with PAP, CHAP, MSCHAPv2 and EAP-MSCHAPv2
+* SSTP through an HTTP proxy, with or without proxy authentication
+* A server certificate store: system trust, your own CA only, or a pinned certificate
+* Failover groups that try profiles in order and stop on an authentication failure
 * Full-device VPN tunnel mode
-* Proxy-only mode with local HTTP and SOCKS5 listeners
 * Per-app routing for include or exclude lists
 * Multiple profiles with local credential storage
 * Custom DNS options, including UDP, TCP, TLS, and HTTPS
 * Configurable MTU
 * Connection state and detailed local logs
 
-TunnelForge does not provide a VPN service or account. You need access to an existing compatible VPN server.
+L2/SS/TP does not provide a VPN service or account. You need access to an existing compatible VPN server.
+
+It is a fork of TunnelForge, with the SSTP engine derived from Open SSTP Client. It is not affiliated with or endorsed by either project.

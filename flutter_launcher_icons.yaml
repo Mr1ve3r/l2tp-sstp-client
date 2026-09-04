@@ -2,4 +2,25 @@ flutter_launcher_icons:
   android: true
   ios: false
   image_path_android: "resources/logo/tf-xxxhdpi.png"
-  min_sdk_android: 21
+
+  # minSdk is 31, so every device that runs this build masks the icon itself.
+  # Without an adaptive icon the launcher takes the legacy bitmap, shrinks it
+  # and drops it on a white plate -- the mint square ends up as a small tile
+  # inside someone else's circle.
+  min_sdk_android: 31
+
+  # The background is the logo's own plate colour, sampled from the artwork.
+  # It has to match exactly: the foreground below is the full logo, plate and
+  # all, so any difference would show up as a seam where the inset square ends.
+  adaptive_icon_background: "#D1FAE5"
+  adaptive_icon_foreground: "resources/logo/tf-xxxhdpi.png"
+
+  # The glyph block is a tall column: 32% of the icon wide, 84% tall. Its
+  # half-diagonal is 0.45 of the icon side, and the guaranteed-visible circle
+  # has a radius of 0.33, so the artwork has to be scaled to at most 0.74 --
+  # an inset of 13%. 20% is that with margin, and still fills the mask.
+  adaptive_icon_foreground_inset: 20
+
+  # Android 13+ themed icons. The system tints this by alpha, so it must be a
+  # silhouette: the plate is transparent and only the letters carry alpha.
+  adaptive_icon_monochrome: "resources/logo/tf-monochrome.png"

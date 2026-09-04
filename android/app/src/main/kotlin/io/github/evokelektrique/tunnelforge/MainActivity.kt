@@ -23,7 +23,15 @@ import androidx.core.content.IntentCompat
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
+import io.github.mr1ve3r.combined.engine.EngineProfile
+import io.github.mr1ve3r.combined.core.profile.FailoverGroupStore
+import io.github.mr1ve3r.combined.core.profile.ProfileStore
+import io.github.mr1ve3r.combined.core.trust.store.TrustStore
 import java.io.ByteArrayOutputStream
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 
 class MainActivity : FlutterActivity() {
 
@@ -32,6 +40,14 @@ class MainActivity : FlutterActivity() {
     private var pendingConnectIntent: Intent? = null
     private var profileTransferChannel: MethodChannel? = null
     private val pendingProfileTransfers = mutableListOf<Map<String, String?>>()
+
+    private var certificateDocumentResult: ((Uri?) -> Unit)? = null
+
+    // The certificate and profile stores answer from a coroutine, and a method
+    // channel reply has to be made on the main thread. Cancelled in onDestroy,
+    // so an answer that arrives after the activity is gone is dropped rather
+    // than delivered into a dead engine.
+    private val trustScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -70,6 +86,8 @@ class MainActivity : FlutterActivity() {
                 else -> result.notImplemented()
             }
         }
+        configureTrustChannel(flutterEngine)
+        configureProfileChannel(flutterEngine)
         handleProfileTransferIntent(intent, deliverImmediately = false)
         VpnTunnelEvents.attach(vpnChannel)
         vpnChannel.setMethodCallHandler { call, result ->
@@ -109,6 +127,40 @@ class MainActivity : FlutterActivity() {
                         AppLog.d(TAG, "vpn_call prepareVpn result needs_ui=true")
                         startActivityForResult(intent, REQUEST_VPN_PERMISSION)
                     }
+                }
+                VpnContract.CONNECT_GROUP -> {
+                    val args = call.arguments as? Map<*, *>
+                    val groupId = (args?.get(VpnContract.ARG_GROUP_ID) as? String)?.trim().orEmpty()
+                    val attemptId = (args?.get(VpnContract.ARG_ATTEMPT_ID) as? String).orEmpty()
+                    if (groupId.isEmpty()) {
+                        AppLog.e(TAG, "vpn_call connectGroup rejected bad_args (no group)")
+                        result.error("bad_args", "Expected a group id", null)
+                        return@setMethodCallHandler
+                    }
+                    // A group only ever runs a VPN tunnel: its members are whole
+                    // profiles with their own protocols, and the local-proxy mode
+                    // has no second member to fall through to.
+                    ProxyTunnelService.stopActiveSessionForModeSwitch("starting failover group")
+                    AppLog.d(TAG, "vpn_call connectGroup start attempt=$attemptId group=$groupId")
+                    val intent =
+                        Intent(this, TunnelVpnService::class.java).apply {
+                            action = TunnelVpnService.ACTION_START_GROUP
+                            putExtra(TunnelVpnService.EXTRA_ATTEMPT_ID, attemptId)
+                            putExtra(TunnelVpnService.EXTRA_GROUP_ID, groupId)
+                            putExtra(
+                                TunnelVpnService.EXTRA_PROXY_HTTP_PORT,
+                                sanitizePort(args?.get(VpnContract.ARG_PROXY_HTTP_PORT), ProxyTunnelService.DEFAULT_HTTP_PORT),
+                            )
+                            putExtra(
+                                TunnelVpnService.EXTRA_PROXY_SOCKS_PORT,
+                                sanitizePort(args?.get(VpnContract.ARG_PROXY_SOCKS_PORT), ProxyTunnelService.DEFAULT_SOCKS_PORT),
+                            )
+                            putExtra(
+                                TunnelVpnService.EXTRA_PROXY_ALLOW_LAN,
+                                args?.get(VpnContract.ARG_PROXY_ALLOW_LAN) as? Boolean ?: false,
+                            )
+                        }
+                    dispatchConnectIntent(intent, result, "vpn_call connectGroup")
                 }
                 VpnContract.CONNECT -> {
                     val args = call.arguments as? Map<*, *>
@@ -252,6 +304,7 @@ class MainActivity : FlutterActivity() {
                                     TunnelVpnService.EXTRA_SPLIT_TUNNEL_EXCLUSIVE_PACKAGES,
                                     ArrayList(exclusivePackages),
                                 )
+                                putProtocolExtras(this, args)
                             }
                         }
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !hasPostNotificationsPermission()) {
@@ -352,7 +405,97 @@ class MainActivity : FlutterActivity() {
         )
     }
 
+    /**
+     * Wires the certificate store (SPEC phase 5).
+     *
+     * The store's work is suspending and touches storage, so it runs on
+     * [trustScope] rather than the calling thread.
+     */
+    private fun configureTrustChannel(flutterEngine: FlutterEngine) {
+        val channel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, TrustContract.METHOD_CHANNEL)
+        val trustChannel =
+            TrustChannel(
+                context = applicationContext,
+                store = TrustStore.get(applicationContext),
+                scope = trustScope,
+                picker = ::pickCertificateDocument,
+                // The INSECURE policy exists for debugging a server whose
+                // certificate is not yet in order. A release build must not
+                // offer it at all (SPEC 5.5).
+                allowInsecurePolicy = (applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0,
+            )
+        channel.setMethodCallHandler { call, result ->
+            trustChannel.handle(
+                call.method,
+                call.arguments,
+                object : TrustChannel.Reply {
+                    override fun success(value: Any?) = result.success(value)
+
+                    override fun error(code: String, message: String) = result.error(code, message, null)
+
+                    override fun notImplemented() = result.notImplemented()
+                },
+            )
+        }
+    }
+
+    /**
+     * Wires the profile store (SPEC phase 8).
+     *
+     * The store is the same one the service reads when the system starts it
+     * without the application running, which is the point of it being in Kotlin.
+     */
+    private fun configureProfileChannel(flutterEngine: FlutterEngine) {
+        val channel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, ProfileContract.METHOD_CHANNEL)
+        val profileChannel =
+            ProfileChannel(
+                profiles = ProfileStore.get(applicationContext),
+                trust = TrustStore.get(applicationContext),
+                groups = FailoverGroupStore.get(applicationContext),
+                scope = trustScope,
+            )
+        channel.setMethodCallHandler { call, result ->
+            profileChannel.handle(
+                call.method,
+                call.arguments,
+                object : TrustChannel.Reply {
+                    override fun success(value: Any?) = result.success(value)
+
+                    override fun error(code: String, message: String) = result.error(code, message, null)
+
+                    override fun notImplemented() = result.notImplemented()
+                },
+            )
+        }
+    }
+
+    /** Opens the system document picker for a certificate file (SPEC 5.3 A). */
+    private fun pickCertificateDocument(onResult: (Uri?) -> Unit) {
+        val previous = certificateDocumentResult
+        certificateDocumentResult = onResult
+        // A second pick while one is open replaces the first. Answering the
+        // abandoned call keeps the Flutter side from waiting on a future that
+        // will never complete.
+        previous?.invoke(null)
+        val intent =
+            Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                addCategory(Intent.CATEGORY_OPENABLE)
+                type = "*/*"
+                putExtra(Intent.EXTRA_MIME_TYPES, TrustContract.CERTIFICATE_MIME_TYPES)
+            }
+        try {
+            startActivityForResult(intent, REQUEST_PICK_CERTIFICATE)
+        } catch (e: ActivityNotFoundException) {
+            AppLog.e(TAG, "trust_call pickCertificateFile has no document picker", e)
+            certificateDocumentResult = null
+            onResult(null)
+        }
+    }
+
     override fun onDestroy() {
+        certificateDocumentResult?.invoke(null)
+        certificateDocumentResult = null
+        trustScope.cancel()
         profileTransferChannel = null
         VpnTunnelEvents.detach()
         super.onDestroy()
@@ -367,6 +510,12 @@ class MainActivity : FlutterActivity() {
     @Deprecated("Deprecated in Java")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == REQUEST_PICK_CERTIFICATE) {
+            val pending = certificateDocumentResult ?: return
+            certificateDocumentResult = null
+            pending(data?.data.takeIf { resultCode == Activity.RESULT_OK })
+            return
+        }
         if (requestCode != REQUEST_VPN_PERMISSION) return
         val pending = vpnPermissionResult ?: return
         vpnPermissionResult = null
@@ -729,6 +878,56 @@ class MainActivity : FlutterActivity() {
         return checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
     }
 
+    /**
+     * Copies the protocol selector and the SSTP fields onto the start intent.
+     *
+     * A request that names no protocol, or names one this build does not know,
+     * carries no SSTP fields either and starts an L2TP session — which is what
+     * every request written before phase 7 meant (SPEC 7.1.1).
+     */
+    private fun putProtocolExtras(intent: Intent, args: Map<*, *>) {
+        val protocol = TunnelProtocol.fromWireValue(args[VpnContract.ARG_PROTOCOL] as? String)
+        intent.putExtra(TunnelVpnService.EXTRA_PROTOCOL, protocol.wireValue)
+        if (protocol != TunnelProtocol.SSTP) return
+        intent.putExtra(
+            TunnelVpnService.EXTRA_SSTP_PORT,
+            sanitizePort(args[VpnContract.ARG_SSTP_PORT], EngineProfile.Sstp.DEFAULT_PORT),
+        )
+        intent.putExtra(TunnelVpnService.EXTRA_SSTP_TRUST_POLICY, args[VpnContract.ARG_SSTP_TRUST_POLICY] as? String)
+        intent.putStringArrayListExtra(
+            TunnelVpnService.EXTRA_SSTP_CERTIFICATE_IDS,
+            stringListArg(args[VpnContract.ARG_SSTP_CERTIFICATE_IDS]),
+        )
+        intent.putStringArrayListExtra(
+            TunnelVpnService.EXTRA_SSTP_PINNED_FINGERPRINTS,
+            stringListArg(args[VpnContract.ARG_SSTP_PINNED_FINGERPRINTS]),
+        )
+        intent.putExtra(TunnelVpnService.EXTRA_SSTP_EXPECTED_HOSTNAME, args[VpnContract.ARG_SSTP_EXPECTED_HOSTNAME] as? String)
+        intent.putExtra(TunnelVpnService.EXTRA_SSTP_MIN_TLS_VERSION, args[VpnContract.ARG_SSTP_MIN_TLS_VERSION] as? String)
+        intent.putStringArrayListExtra(
+            TunnelVpnService.EXTRA_SSTP_AUTH_METHODS,
+            stringListArg(args[VpnContract.ARG_SSTP_AUTH_METHODS]),
+        )
+        intent.putExtra(TunnelVpnService.EXTRA_SSTP_PROXY_HOST, args[VpnContract.ARG_SSTP_PROXY_HOST] as? String)
+        intent.putExtra(
+            TunnelVpnService.EXTRA_SSTP_PROXY_PORT,
+            sanitizePort(args[VpnContract.ARG_SSTP_PROXY_PORT], EngineProfiles.DEFAULT_PROXY_PORT),
+        )
+        intent.putExtra(TunnelVpnService.EXTRA_SSTP_PROXY_USERNAME, args[VpnContract.ARG_SSTP_PROXY_USERNAME] as? String)
+        intent.putExtra(TunnelVpnService.EXTRA_SSTP_PROXY_PASSWORD, args[VpnContract.ARG_SSTP_PROXY_PASSWORD] as? String)
+    }
+
+    private fun stringListArg(raw: Any?): ArrayList<String> {
+        val out = ArrayList<String>()
+        if (raw is List<*>) {
+            raw.forEach { entry ->
+                val value = (entry as? String)?.trim()
+                if (!value.isNullOrEmpty()) out.add(value)
+            }
+        }
+        return out
+    }
+
     private fun handleProfileTransferIntent(intent: Intent?, deliverImmediately: Boolean) {
         val transfer = parseProfileTransferIntent(intent) ?: return
         dispatchProfileTransfer(transfer, deliverImmediately)
@@ -836,6 +1035,7 @@ class MainActivity : FlutterActivity() {
         private const val TAG = "MainActivity"
         private const val REQUEST_VPN_PERMISSION = 0x4E50
         private const val REQUEST_POST_NOTIFICATIONS = 0x4E51
+        private const val REQUEST_PICK_CERTIFICATE = 0x4E52
         private const val ProfileTransferMimeType = "application/vnd.tunnelforge.profile+json"
         private const val BATTERY_STATE_UNSUPPORTED = "unsupported"
         private const val BATTERY_STATE_ALLOWED = "allowed"

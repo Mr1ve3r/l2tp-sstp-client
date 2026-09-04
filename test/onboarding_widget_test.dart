@@ -4,12 +4,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:tunnel_forge/l10n/app_localizations.dart';
 import 'package:tunnel_forge/features/onboarding/domain/app_exit_controller.dart';
 import 'package:tunnel_forge/features/onboarding/domain/onboarding_repository.dart';
 import 'package:tunnel_forge/features/onboarding/presentation/bloc/onboarding_bloc.dart';
 import 'package:tunnel_forge/features/onboarding/presentation/pages/onboarding_page.dart';
 import 'package:tunnel_forge/main.dart';
+import 'package:tunnel_forge/features/profiles/data/profile_bridge.dart';
 import 'package:tunnel_forge/features/profiles/data/profile_store.dart';
+import 'support/fake_certificates_repository.dart';
 
 class _FakeOnboardingRepository implements OnboardingRepository {
   _FakeOnboardingRepository({this.version});
@@ -55,7 +58,11 @@ void main() {
     });
     await tester.pumpWidget(
       TunnelForgeApp(
-        profileStore: ProfileStore(secretsOverride: MemorySecretStore()),
+        certificatesRepository: FakeCertificatesRepository(),
+        profileStore: ProfileStore(
+          secretsOverride: MemorySecretStore(),
+          backendOverride: MemoryProfileBackend(),
+        ),
         onboardingRepository: onboardingRepository,
         appExitController: appExitController,
       ),
@@ -143,7 +150,7 @@ void main() {
       );
       await tester.tap(find.byKey(const Key('onboarding_continue_button')));
       await tester.pump(const Duration(milliseconds: 500));
-      expect(find.text('TunnelForge'), findsOneWidget);
+      expect(find.text('L2/SS/TP'), findsOneWidget);
 
       await tester.ensureVisible(
         find.byKey(const Key('onboarding_continue_button')),
@@ -212,6 +219,8 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
         navigatorKey: navigatorKey,
         home: const Scaffold(body: Text('Home placeholder')),
       ),

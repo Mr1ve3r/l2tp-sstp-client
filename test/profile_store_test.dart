@@ -1,6 +1,10 @@
+import 'dart:convert';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:tunnel_forge/core/vpn_protocol.dart';
 import 'package:tunnel_forge/features/profiles/domain/profile_models.dart';
+import 'package:tunnel_forge/features/profiles/data/profile_bridge.dart';
 import 'package:tunnel_forge/features/profiles/data/profile_store.dart';
 import 'package:tunnel_forge/core/logging/log_entry.dart';
 
@@ -173,7 +177,11 @@ void main() {
       prefs = await SharedPreferences.getInstance();
       await prefs.clear();
       secrets = MemorySecretStore();
-      store = ProfileStore(prefsOverride: prefs, secretsOverride: secrets);
+      store = ProfileStore(
+        prefsOverride: prefs,
+        secretsOverride: secrets,
+        backendOverride: MemoryProfileBackend(),
+      );
     });
 
     test('upsert and load with secrets', () async {
@@ -199,6 +207,89 @@ void main() {
       expect(row!.profile.user, 'alice');
       expect(row.password, 'pw1');
       expect(row.psk, 'psk1');
+    });
+
+    /// SPEC 8.2, acceptance criterion 1: an upgrade must not lose profiles.
+    test('hands the profiles of the previous build to the host', () async {
+      SharedPreferences.setMockInitialValues({
+        ProfileStore.prefsKeyProfilesJson: jsonEncode([
+          {
+            'id': 'legacy-1',
+            'displayName': 'Office',
+            'server': 'vpn.example.com',
+            'user': 'alice',
+            'dnsAutomatic': false,
+            'dns1Host': '1.1.1.1',
+            'dns1Protocol': 'dnsOverUdp',
+            'dns2Host': '',
+            'dns2Protocol': 'dnsOverUdp',
+            'mtu': 1400,
+          },
+        ]),
+        ProfileStore.prefsKeyLastProfileId: 'legacy-1',
+      });
+      final upgraded = ProfileStore(
+        prefsOverride: await SharedPreferences.getInstance(),
+        secretsOverride: secrets,
+        backendOverride: MemoryProfileBackend(),
+      );
+      await secrets.write('tunnel_forge/profile/legacy-1/password', 'pw1');
+      await secrets.write('tunnel_forge/profile/legacy-1/psk', 'psk1');
+
+      final profiles = await upgraded.loadProfiles();
+
+      expect(profiles, hasLength(1));
+      expect(profiles.single.id, 'legacy-1');
+      expect(profiles.single.server, 'vpn.example.com');
+      // An old profile is an L2TP profile; there was no other kind.
+      expect(profiles.single.protocol, VpnProtocol.l2tp);
+      expect(await upgraded.loadLastProfileId(), 'legacy-1');
+      final row = await upgraded.loadProfileWithSecrets('legacy-1');
+      expect(row!.password, 'pw1');
+      expect(row.psk, 'psk1');
+      // The secrets are the host's now, and one copy of a password is enough.
+      expect(
+        await secrets.read('tunnel_forge/profile/legacy-1/password'),
+        isNull,
+      );
+    });
+
+    test('the handover runs once and does not undo later edits', () async {
+      SharedPreferences.setMockInitialValues({
+        ProfileStore.prefsKeyProfilesJson: jsonEncode([
+          {
+            'id': 'legacy-1',
+            'displayName': 'Office',
+            'server': 'vpn.example.com',
+            'user': 'alice',
+            'dnsAutomatic': true,
+            'dns1Host': '',
+            'dns1Protocol': 'dnsOverUdp',
+            'dns2Host': '',
+            'dns2Protocol': 'dnsOverUdp',
+          },
+        ]),
+      });
+      final prefsAfterUpgrade = await SharedPreferences.getInstance();
+      final backend = MemoryProfileBackend();
+      final first = ProfileStore(
+        prefsOverride: prefsAfterUpgrade,
+        secretsOverride: secrets,
+        backendOverride: backend,
+      );
+      await first.loadProfiles();
+      final edited = (await first.loadProfiles()).single.copyWith(
+        displayName: 'Renamed',
+      );
+      await first.upsertProfile(edited, password: 'pw', psk: '');
+
+      final second = ProfileStore(
+        prefsOverride: prefsAfterUpgrade,
+        secretsOverride: secrets,
+        backendOverride: backend,
+      );
+
+      expect((await second.loadProfiles()).single.displayName, 'Renamed');
     });
 
     test('starts empty without seeding a default profile', () async {

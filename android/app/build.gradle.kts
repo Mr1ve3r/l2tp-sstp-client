@@ -60,12 +60,24 @@ fun hostNdkPrebuiltDir(): String {
 // keeps clang-tidy aligned with the Android compiler/sysroot used by CMake.
 fun findAndroidNdkTool(name: String): File? {
     val ndkRoot = androidSdkPath?.let { file(it).resolve("ndk") } ?: return null
-    val executableName = if (System.getProperty("os.name").lowercase().contains("windows")) "$name.exe" else name
+    // On Windows the NDK ships two kinds of tool in the same directory: plain
+    // .exe binaries (clang, clang-format, clang-tidy) and per-API target
+    // wrappers that are .cmd files (aarch64-linux-android31-clang.cmd). Looking
+    // only for .exe silently misses every wrapper, and cgo then fails with
+    // "executable file not found in %PATH%". Elsewhere the names are bare.
+    val executableNames =
+        if (System.getProperty("os.name").lowercase().contains("windows")) {
+            listOf("$name.exe", "$name.cmd")
+        } else {
+            listOf(name)
+        }
     val prebuiltDir = hostNdkPrebuiltDir()
     return ndkRoot
         .listFiles()
         ?.sortedByDescending { it.name }
-        ?.map { it.resolve("toolchains/llvm/prebuilt/$prebuiltDir/bin/$executableName") }
+        ?.flatMap { ndk ->
+            executableNames.map { ndk.resolve("toolchains/llvm/prebuilt/$prebuiltDir/bin/$it") }
+        }
         ?.firstOrNull { it.isFile }
 }
 
@@ -125,7 +137,12 @@ android {
     }
 
     defaultConfig {
-        applicationId = "io.github.evokelektrique.tunnelforge"
+        // The fork's own identity. It is deliberately not the Kotlin package
+        // below it, which stays `io.github.evokelektrique.tunnelforge`: the
+        // package name is upstream's and renaming it would touch every file
+        // in `:app` for no user-visible gain, while making a merge from
+        // upstream painful. Android does not require the two to match.
+        applicationId = "io.github.mr1ve3r.l2tpsstp"
         minSdk = 31
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
@@ -222,13 +239,20 @@ android {
 }
 
 dependencies {
-    implementation("androidx.annotation:annotation:1.8.2")
-    implementation("androidx.core:core-ktx:1.15.0")
-    implementation("io.netty:netty-codec-http:4.2.12.Final")
-    implementation("io.netty:netty-codec-socks:4.2.12.Final")
-    testImplementation("junit:junit:4.13.2")
-    androidTestImplementation("androidx.test.ext:junit:1.1.5")
-    androidTestImplementation("androidx.test:runner:1.2.0")
+    // core-tunnel brings engine-api transitively through its api() dependency.
+    implementation(project(":core-tunnel"))
+    implementation(project(":core-trust"))
+    implementation(project(":engine-l2tp"))
+    implementation(project(":engine-sstp"))
+    implementation(libs.androidx.annotation)
+    implementation(libs.kotlinx.coroutines.core)
+    implementation(libs.kotlinx.coroutines.android)
+    implementation(libs.androidx.core.ktx)
+    implementation(libs.netty.codec.http)
+    implementation(libs.netty.codec.socks)
+    testImplementation(libs.junit)
+    androidTestImplementation(libs.androidx.test.junit)
+    androidTestImplementation(libs.androidx.test.runner)
 }
 
 flutter {

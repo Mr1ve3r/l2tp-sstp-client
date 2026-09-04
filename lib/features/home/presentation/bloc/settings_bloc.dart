@@ -408,28 +408,16 @@ class SettingsBloc extends Bloc<SettingsEvent, SettingsState> {
 
   String _batteryOptimizationMessage(BatteryOptimizationRequestResult result) {
     return switch (result.outcome) {
-      BatteryOptimizationRequestOutcome.unsupported => AppText.pick(
-        'Battery optimization settings are not available on this device.',
-        'تنظیمات بهینه‌سازی باتری در این دستگاه در دسترس نیست.',
-      ),
-      BatteryOptimizationRequestOutcome.alreadyAllowed => AppText.pick(
-        'Battery optimization is already disabled for TunnelForge.',
-        'بهینه‌سازی باتری برای TunnelForge از قبل غیرفعال است.',
-      ),
-      BatteryOptimizationRequestOutcome.requested => AppText.pick(
-        'Battery optimization request opened.',
-        'درخواست بهینه‌سازی باتری باز شد.',
-      ),
-      BatteryOptimizationRequestOutcome.settingsOpened => AppText.pick(
-        'Battery settings opened.',
-        'تنظیمات باتری باز شد.',
-      ),
+      BatteryOptimizationRequestOutcome.unsupported =>
+        AppText.current.batteryOptimizationUnavailableOnDevice,
+      BatteryOptimizationRequestOutcome.alreadyAllowed =>
+        AppText.current.batteryOptimizationAlreadyDisabled,
+      BatteryOptimizationRequestOutcome.requested =>
+        AppText.current.batteryOptimizationRequestOpened,
+      BatteryOptimizationRequestOutcome.settingsOpened =>
+        AppText.current.batterySettingsOpened,
       BatteryOptimizationRequestOutcome.failed =>
-        result.message ??
-            AppText.pick(
-              'Could not open battery settings.',
-              'تنظیمات باتری باز نشد.',
-            ),
+        result.message ?? AppText.current.couldNotOpenBatterySettings,
     };
   }
 

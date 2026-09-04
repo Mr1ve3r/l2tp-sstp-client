@@ -9,6 +9,9 @@ on:
     branches:
       - main
       - release/**
+      # Phase branches from the SPEC implementation plan. Each phase has build
+      # and test acceptance criteria, so they need CI before they are merged.
+      - spec/**
   workflow_dispatch:
 
 permissions:
@@ -30,6 +33,8 @@ jobs:
     name: flutter-checks
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      HAS_CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN != '' }}
 
     steps:
       - name: Checkout
@@ -61,6 +66,7 @@ jobs:
         run: flutter test --coverage
 
       - name: Upload coverage to Codecov
+        if: env.HAS_CODECOV_TOKEN == 'true'
         uses: codecov/codecov-action@v5
         with:
           files: coverage/lcov.info
@@ -108,6 +114,8 @@ jobs:
     name: android-unit-tests
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      HAS_CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN != '' }}
 
     steps:
       - name: Checkout
@@ -159,12 +167,63 @@ jobs:
             echo "sdk.dir=${android_sdk_root}"
           } > local.properties
 
+      - name: Check Kotlin style in the engine and core modules
+        working-directory: android
+        run: ./gradlew --no-daemon --console=plain --stacktrace --continue -Dorg.gradle.vfs.watch=false ktlintCheck
+
+      # Job logs are only readable by repository admins. Re-emitting the ktlint
+      # report as workflow annotations puts the findings on the check run, where
+      # the public API can reach them.
+      - name: Surface ktlint findings
+        if: failure()
+        run: |
+          shopt -s nullglob globstar
+          found=0
+          for report in build/**/reports/ktlint/**/*.txt; do
+            while IFS= read -r line; do
+              [ -z "${line}" ] && continue
+              echo "::error title=ktlint::${line}"
+              found=1
+            done < "${report}"
+          done
+          if [ "${found}" -eq 0 ]; then
+            echo "::error title=ktlint::ktlintCheck failed without producing a report -- the failure is in task configuration or plugin resolution, not in lint findings"
+          fi
+
       - name: Run Android JVM tests
         working-directory: android
         run: ./gradlew --no-daemon --console=plain --info --stacktrace -Dorg.gradle.vfs.watch=false :app:testDebugUnitTest
 
+      - name: Run engine and core module unit tests
+        working-directory: android
+        run: |
+          ./gradlew --no-daemon --console=plain --stacktrace -Dorg.gradle.vfs.watch=false \
+            :engine-api:testDebugUnitTest \
+            :engine-l2tp:testDebugUnitTest \
+            :engine-sstp:testDebugUnitTest \
+            :core-tunnel:testDebugUnitTest \
+            :core-trust:testDebugUnitTest
+
+      # SPEC 11.4 puts a floor under this one module: it holds the trust
+      # policies, and a regression there is a silent downgrade of what the
+      # application will accept as a server. The task fails the job below 80%.
+      - name: Verify core-trust coverage
+        working-directory: android
+        run: >-
+          ./gradlew --no-daemon --console=plain --stacktrace
+          -Dorg.gradle.vfs.watch=false :core-trust:jacocoCoverageVerification
+
+      - name: Upload core-trust coverage to Codecov
+        if: ${{ !cancelled() && env.HAS_CODECOV_TOKEN == 'true' }}
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: build/core-trust/reports/jacoco/jacocoTestReport/jacocoTestReport.xml
+          flags: core-trust
+          fail_ci_if_error: true
+
       - name: Upload Android test results to Codecov
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && env.HAS_CODECOV_TOKEN == 'true' }}
         uses: codecov/test-results-action@0fa95f0e1eeaafde2c782583b36b28ad0d8c77d3 # v1.2.1
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
@@ -182,6 +241,75 @@ jobs:
             android/build/reports/
           if-no-files-found: ignore
 
+  build-debug-apk:
+    name: build-debug-apk
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    needs:
+      - native-tests
+      - android-go-tests
+      - android-unit-tests
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Prepare Android Go dependencies
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: android/gvisor/go.mod
+          cache: true
+          cache-dependency-path: android/gvisor/go.sum
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5.0.2
+
+      - name: Get dependencies
+        run: flutter pub get
+
+      - name: Download Android Go module dependencies
+        working-directory: android/gvisor
+        run: go mod download
+
+      - name: Create Android local.properties
+        working-directory: android
+        run: |
+          flutter_root="${FLUTTER_ROOT:-$(dirname "$(dirname "$(command -v flutter)")")}"
+          android_sdk_root="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
+
+          if [[ -z "${android_sdk_root}" ]]; then
+            echo "ANDROID_SDK_ROOT or ANDROID_HOME must be set" >&2
+            exit 1
+          fi
+
+          {
+            echo "flutter.sdk=${flutter_root}"
+            echo "sdk.dir=${android_sdk_root}"
+          } > local.properties
+
+      - name: Build debug APK
+        run: flutter build apk --debug
+
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v6
+        with:
+          name: l2tp-sstp-client-debug-apk
+          path: build/app/outputs/flutter-apk/*.apk
+          if-no-files-found: error
+
   build-android:
     name: build-android
     runs-on: ubuntu-latest
@@ -191,7 +319,9 @@ jobs:
       - native-tests
       - android-go-tests
       - android-unit-tests
-    if: github.event_name == 'workflow_dispatch' || github.event_name == 'push'
+    if: >-
+      (github.event_name == 'workflow_dispatch' || github.event_name == 'push') &&
+      (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release/'))
 
     steps:
       - name: Checkout
@@ -276,7 +406,7 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v6
         with:
-          name: tunnel-forge-release-apk
+          name: l2-ss-tp-release-apk
           path: build/app/outputs/flutter-apk/*.apk
           if-no-files-found: error
 

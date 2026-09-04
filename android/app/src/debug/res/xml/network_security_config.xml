@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Debug builds only. This file lives in the `debug` source set and is never
+    merged into a release APK.
+
+    Android stops honouring the device's user certificate store for an app that
+    targets API 24 or later unless the app says otherwise, so a CA installed
+    through Settings is invisible to `TrustPolicy.SYSTEM`. Trusting it here lets
+    a device test tell "the certificate is wrong" apart from "the certificate is
+    not being consulted" without weakening the shipped app: a release build
+    verifies against the system store and the application's own certificate
+    store, and nothing else.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="user" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

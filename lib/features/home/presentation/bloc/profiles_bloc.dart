@@ -4,6 +4,7 @@ import 'package:bloc/bloc.dart';
 import 'package:equatable/equatable.dart';
 
 import 'package:tunnel_forge/l10n/app_localizations.dart';
+import 'package:tunnel_forge/features/profiles/domain/failover_group.dart';
 import 'package:tunnel_forge/features/profiles/domain/profile_models.dart';
 import 'package:tunnel_forge/features/profiles/domain/profile_transfer.dart';
 import 'package:tunnel_forge/features/profiles/data/profile_transfer_contract.dart';
@@ -26,6 +27,39 @@ final class ProfilesSelectionChanged extends ProfilesEvent {
   const ProfilesSelectionChanged(this.id);
 
   final String? id;
+
+  @override
+  List<Object?> get props => [id];
+}
+
+/// Chooses a failover group as what the connect button starts, or, with a null
+/// id, chooses nothing (SPEC 10.1.3).
+///
+/// A group and a profile are alternatives, not a pair: picking one drops the
+/// other, because the button starts exactly one thing.
+final class ProfilesGroupSelectionChanged extends ProfilesEvent {
+  const ProfilesGroupSelectionChanged(this.id);
+
+  final String? id;
+
+  @override
+  List<Object?> get props => [id];
+}
+
+/// Stores a group. A group with an empty id is a new one.
+final class ProfilesGroupSaveRequested extends ProfilesEvent {
+  const ProfilesGroupSaveRequested(this.group);
+
+  final FailoverGroup group;
+
+  @override
+  List<Object?> get props => [group];
+}
+
+final class ProfilesGroupDeleteRequested extends ProfilesEvent {
+  const ProfilesGroupDeleteRequested(this.id);
+
+  final String id;
 
   @override
   List<Object?> get props => [id];
@@ -93,6 +127,9 @@ class ProfilesState extends Equatable {
     this.profiles = const <Profile>[],
     this.activeProfileId,
     this.activeProfileRow,
+    this.groups = const <FailoverGroup>[],
+    this.activeGroupId,
+    this.savedGroupId,
     this.selectImportedProfileWhenIdle = true,
     this.message,
   });
@@ -101,6 +138,18 @@ class ProfilesState extends Equatable {
   final List<Profile> profiles;
   final String? activeProfileId;
   final ProfileSecretRow? activeProfileRow;
+
+  /// The failover groups, oldest first (SPEC 10.1.1).
+  final List<FailoverGroup> groups;
+
+  /// The group the connect button would start, or null when a profile is what
+  /// it would start. Never set at the same time as [activeProfileId].
+  final String? activeGroupId;
+
+  /// The group the last successful save stored, so the editor can tell its own
+  /// save from someone else's refresh. Cleared on every other change.
+  final String? savedGroupId;
+
   final bool selectImportedProfileWhenIdle;
   final HomeMessage? message;
 
@@ -110,6 +159,31 @@ class ProfilesState extends Equatable {
         profiles.any((profile) => profile.id == activeId);
   }
 
+  /// The chosen group, or null if none is chosen or it has been deleted.
+  FailoverGroup? get activeGroup {
+    final activeId = activeGroupId;
+    if (activeId == null) return null;
+    for (final group in groups) {
+      if (group.id == activeId) return group;
+    }
+    return null;
+  }
+
+  /// Whether the connect button has a group it can actually start.
+  ///
+  /// An empty group is not one. The host refuses it — "the failover group X has
+  /// no profiles in it" — and refusing here as well means the refusal arrives
+  /// before the VPN permission dialog rather than after it.
+  bool get hasActiveGroup {
+    final group = activeGroup;
+    return group != null && !group.isEmpty;
+  }
+
+  /// The profiles of [activeGroup], in the order it tries them.
+  List<Profile> get activeGroupMembers =>
+      activeGroup?.resolveMembers(profiles, (profile) => profile.id) ??
+      const <Profile>[];
+
   ProfilesState copyWith({
     bool? loading,
     List<Profile>? profiles,
@@ -117,6 +191,10 @@ class ProfilesState extends Equatable {
     bool clearActiveProfileId = false,
     ProfileSecretRow? activeProfileRow,
     bool clearActiveProfileRow = false,
+    List<FailoverGroup>? groups,
+    String? activeGroupId,
+    bool clearActiveGroupId = false,
+    String? savedGroupId,
     bool? selectImportedProfileWhenIdle,
     HomeMessage? message,
     bool clearMessage = false,
@@ -130,6 +208,13 @@ class ProfilesState extends Equatable {
       activeProfileRow: clearActiveProfileRow
           ? null
           : (activeProfileRow ?? this.activeProfileRow),
+      groups: groups ?? this.groups,
+      activeGroupId: clearActiveGroupId
+          ? null
+          : (activeGroupId ?? this.activeGroupId),
+      // Not carried forward: it marks one save, and a state that repeated it
+      // would make the next refresh look like a second save of the same group.
+      savedGroupId: savedGroupId,
       selectImportedProfileWhenIdle:
           selectImportedProfileWhenIdle ?? this.selectImportedProfileWhenIdle,
       message: clearMessage ? null : (message ?? this.message),
@@ -142,6 +227,9 @@ class ProfilesState extends Equatable {
     profiles,
     activeProfileId,
     activeProfileRow,
+    groups,
+    activeGroupId,
+    savedGroupId,
     selectImportedProfileWhenIdle,
     message,
   ];
@@ -152,6 +240,9 @@ class ProfilesBloc extends Bloc<ProfilesEvent, ProfilesState> {
     : super(const ProfilesState()) {
     on<ProfilesStarted>(_onStarted);
     on<ProfilesSelectionChanged>(_onSelectionChanged);
+    on<ProfilesGroupSelectionChanged>(_onGroupSelectionChanged);
+    on<ProfilesGroupSaveRequested>(_onGroupSaveRequested);
+    on<ProfilesGroupDeleteRequested>(_onGroupDeleteRequested);
     on<ProfilesImportRequested>(_onImportRequested);
     on<ProfilesDeleteRequested>(_onDeleteRequested);
     on<ProfilesRefreshRequested>(_onRefreshRequested);
@@ -169,9 +260,15 @@ class ProfilesBloc extends Bloc<ProfilesEvent, ProfilesState> {
     ProfilesStarted event,
     Emitter<ProfilesState> emit,
   ) async {
+    final lastGroupId = await _profilesRepository.loadLastGroupId();
     await _reloadProfiles(
       emit,
-      preferredActiveId: await _profilesRepository.loadLastProfileId(),
+      // A group and a profile are alternatives: whichever was chosen last is
+      // the one that was stored, and the other was cleared at the same time.
+      preferredActiveId: lastGroupId == null
+          ? await _profilesRepository.loadLastProfileId()
+          : null,
+      preferredActiveGroupId: lastGroupId,
     );
     await _transferSub?.cancel();
     _transferSub = _transferRepository.incomingTransfers.listen(
@@ -189,8 +286,13 @@ class ProfilesBloc extends Bloc<ProfilesEvent, ProfilesState> {
   ) async {
     if (event.id == null) {
       await _profilesRepository.setLastProfileId(null);
+      await _profilesRepository.setLastGroupId(null);
       emit(
-        state.copyWith(clearActiveProfileId: true, clearActiveProfileRow: true),
+        state.copyWith(
+          clearActiveProfileId: true,
+          clearActiveProfileRow: true,
+          clearActiveGroupId: true,
+        ),
       );
       return;
     }
@@ -199,10 +301,7 @@ class ProfilesBloc extends Bloc<ProfilesEvent, ProfilesState> {
       emit(
         state.copyWith(
           message: _nextMessage(
-            AppText.pick(
-              'This profile no longer exists.',
-              'این پروفایل دیگر وجود ندارد.',
-            ),
+            AppText.current.profileNoLongerExists,
             error: true,
           ),
         ),
@@ -210,7 +309,114 @@ class ProfilesBloc extends Bloc<ProfilesEvent, ProfilesState> {
       return;
     }
     await _profilesRepository.setLastProfileId(event.id);
-    emit(state.copyWith(activeProfileId: event.id, activeProfileRow: row));
+    await _profilesRepository.setLastGroupId(null);
+    emit(
+      state.copyWith(
+        activeProfileId: event.id,
+        activeProfileRow: row,
+        clearActiveGroupId: true,
+      ),
+    );
+  }
+
+  Future<void> _onGroupSelectionChanged(
+    ProfilesGroupSelectionChanged event,
+    Emitter<ProfilesState> emit,
+  ) async {
+    final id = event.id;
+    if (id == null) {
+      await _profilesRepository.setLastGroupId(null);
+      emit(state.copyWith(clearActiveGroupId: true));
+      return;
+    }
+    if (!state.groups.any((group) => group.id == id)) {
+      emit(
+        state.copyWith(
+          message: _nextMessage(
+            AppText.current.failoverGroupNoLongerExists,
+            error: true,
+          ),
+        ),
+      );
+      return;
+    }
+    // The profile goes with it, on both sides: the button starts one thing, and
+    // leaving a last-profile id behind would make a restart pick the profile
+    // back up.
+    await _profilesRepository.setLastProfileId(null);
+    await _profilesRepository.setLastGroupId(id);
+    emit(
+      state.copyWith(
+        activeGroupId: id,
+        clearActiveProfileId: true,
+        clearActiveProfileRow: true,
+      ),
+    );
+  }
+
+  Future<void> _onGroupSaveRequested(
+    ProfilesGroupSaveRequested event,
+    Emitter<ProfilesState> emit,
+  ) async {
+    if (event.group.name.trim().isEmpty) {
+      emit(
+        state.copyWith(
+          message: _nextMessage(
+            AppText.current.failoverGroupNeedsName,
+            error: true,
+          ),
+        ),
+      );
+      return;
+    }
+    try {
+      final stored = await _profilesRepository.saveFailoverGroup(event.group);
+      final groups = await _profilesRepository.loadFailoverGroups();
+      emit(
+        state.copyWith(
+          groups: groups,
+          savedGroupId: stored.id,
+          message: _nextMessage(AppText.current.failoverGroupSaved),
+        ),
+      );
+    } catch (_) {
+      emit(
+        state.copyWith(
+          message: _nextMessage(
+            AppText.current.couldNotSaveFailoverGroup,
+            error: true,
+          ),
+        ),
+      );
+    }
+  }
+
+  Future<void> _onGroupDeleteRequested(
+    ProfilesGroupDeleteRequested event,
+    Emitter<ProfilesState> emit,
+  ) async {
+    try {
+      await _profilesRepository.deleteFailoverGroup(event.id);
+      final groups = await _profilesRepository.loadFailoverGroups();
+      final wasActive = state.activeGroupId == event.id;
+      if (wasActive) await _profilesRepository.setLastGroupId(null);
+      emit(
+        state.copyWith(
+          groups: groups,
+          clearActiveGroupId: wasActive,
+          message: _nextMessage(AppText.current.failoverGroupRemoved),
+        ),
+      );
+    } catch (_) {
+      emit(
+        state.copyWith(
+          message: _nextMessage(
+            AppText.current.couldNotDeleteFailoverGroup,
+            error: true,
+          ),
+        ),
+      );
+    }
   }
 
   Future<void> _onImportRequested(
@@ -222,11 +428,7 @@ class ProfilesBloc extends Bloc<ProfilesEvent, ProfilesState> {
       emit(
         state.copyWith(
           message: _nextMessage(
-            transfer.message ??
-                AppText.pick(
-                  'Couldn\'t open the incoming profile',
-                  'پروفایل دریافتی باز نشد',
-                ),
+            transfer.message ?? AppText.current.couldNotOpenIncomingProfile,
             error: true,
           ),
         ),
@@ -246,23 +448,19 @@ class ProfilesBloc extends Bloc<ProfilesEvent, ProfilesState> {
             : null,
       );
       final source = switch ((transfer.source, transfer.type)) {
-        ('Clipboard', ProfileTransferContract.typeTfUri) => AppText.pick(
-          'a clipboard share link',
-          'یک پیوند اشتراک کلیپ‌بورد',
-        ),
-        ('Clipboard', _) => AppText.pick('the clipboard', 'کلیپ‌بورد'),
-        (_, ProfileTransferContract.typeTfUri) => AppText.pick(
-          'a share link',
-          'یک پیوند اشتراک',
-        ),
-        _ => AppText.pick('a .tfp file', 'یک فایل .tfp'),
+        ('Clipboard', ProfileTransferContract.typeTfUri) =>
+          AppText.current.sourceClipboardShareLink,
+        ('Clipboard', _) => AppText.current.sourceClipboard,
+        (_, ProfileTransferContract.typeTfUri) =>
+          AppText.current.sourceShareLink,
+        _ => AppText.current.sourceTfpFile,
       };
       emit(
         state.copyWith(
           message: _nextMessage(
-            AppText.pick(
-              'Imported profile "${imported.displayName}" from $source',
-              'پروفایل «${imported.displayName}» از $source وارد شد',
+            AppText.current.importedProfileFromSource(
+              imported.displayName,
+              source,
             ),
           ),
         ),
@@ -273,7 +471,7 @@ class ProfilesBloc extends Bloc<ProfilesEvent, ProfilesState> {
       emit(
         state.copyWith(
           message: _nextMessage(
-            AppText.pick('Couldn\'t import profile', 'پروفایل وارد نشد'),
+            AppText.current.couldNotImportProfile,
             error: true,
           ),
         ),
@@ -296,17 +494,13 @@ class ProfilesBloc extends Bloc<ProfilesEvent, ProfilesState> {
         add(ProfilesSelectionChanged(state.profiles.first.id));
       }
       emit(
-        state.copyWith(
-          message: _nextMessage(
-            AppText.pick('Profile removed', 'پروفایل حذف شد'),
-          ),
-        ),
+        state.copyWith(message: _nextMessage(AppText.current.profileRemoved)),
       );
     } catch (_) {
       emit(
         state.copyWith(
           message: _nextMessage(
-            AppText.pick('Couldn\'t delete profile', 'پروفایل حذف نشد'),
+            AppText.current.couldNotDeleteProfile,
             error: true,
           ),
         ),
@@ -331,11 +525,7 @@ class ProfilesBloc extends Bloc<ProfilesEvent, ProfilesState> {
     try {
       await _profilesRepository.copyProfileShareLink(event.id);
       emit(
-        state.copyWith(
-          message: _nextMessage(
-            AppText.pick('Share link copied', 'پیوند اشتراک کپی شد'),
-          ),
-        ),
+        state.copyWith(message: _nextMessage(AppText.current.shareLinkCopied)),
       );
     } on ProfileRepositoryException catch (error) {
       emit(state.copyWith(message: _nextMessage(error.message, error: true)));
@@ -343,7 +533,7 @@ class ProfilesBloc extends Bloc<ProfilesEvent, ProfilesState> {
       emit(
         state.copyWith(
           message: _nextMessage(
-            AppText.pick('Couldn\'t copy share link', 'پیوند اشتراک کپی نشد'),
+            AppText.current.couldNotCopyShareLink,
             error: true,
           ),
         ),
@@ -358,14 +548,7 @@ class ProfilesBloc extends Bloc<ProfilesEvent, ProfilesState> {
     try {
       await _profilesRepository.exportProfileFile(event.id);
       emit(
-        state.copyWith(
-          message: _nextMessage(
-            AppText.pick(
-              'Profile file ready to save or share',
-              'فایل پروفایل برای ذخیره یا اشتراک آماده است',
-            ),
-          ),
-        ),
+        state.copyWith(message: _nextMessage(AppText.current.profileFileReady)),
       );
     } on ProfileRepositoryException catch (error) {
       emit(state.copyWith(message: _nextMessage(error.message, error: true)));
@@ -373,7 +556,7 @@ class ProfilesBloc extends Bloc<ProfilesEvent, ProfilesState> {
       emit(
         state.copyWith(
           message: _nextMessage(
-            AppText.pick('Couldn\'t export .tfp file', 'خروجی .tfp ساخته نشد'),
+            AppText.current.couldNotExportTfpFile,
             error: true,
           ),
         ),
@@ -406,11 +589,21 @@ class ProfilesBloc extends Bloc<ProfilesEvent, ProfilesState> {
   Future<void> _reloadProfiles(
     Emitter<ProfilesState> emit, {
     String? preferredActiveId,
+    String? preferredActiveGroupId,
   }) async {
     emit(state.copyWith(loading: true, clearMessage: true));
     final profiles = await _profilesRepository.loadProfiles();
+    // Groups are read on every profile reload rather than on their own: a
+    // deleted profile takes its membership rows with it, so a group's contents
+    // can change without the group having been touched.
+    final groups = await _profilesRepository.loadFailoverGroups();
+    final wantedGroupId = preferredActiveGroupId ?? state.activeGroupId;
+    final groupId = groups.any((group) => group.id == wantedGroupId)
+        ? wantedGroupId
+        : null;
     final targetId =
-        preferredActiveId != null &&
+        groupId == null &&
+            preferredActiveId != null &&
             profiles.any((profile) => profile.id == preferredActiveId)
         ? preferredActiveId
         : null;
@@ -424,6 +617,13 @@ class ProfilesBloc extends Bloc<ProfilesEvent, ProfilesState> {
         profiles: profiles,
         activeProfileId: targetRow == null ? null : targetId,
         activeProfileRow: targetRow,
+        groups: groups,
+        activeGroupId: groupId,
+        clearActiveGroupId: groupId == null,
+        // A group taking over is the one case where the reload has to drop a
+        // profile it would otherwise have kept; the button starts one thing.
+        clearActiveProfileId: groupId != null,
+        clearActiveProfileRow: groupId != null,
       ),
     );
   }

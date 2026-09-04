@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:tunnel_forge/features/onboarding/domain/onboarding_repository.dart';
 import 'package:tunnel_forge/main.dart';
 import 'package:tunnel_forge/features/profiles/domain/profile_models.dart';
+import 'package:tunnel_forge/features/profiles/data/profile_bridge.dart';
 import 'package:tunnel_forge/features/profiles/data/profile_store.dart';
 import 'package:tunnel_forge/features/profiles/domain/profile_transfer.dart';
 import 'package:tunnel_forge/features/profiles/data/profile_transfer_bridge.dart';
@@ -15,6 +16,7 @@ import 'package:tunnel_forge/features/tunnel/data/vpn_contract.dart';
 
 import 'support/host_to_dart_channel.dart';
 import 'support/vpn_channel_mock.dart';
+import 'support/fake_certificates_repository.dart';
 
 class _AcceptedOnboardingRepository implements OnboardingRepository {
   const _AcceptedOnboardingRepository();
@@ -36,6 +38,7 @@ void main() {
   }) async {
     await tester.pumpWidget(
       TunnelForgeApp(
+        certificatesRepository: FakeCertificatesRepository(),
         onboardingRepository: const _AcceptedOnboardingRepository(),
         profileStore: store,
         profileTransferBridge: profileTransferBridge,
@@ -80,6 +83,7 @@ void main() {
     final store = ProfileStore(
       prefsOverride: prefs,
       secretsOverride: MemorySecretStore(),
+      backendOverride: MemoryProfileBackend(),
     );
     await store.upsertProfile(
       const Profile(
@@ -140,6 +144,7 @@ void main() {
     final store = ProfileStore(
       prefsOverride: prefs,
       secretsOverride: MemorySecretStore(),
+      backendOverride: MemoryProfileBackend(),
     );
 
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
@@ -158,22 +163,25 @@ void main() {
     await pumpApp(tester, store);
 
     const envelope = ProfileTransferEnvelope(
-      displayName: 'Office',
-      server: 'vpn.example.com',
-      user: 'alice',
+      profile: Profile(
+        id: 'transfer',
+        displayName: 'Office',
+        server: 'vpn.example.com',
+        user: 'alice',
+        dnsAutomatic: false,
+        dns1Host: '1.1.1.1',
+        dns1Protocol: DnsProtocol.dnsOverUdp,
+        dns2Host: '',
+        dns2Protocol: DnsProtocol.dnsOverUdp,
+        mtu: 1400,
+      ),
       password: 'pw',
       psk: 'psk',
-      dnsAutomatic: false,
-      dns1Host: '1.1.1.1',
-      dns1Protocol: DnsProtocol.dnsOverUdp,
-      dns2Host: '',
-      dns2Protocol: DnsProtocol.dnsOverUdp,
-      mtu: 1400,
     );
     await sendHostTransfer(
       tester,
       type: ProfileTransferContract.typeTfpJson,
-      data: envelope.toFileJson(),
+      data: envelope.toFileJson(includeSecrets: true),
     );
     await tester.pumpAndSettle();
 
@@ -198,26 +206,30 @@ void main() {
     final store = ProfileStore(
       prefsOverride: prefs,
       secretsOverride: MemorySecretStore(),
+      backendOverride: MemoryProfileBackend(),
     );
     const envelope = ProfileTransferEnvelope(
-      displayName: 'Startup Import',
-      server: 'startup.example.com',
-      user: 'alice',
+      profile: Profile(
+        id: 'transfer',
+        displayName: 'Startup Import',
+        server: 'startup.example.com',
+        user: 'alice',
+        dnsAutomatic: true,
+        dns1Host: '',
+        dns1Protocol: DnsProtocol.dnsOverUdp,
+        dns2Host: '',
+        dns2Protocol: DnsProtocol.dnsOverUdp,
+        mtu: 1400,
+      ),
       password: 'pw',
       psk: '',
-      dnsAutomatic: true,
-      dns1Host: '',
-      dns1Protocol: DnsProtocol.dnsOverUdp,
-      dns2Host: '',
-      dns2Protocol: DnsProtocol.dnsOverUdp,
-      mtu: 1400,
     );
     final bridge = TestProfileTransferBridge(
       onStart: (bridge) async {
         bridge.emit(
           IncomingProfileTransfer(
             type: ProfileTransferContract.typeTfpJson,
-            data: envelope.toFileJson(),
+            data: envelope.toFileJson(includeSecrets: true),
             source: 'startup.tfp',
           ),
         );
@@ -244,20 +256,24 @@ void main() {
     final store = ProfileStore(
       prefsOverride: prefs,
       secretsOverride: MemorySecretStore(),
+      backendOverride: MemoryProfileBackend(),
     );
 
     const envelope = ProfileTransferEnvelope(
-      displayName: 'Clipboard Link',
-      server: 'clipboard-link.example.com',
-      user: 'alice',
+      profile: Profile(
+        id: 'transfer',
+        displayName: 'Clipboard Link',
+        server: 'clipboard-link.example.com',
+        user: 'alice',
+        dnsAutomatic: true,
+        dns1Host: '',
+        dns1Protocol: DnsProtocol.dnsOverUdp,
+        dns2Host: '',
+        dns2Protocol: DnsProtocol.dnsOverUdp,
+        mtu: 1400,
+      ),
       password: 'pw',
       psk: '',
-      dnsAutomatic: true,
-      dns1Host: '',
-      dns1Protocol: DnsProtocol.dnsOverUdp,
-      dns2Host: '',
-      dns2Protocol: DnsProtocol.dnsOverUdp,
-      mtu: 1400,
     );
 
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
@@ -298,26 +314,32 @@ void main() {
     final store = ProfileStore(
       prefsOverride: prefs,
       secretsOverride: MemorySecretStore(),
+      backendOverride: MemoryProfileBackend(),
     );
 
     const envelope = ProfileTransferEnvelope(
-      displayName: 'Clipboard Json',
-      server: 'clipboard-json.example.com',
-      user: 'alice',
+      profile: Profile(
+        id: 'transfer',
+        displayName: 'Clipboard Json',
+        server: 'clipboard-json.example.com',
+        user: 'alice',
+        dnsAutomatic: true,
+        dns1Host: '',
+        dns1Protocol: DnsProtocol.dnsOverUdp,
+        dns2Host: '',
+        dns2Protocol: DnsProtocol.dnsOverUdp,
+        mtu: 1400,
+      ),
       password: 'pw',
       psk: '',
-      dnsAutomatic: true,
-      dns1Host: '',
-      dns1Protocol: DnsProtocol.dnsOverUdp,
-      dns2Host: '',
-      dns2Protocol: DnsProtocol.dnsOverUdp,
-      mtu: 1400,
     );
 
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(SystemChannels.platform, (call) async {
           if (call.method == 'Clipboard.getData') {
-            return <String, Object?>{'text': envelope.toFileJson()};
+            return <String, Object?>{
+              'text': envelope.toFileJson(includeSecrets: true),
+            };
           }
           return null;
         });
@@ -352,6 +374,7 @@ void main() {
     final store = ProfileStore(
       prefsOverride: prefs,
       secretsOverride: MemorySecretStore(),
+      backendOverride: MemoryProfileBackend(),
     );
     await store.upsertProfile(
       const Profile(
@@ -382,22 +405,25 @@ void main() {
     await tester.pumpAndSettle();
 
     const envelope = ProfileTransferEnvelope(
-      displayName: 'Imported',
-      server: 'imported.example.com',
-      user: 'bob',
+      profile: Profile(
+        id: 'transfer',
+        displayName: 'Imported',
+        server: 'imported.example.com',
+        user: 'bob',
+        dnsAutomatic: true,
+        dns1Host: '',
+        dns1Protocol: DnsProtocol.dnsOverUdp,
+        dns2Host: '',
+        dns2Protocol: DnsProtocol.dnsOverUdp,
+        mtu: 1400,
+      ),
       password: 'pw',
       psk: '',
-      dnsAutomatic: true,
-      dns1Host: '',
-      dns1Protocol: DnsProtocol.dnsOverUdp,
-      dns2Host: '',
-      dns2Protocol: DnsProtocol.dnsOverUdp,
-      mtu: 1400,
     );
     await sendHostTransfer(
       tester,
       type: ProfileTransferContract.typeTfpJson,
-      data: envelope.toFileJson(),
+      data: envelope.toFileJson(includeSecrets: true),
     );
     await tester.pumpAndSettle();
 
@@ -417,6 +443,7 @@ void main() {
       final store = ProfileStore(
         prefsOverride: prefs,
         secretsOverride: MemorySecretStore(),
+        backendOverride: MemoryProfileBackend(),
       );
       await store.upsertProfile(
         const Profile(
@@ -440,18 +467,21 @@ void main() {
         IncomingProfileTransfer(
           type: ProfileTransferContract.typeTfpJson,
           data: ProfileTransferEnvelope(
-            displayName: 'Imported',
-            server: 'imported.example.com',
-            user: 'bob',
+            profile: Profile(
+              id: 'transfer',
+              displayName: 'Imported',
+              server: 'imported.example.com',
+              user: 'bob',
+              dnsAutomatic: true,
+              dns1Host: '',
+              dns1Protocol: DnsProtocol.dnsOverUdp,
+              dns2Host: '',
+              dns2Protocol: DnsProtocol.dnsOverUdp,
+              mtu: 1400,
+            ),
             password: 'pw',
             psk: '',
-            dnsAutomatic: true,
-            dns1Host: '',
-            dns1Protocol: DnsProtocol.dnsOverUdp,
-            dns2Host: '',
-            dns2Protocol: DnsProtocol.dnsOverUdp,
-            mtu: 1400,
-          ).toFileJson(),
+          ).toFileJson(includeSecrets: true),
           source: 'imported.tfp',
         ),
       );

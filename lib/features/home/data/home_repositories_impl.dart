@@ -9,32 +9,32 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:tunnel_forge/core/platform/app_info_bridge.dart';
 import 'package:tunnel_forge/core/network/connectivity_checker.dart';
+import 'package:tunnel_forge/features/profiles/domain/failover_group.dart';
 import 'package:tunnel_forge/features/profiles/domain/profile_models.dart';
 import 'package:tunnel_forge/features/profiles/data/profile_store.dart';
 import 'package:tunnel_forge/features/profiles/domain/profile_transfer.dart';
 import 'package:tunnel_forge/features/profiles/data/profile_transfer_bridge.dart';
 import 'package:tunnel_forge/core/logging/log_entry.dart';
+import 'package:tunnel_forge/features/trust/domain/trust_models.dart';
+import 'package:tunnel_forge/features/trust/domain/trust_repository.dart';
 import 'package:tunnel_forge/features/tunnel/data/vpn_client.dart';
 import 'package:tunnel_forge/features/tunnel/domain/tunnel_runtime_state.dart';
 import '../domain/home_models.dart';
 import '../domain/home_repositories.dart';
 
 class ProfilesRepositoryImpl implements ProfilesRepository {
-  ProfilesRepositoryImpl(this._profileStore);
+  ProfilesRepositoryImpl(this._profileStore, [this._certificates]);
 
   final ProfileStore _profileStore;
 
+  /// The certificate store, so an SSTP profile can travel with the
+  /// certificates it trusts (SPEC 8.1.4). Absent in tests that never
+  /// touch one.
+  final CertificatesRepository? _certificates;
+
   @override
   Future<void> copyProfileShareLink(String id) async {
-    final row = await _profileStore.loadProfileWithSecrets(id);
-    if (row == null) {
-      throw const ProfileRepositoryException('This profile no longer exists.');
-    }
-    final envelope = ProfileTransferEnvelope.fromProfile(
-      profile: row.profile,
-      password: row.password,
-      psk: row.psk,
-    );
+    final envelope = await _envelopeFor(id);
     await Clipboard.setData(ClipboardData(text: envelope.toTfUri()));
   }
 
@@ -42,18 +42,38 @@ class ProfilesRepositoryImpl implements ProfilesRepository {
   Future<void> deleteProfile(String id) => _profileStore.deleteProfile(id);
 
   @override
-  Future<void> exportProfileFile(String id) async {
-    final row = await _profileStore.loadProfileWithSecrets(id);
-    if (row == null) {
-      throw const ProfileRepositoryException('This profile no longer exists.');
-    }
-    final envelope = ProfileTransferEnvelope.fromProfile(
-      profile: row.profile,
-      password: row.password,
-      psk: row.psk,
+  Future<List<FailoverGroup>> loadFailoverGroups() =>
+      _profileStore.loadFailoverGroups();
+
+  @override
+  Future<FailoverGroup> saveFailoverGroup(FailoverGroup group) =>
+      _profileStore.saveFailoverGroup(group);
+
+  @override
+  Future<void> deleteFailoverGroup(String id) =>
+      _profileStore.deleteFailoverGroup(id);
+
+  @override
+  Future<String?> loadLastGroupId() => _profileStore.loadLastGroupId();
+
+  @override
+  Future<void> setLastGroupId(String? id) => _profileStore.setLastGroupId(id);
+
+  @override
+  Future<void> exportProfileFile(String id, {String? password}) async {
+    final envelope = await _envelopeFor(id);
+    // Without a password the file carries no secret at all. With one it
+    // carries them inside the container and nowhere else (SPEC 8.1.4).
+    final text = password == null || password.isEmpty
+        ? envelope.toFileJson()
+        : await _profileStore.sealExport(
+            envelope.toFileJson(includeSecrets: true),
+            password,
+          );
+    final bytes = Uint8List.fromList(utf8.encode(text));
+    final fileName = ProfileTransferEnvelope.exportFileNameFor(
+      envelope.profile,
     );
-    final bytes = Uint8List.fromList(utf8.encode(envelope.toFileJson()));
-    final fileName = ProfileTransferEnvelope.exportFileNameFor(row.profile);
     await SharePlus.instance.share(
       ShareParams(
         files: [
@@ -62,6 +82,52 @@ class ProfilesRepositoryImpl implements ProfilesRepository {
         fileNameOverrides: [fileName],
         title: 'Export TunnelForge profile',
       ),
+    );
+  }
+
+  @override
+  Future<ProfileTransferEnvelope> openSealedTransfer(
+    String payload,
+    String password,
+  ) async {
+    return ProfileTransferEnvelope.fromFileJson(
+      await _profileStore.openExport(payload, password),
+    );
+  }
+
+  /// The profile [id] with its secrets and the certificates it selects.
+  Future<ProfileTransferEnvelope> _envelopeFor(String id) async {
+    final row = await _profileStore.loadProfileWithSecrets(id);
+    if (row == null) {
+      throw const ProfileRepositoryException('This profile no longer exists.');
+    }
+    final certificates = <TransferredCertificate>[];
+    final store = _certificates;
+    if (store != null && row.profile.trustedCertificateIds.isNotEmpty) {
+      final stored = await store.list();
+      for (final certificateId in row.profile.trustedCertificateIds) {
+        final pem = await store.exportPem(certificateId);
+        if (pem == null || pem.isEmpty) continue;
+        certificates.add(
+          TransferredCertificate(
+            id: certificateId,
+            alias:
+                stored
+                    .where((entry) => entry.fields.id == certificateId)
+                    .map((entry) => entry.alias)
+                    .firstOrNull ??
+                '',
+            pem: pem,
+          ),
+        );
+      }
+    }
+    return ProfileTransferEnvelope.fromProfile(
+      profile: row.profile,
+      password: row.password,
+      psk: row.psk,
+      proxyPassword: row.proxyPassword,
+      certificates: certificates,
     );
   }
 
@@ -79,6 +145,17 @@ class ProfilesRepositoryImpl implements ProfilesRepository {
       profile: row.profile,
       password: row.password,
       psk: row.psk,
+      proxyPassword: row.proxyPassword,
+    );
+  }
+
+  @override
+  Future<TrustOptions> loadTrustOptions() async {
+    final store = _certificates;
+    if (store == null) return const TrustOptions();
+    return TrustOptions(
+      certificates: await store.list(),
+      policies: await store.policies(),
     );
   }
 
@@ -89,11 +166,39 @@ class ProfilesRepositoryImpl implements ProfilesRepository {
   Future<Profile> saveImportedProfile(
     ProfileTransferEnvelope envelope, {
     bool selectAsLastProfile = true,
-  }) {
-    return _profileStore.saveImportedProfile(
+  }) async {
+    final imported = await _profileStore.saveImportedProfile(
       envelope,
       selectAsLastProfile: selectAsLastProfile,
     );
+    // The certificates come in under the fingerprints this device computes,
+    // which is what makes an already-known certificate one entry rather than
+    // two. Until they are stored, the ids in the file mean nothing here.
+    final store = _certificates;
+    if (envelope.certificates.isEmpty || store == null) return imported;
+    final stored = await store.import(
+      envelope.certificates
+          .map(
+            (certificate) => CertificateImportRequest(
+              pem: certificate.pem,
+              alias: certificate.alias,
+            ),
+          )
+          .toList(),
+    );
+    if (stored.isEmpty) return imported;
+    final withCertificates = imported.copyWith(
+      trustedCertificateIds: stored
+          .map((entry) => entry.fields.id)
+          .toList(growable: false),
+    );
+    await _profileStore.upsertProfile(
+      withCertificates,
+      password: envelope.password,
+      psk: envelope.psk,
+      proxyPassword: envelope.proxyPassword,
+    );
+    return withCertificates;
   }
 
   @override
@@ -105,8 +210,14 @@ class ProfilesRepositoryImpl implements ProfilesRepository {
     Profile profile, {
     required String password,
     required String psk,
+    String proxyPassword = '',
   }) {
-    return _profileStore.upsertProfile(profile, password: password, psk: psk);
+    return _profileStore.upsertProfile(
+      profile,
+      password: password,
+      psk: psk,
+      proxyPassword: proxyPassword,
+    );
   }
 }
 
@@ -276,8 +387,11 @@ class AppVersionRepositoryImpl implements AppVersionRepository {
 class AppUpdateRepositoryImpl implements AppUpdateRepository {
   AppUpdateRepositoryImpl({
     Future<String> Function(Uri uri)? fetcher,
-    this.owner = 'evokelektrique',
-    this.repo = 'tunnel-forge',
+    // This fork's releases, not upstream's. An APK from upstream is signed
+    // with a different key and cannot install over this one, so offering it as
+    // an update produces a failure the user cannot act on.
+    this.owner = 'Mr1ve3r',
+    this.repo = 'l2tp-sstp-client',
   }) : _fetcher = fetcher ?? _fetchJson;
 
   final Future<String> Function(Uri uri) _fetcher;
@@ -409,16 +523,17 @@ class TunnelRepositoryImpl implements TunnelRepository {
     _client =
         client ??
         VpnClient(
-          onTunnelState: (state, detail, attemptId) {
+          onTunnelState: (state, detail, attemptId, {errorKey}) {
             _tunnelStateController.add(
               TunnelHostUpdate(
                 state: state,
                 detail: detail,
                 attemptId: attemptId,
+                errorKey: errorKey,
               ),
             );
           },
-          onEngineLog: (level, source, tag, message) {
+          onEngineLog: (level, source, tag, message, protocol) {
             _engineLogController.add(
               EngineLogMessage(
                 timestamp: DateTime.now(),
@@ -426,6 +541,7 @@ class TunnelRepositoryImpl implements TunnelRepository {
                 source: source,
                 tag: tag,
                 message: message,
+                protocol: protocol,
               ),
             );
           },
@@ -465,6 +581,8 @@ class TunnelRepositoryImpl implements TunnelRepository {
     return _client.connect(
       attemptId: request.attemptId,
       server: request.server,
+      protocol: request.protocol,
+      sstp: request.sstp,
       profileName: request.profileName,
       connectionMode: request.connectionMode,
       user: request.user,
@@ -474,6 +592,15 @@ class TunnelRepositoryImpl implements TunnelRepository {
       dnsServers: request.dnsServers,
       mtu: request.mtu,
       splitTunnelSettings: request.splitTunnelSettings,
+      proxySettings: request.proxySettings,
+    );
+  }
+
+  @override
+  Future<void> connectGroup(TunnelGroupConnectRequest request) {
+    return _client.connectGroup(
+      groupId: request.groupId,
+      attemptId: request.attemptId,
       proxySettings: request.proxySettings,
     );
   }
