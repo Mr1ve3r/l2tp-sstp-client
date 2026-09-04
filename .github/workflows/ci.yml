@@ -53,8 +53,14 @@ jobs:
           channel: stable
           cache: true
 
+      # --enforce-lockfile, because the release workflow uses it and this job is
+      # the only place a drifted lockfile can be caught before a tag is cut.
+      # Running any Flutter tooling locally on a different SDK rewrites
+      # pubspec.lock; a plain `pub get` here re-resolves and says nothing, and
+      # the release then fails at `Resolve Flutter dependencies` with the tag
+      # already pushed. That is exactly how v0.2.0's first attempt died.
       - name: Get dependencies
-        run: flutter pub get
+        run: flutter pub get --enforce-lockfile
 
       - name: Check formatting
         run: dart format --output=none --set-exit-if-changed lib test
