@@ -14,6 +14,40 @@ publish otherwise.
 
 ## [Unreleased]
 
+### Added
+
+- **An automatic trust mode, `STORE_AUTO`.** Import the server's certificate
+  authority and connect; there is no longer a second step where the right entry
+  has to be identified in a list. The profile stores no selection, and the
+  chain is anchored on whatever in the store fits. It is opt-in, and the price
+  is stated rather than hidden: any certificate imported for any server may
+  vouch for a profile using this mode, so the pre-flight check says how many
+  that is, the log says so before connecting, and the certificate that actually
+  vouched is named after the handshake.
+
+### Changed
+
+- **The chain is now built by searching, not validated as it arrived.** Server
+  certificates and the store go into one candidate pool with the trust anchors
+  kept separate, so a server that omits an intermediate, sends an extra
+  certificate, or includes the anchor in its own chain is resolved instead of
+  refused. `CUSTOM_ONLY` and `SYSTEM_PLUS_CUSTOM` moved onto it too, since a
+  private CA on a router is exactly the case that produces those chains. No
+  PKIX check was relaxed: `basicConstraints` on the trust anchor, which
+  `CertPathBuilder` does not apply, is reapplied explicitly so that adopting
+  path building could not quietly start accepting a certificate that was never
+  meant to be an authority.
+
+### Fixed
+
+- **A self-signed CA in the store no longer has to be selected by hand** for a
+  server that presents its own chain — the case that prompted this work.
+- **A server configured with its certificate authority in place of the
+  certificate that CA issued** now says so. It failed the hostname check with a
+  message that read as though the expected hostname were wrong, sending people
+  into the certificate store after a problem that is in the server's
+  configuration.
+
 ## [0.2.0]
 
 The fork's own artwork, in every place Android draws it.

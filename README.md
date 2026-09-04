@@ -95,8 +95,15 @@ What this fork adds on top of the above:
 
 - SSTP over TLS on port 443, with PAP, CHAP, MSCHAPv2 and EAP-MSCHAPv2
 - SSTP through an HTTP proxy, with or without proxy authentication
-- A server certificate store with four trust policies — `SYSTEM`,
-  `CUSTOM_ONLY`, `PIN_LEAF`, and `INSECURE` in debug builds only
+- A server certificate store with five trust policies — `SYSTEM`,
+  `SYSTEM_PLUS_CUSTOM`, `CUSTOM_ONLY`, `STORE_AUTO`, `PIN_LEAF`, and `INSECURE`
+  in debug builds only
+- `STORE_AUTO` for the common case: import your server's certificate authority
+  and connect, without also having to pick it out of a list. The chain is built
+  by searching, so a server that omits an intermediate or sends an extra
+  certificate still resolves. The trade is that any certificate you have
+  imported may vouch for any profile using this mode, so the app tells you how
+  many that is and logs which one actually did
 - Fingerprint pinning, an `expectedHostname` field for certificates issued to a
   name the server is not reached by, and a pre-flight check that says what a
   profile will accept before it connects

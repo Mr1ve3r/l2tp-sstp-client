@@ -193,11 +193,21 @@ Verification splits into three questions that fail differently, so they are
 three types rather than one.
 
 **Is the certificate trusted?** `TrustManagerFactoryProvider` builds the
-`X509TrustManager` a profile's `TrustPolicy` calls for. `SYSTEM` and
-`CUSTOM_ONLY` are ordinary PKIX managers over different anchors;
-`SYSTEM_PLUS_CUSTOM` tries the system store first and falls back, throwing the
-system failure with the custom one attached because the system message is the
-one that explains what is wrong; `PIN_LEAF` compares the leaf's SHA-256 against
+`X509TrustManager` a profile's `TrustPolicy` calls for. `SYSTEM` is an ordinary
+PKIX manager over the platform anchors. `CUSTOM_ONLY`, `SYSTEM_PLUS_CUSTOM` and
+`STORE_AUTO` go through `PathBuildingTrustManager`, which searches for a path
+rather than validating the chain as it arrived: the presented certificates and
+the store go into one candidate pool and the anchors are kept separate, so a
+missing intermediate, an extra certificate or the anchor arriving inside the
+chain all still resolve. Nothing about PKIX is relaxed to do it -- and because
+`CertPathBuilder` exempts the trust anchor from `basicConstraints` where
+`TrustManagerFactory` did not, that check is reapplied explicitly.
+`STORE_AUTO` anchors on the whole store instead of on a profile's selection,
+which is what lets a user import their CA without also identifying it; the
+anchor that ends up vouching is logged, because otherwise the choice would be
+unauditable. `SYSTEM_PLUS_CUSTOM` tries the system store first and falls back,
+throwing the system failure with the custom one attached because the system
+message is the one that explains what is wrong; `PIN_LEAF` compares the leaf's SHA-256 against
 the profile's pins in constant time and ignores the chain entirely, which is
 what makes a self-signed router certificate usable without disabling
 verification everywhere.
