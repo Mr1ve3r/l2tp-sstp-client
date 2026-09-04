@@ -27,6 +27,19 @@ the document that says *how*.
 | [`MANUAL_TEST_PHASE9.md`](MANUAL_TEST_PHASE9.md) | The Flutter UI end to end |
 | [`MANUAL_TEST_PHASE10.md`](MANUAL_TEST_PHASE10.md) | Failover groups |
 
+**Instrumented tests need a device too.** They are in no `make` target, because
+nothing in CI can run them, and they cover the one thing a JVM run cannot: the
+platform provider is Conscrypt, not the JDK's, and the two differ over chain
+cleanup and over a chain whose first element is itself a trust anchor. Run them
+against an attached device before a release:
+
+```
+cd android && ./gradlew :core-trust:connectedDebugAndroidTest
+```
+
+A failure there that does not reproduce on the JVM is a real finding about the
+device, not a flaky test.
+
 ---
 
 ## 1. Protocol × server × certificate × policy × network
@@ -49,6 +62,9 @@ protocol-selection decision this application makes exists because of them.
 | 9 | SSTP via proxy | MikroTik | own CA | `CUSTOM_ONLY` | Wi-Fi | | |
 | 10 | SSTP via proxy, proxy auth | MikroTik | own CA | `CUSTOM_ONLY` | Wi-Fi | | |
 | 11 | Both | — | — | — | network switched mid-session | | |
+| 12 | SSTP | MikroTik | own CA, nothing selected | `STORE_AUTO` | Wi-Fi | | |
+| 13 | SSTP | MikroTik | own CA plus an unrelated CA | `STORE_AUTO` | Wi-Fi | | |
+| 14 | SSTP | MikroTik | store emptied | `STORE_AUTO` | Wi-Fi | | |
 
 What "passed" means for a row, beyond the tunnel coming up:
 
@@ -63,6 +79,13 @@ What "passed" means for a row, beyond the tunnel coming up:
   (SPEC appendix А and appendix Б item 9). Point the proxy at a host whose
   certificate would fail the profile's policy; the connection must still be
   judged by the target server's certificate.
+- **Rows 12 and 13:** the tunnel comes up with no certificate ticked on the
+  profile, and the log names the anchor that vouched -- on row 13 it must name
+  the server's own CA and not the unrelated one. Row 13 is the audit trail the
+  mode depends on; without it the widening it buys would be invisible.
+- **Row 14:** delete every certificate and connect. The pre-flight must refuse
+  before the socket opens, naming an empty store, rather than timing out in the
+  handshake.
 - **Row 11:** switch Wi-Fi off mid-session and back on. The session either
   survives or reconnects; it must not sit "connected" while carrying nothing.
   This is what appendix В.7 is about.

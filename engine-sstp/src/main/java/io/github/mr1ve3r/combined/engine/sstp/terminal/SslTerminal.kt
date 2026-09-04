@@ -12,8 +12,10 @@ package io.github.mr1ve3r.combined.engine.sstp.terminal
 
 import io.github.mr1ve3r.combined.core.trust.CertificateFingerprint
 import io.github.mr1ve3r.combined.core.trust.CertificatePinMismatchException
+import io.github.mr1ve3r.combined.core.trust.CompositeTrustManager
 import io.github.mr1ve3r.combined.core.trust.HostnameVerification
 import io.github.mr1ve3r.combined.core.trust.HostnameVerificationResult
+import io.github.mr1ve3r.combined.core.trust.PathBuildingTrustManager
 import io.github.mr1ve3r.combined.engine.EngineError
 import io.github.mr1ve3r.combined.engine.EngineException
 import io.github.mr1ve3r.combined.engine.LogLevel
@@ -244,8 +246,46 @@ internal class SslTerminal(
         leafCertificate = secure.session.peerCertificates.firstOrNull() as? X509Certificate
         log(LogLevel.INFO, "TLS established: ${secure.session.protocol} ${secure.session.cipherSuite}")
         logPresentedChain(LogLevel.DEBUG)
+        logAnchorThatVouched()
 
         return secure
+    }
+
+    /**
+     * Names the certificate the accepted chain ended at.
+     *
+     * Under a policy that anchors on one selected certificate this is barely
+     * news. Under one that anchors on the whole store it is the only record of
+     * which certificate actually vouched for this server -- without it the
+     * user cannot audit a decision the application made on their behalf, and
+     * cannot tell that deleting some unrelated certificate is what will break
+     * this profile tomorrow.
+     */
+    private fun logAnchorThatVouched() {
+        val manager = trustManagerOfType<PathBuildingTrustManager>() ?: return
+        val anchor = manager.lastAnchor ?: return
+
+        log(
+            LogLevel.INFO,
+            "The chain was anchored on ${anchor.subjectX500Principal.name} " +
+                "sha256=${CertificateFingerprint.formatForDisplay(CertificateFingerprint.sha256(anchor))}",
+        )
+        manager.lastValidatedPath?.forEachIndexed { index, certificate ->
+            log(LogLevel.DEBUG, "  path[$index] subject=${certificate.subjectX500Principal.name}")
+        }
+    }
+
+    /**
+     * The trust manager of type [T] in play, looking through the composite one.
+     *
+     * `SYSTEM_PLUS_CUSTOM` wraps two managers and either may have accepted the
+     * chain; a null [PathBuildingTrustManager.lastAnchor] is how the system
+     * store's acceptance shows up, and needs no line of its own.
+     */
+    private inline fun <reified T : Any> trustManagerOfType(): T? = when (val delegate = recordingTrustManager.delegate) {
+        is T -> delegate
+        is CompositeTrustManager -> delegate.custom as? T
+        else -> null
     }
 
     /**
@@ -271,9 +311,32 @@ internal class SslTerminal(
                     EngineError.HostnameMismatch(
                         expected = result.expected,
                         presented = result.presented,
-                        detail = "The certificate is issued to ${result.presented.joinToString()}",
+                        detail = "The certificate is issued to ${result.presented.joinToString()}" +
+                            servedItsOwnAuthorityHint(leaf),
                     ),
                 )
+        }
+    }
+
+    /**
+     * The sentence to add when the name failed because the server is serving
+     * its own certificate authority.
+     *
+     * A certificate authority and a server certificate look alike enough in a
+     * router's interface to be confused, and the mistake produces a name error
+     * that reads as though the client were at fault. Nothing on this side can
+     * fix it -- TLS binds the server to the certificate it proved a key for,
+     * and this is that certificate -- so the useful thing is to say what the
+     * server is doing. Empty for every other mismatch, which is the ordinary
+     * "wrong name, set the expected hostname" case.
+     */
+    private fun servedItsOwnAuthorityHint(leaf: X509Certificate): String {
+        val isCa = leaf.basicConstraints >= 0
+        return if (isCa && isSelfSigned(leaf)) {
+            ". That certificate is a self-signed certificate authority, not a server certificate: the server " +
+                "appears to be configured with its CA instead of the certificate the CA issued"
+        } else {
+            ""
         }
     }
 
@@ -552,7 +615,7 @@ internal class SslTerminal(
  * not *which* one, and `EngineError.CertificateRejected` exists precisely so a
  * user can compare the fingerprint with the one they expected.
  */
-internal class RecordingTrustManager(private val delegate: X509TrustManager) : X509TrustManager {
+internal class RecordingTrustManager(val delegate: X509TrustManager) : X509TrustManager {
     @Volatile
     var lastChain: List<X509Certificate>? = null
         private set

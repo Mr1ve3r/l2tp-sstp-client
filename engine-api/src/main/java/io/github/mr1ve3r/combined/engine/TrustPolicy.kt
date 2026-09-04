@@ -17,6 +17,18 @@ enum class TrustPolicy {
     CUSTOM_ONLY,
 
     /**
+     * Every certificate in the application store is offered as a trust anchor,
+     * and nothing has to be selected on the profile.
+     *
+     * For the common case: the user has imported their server's certificate
+     * authority and should not also have to work out which entry in the list it
+     * is. The cost is real, and is why this is not a default -- a certificate
+     * imported for one server can vouch for another. The log names whichever
+     * one actually did.
+     */
+    STORE_AUTO,
+
+    /**
      * Compare the SHA-256 fingerprint of the leaf certificate against the
      * profile's pins and ignore the chain entirely. Intended for self-signed
      * certificates.

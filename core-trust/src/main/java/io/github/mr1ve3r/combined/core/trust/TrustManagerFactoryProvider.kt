@@ -22,9 +22,10 @@ import javax.net.ssl.X509TrustManager
 object TrustManagerFactoryProvider {
     /**
      * @param policy how the server certificate should be verified.
-     * @param customCerts certificates selected in the profile. Used by
-     *   [TrustPolicy.CUSTOM_ONLY] and [TrustPolicy.SYSTEM_PLUS_CUSTOM]; ignored
-     *   by the others.
+     * @param customCerts the certificates to anchor on. For
+     *   [TrustPolicy.CUSTOM_ONLY] and [TrustPolicy.SYSTEM_PLUS_CUSTOM] these
+     *   are what the profile selected; for [TrustPolicy.STORE_AUTO] the caller
+     *   passes the whole store. Ignored by the others.
      * @param pinnedFingerprints SHA-256 fingerprints accepted under
      *   [TrustPolicy.PIN_LEAF]; ignored by the others.
      * @param allowInsecure whether [TrustPolicy.INSECURE] may be built at all.
@@ -46,12 +47,26 @@ object TrustManagerFactoryProvider {
 
         TrustPolicy.CUSTOM_ONLY -> {
             require(customCerts.isNotEmpty()) { "CUSTOM_ONLY needs at least one certificate" }
-            pkixTrustManager(customCerts)
+            PathBuildingTrustManager.anchoredOn(customCerts)
         }
 
         TrustPolicy.SYSTEM_PLUS_CUSTOM -> {
             require(customCerts.isNotEmpty()) { "SYSTEM_PLUS_CUSTOM needs at least one certificate" }
-            CompositeTrustManager(systemTrustManager(), pkixTrustManager(customCerts))
+            CompositeTrustManager(systemTrustManager(), PathBuildingTrustManager.anchoredOn(customCerts))
+        }
+
+        TrustPolicy.STORE_AUTO -> {
+            require(customCerts.isNotEmpty()) { "STORE_AUTO needs at least one certificate in the store" }
+            PathBuildingTrustManager.anchoredOn(
+                certs = customCerts,
+                pool = customCerts,
+                // The anchor set here is the whole store. Naming it in the
+                // handshake would hand any server that asks for client
+                // authentication the subject of every certificate authority
+                // this user has ever imported, and the engine never presents a
+                // client certificate anyway.
+                exposeAcceptedIssuers = false,
+            )
         }
 
         TrustPolicy.PIN_LEAF -> {
@@ -89,7 +104,17 @@ object TrustManagerFactoryProvider {
     /** The platform's own trust store: Android's system CAs, or the JDK's on a JVM. */
     fun systemTrustManager(): X509TrustManager = trustManagerFrom(TrustManagerFactory.getDefaultAlgorithm(), null)
 
-    /** A PKIX trust manager anchored on [certs] and nothing else. */
+    /**
+     * A PKIX trust manager anchored on [certs] and nothing else, validating the
+     * chain as the server sent it.
+     *
+     * No policy uses this any more -- the chain-building ones moved to
+     * [PathBuildingTrustManager], which resolves the same chains and several
+     * that this cannot. It is kept because it is the reference the path-building
+     * tests compare against: the guarantee worth holding onto is that path
+     * building accepts everything this accepted and nothing it refused, and that
+     * is only checkable while both exist.
+     */
     fun pkixTrustManager(certs: List<X509Certificate>): X509TrustManager {
         val keyStore =
             KeyStore.getInstance(KeyStore.getDefaultType()).apply {
@@ -118,7 +143,8 @@ object TrustManagerFactoryProvider {
  */
 class CompositeTrustManager(
     private val system: X509TrustManager,
-    private val custom: X509TrustManager,
+    /** Readable so the engine can ask it which anchor accepted the chain. */
+    val custom: X509TrustManager,
 ) : X509TrustManager {
     override fun checkServerTrusted(chain: Array<out X509Certificate>, authType: String) {
         try {

@@ -396,6 +396,16 @@
   "trustPolicySystemPlusCustomHelp": "System store first; if that fails, the certificates selected below.",
   "trustPolicyCustomOnly": "Selected only",
   "trustPolicyCustomOnlyHelp": "Only the certificates selected below — a private authority of your own.",
+  "trustPolicyStoreAuto": "Any stored certificate",
+  "trustPolicyStoreAutoHelp": "The app works out which of your certificates fits and builds the chain itself. Nothing to pick — but any certificate you have imported may vouch for this server.",
+  "trustPolicyStoreAutoPicker": "{count, plural, =0{No certificates are stored yet. Import the server's certificate first.} =1{Your one stored certificate is used.} other{All {count} of your stored certificates are used.}}",
+  "@trustPolicyStoreAutoPicker": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "trustPolicyPinLeaf": "Pin this certificate",
   "trustPolicyPinLeafHelp": "Accept exactly the selected certificate by fingerprint, ignoring the chain. For a self-signed server.",
   "trustPolicyInsecure": "No verification",

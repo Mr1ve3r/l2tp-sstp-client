@@ -25,6 +25,7 @@ enum TrustPolicy {
   system('SYSTEM'),
   systemPlusCustom('SYSTEM_PLUS_CUSTOM'),
   customOnly('CUSTOM_ONLY'),
+  storeAuto('STORE_AUTO'),
   pinLeaf('PIN_LEAF'),
   insecure('INSECURE');
 

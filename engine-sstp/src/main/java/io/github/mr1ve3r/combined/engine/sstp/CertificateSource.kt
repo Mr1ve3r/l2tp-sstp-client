@@ -34,6 +34,24 @@ interface CertificateSource {
      */
     suspend fun summariesFor(ids: List<String>): Map<String, CertificateSummary>
 
+    /**
+     * Everything the store holds, for [TrustPolicy.STORE_AUTO][
+     * io.github.mr1ve3r.combined.engine.TrustPolicy.STORE_AUTO].
+     *
+     * Separate from [certificatesFor] rather than a special argument to it,
+     * because "the whole store" and "what this profile selected" are different
+     * questions and answering the first when the second was meant would widen
+     * what a profile trusts without anything saying so.
+     *
+     * The default returns nothing, which is the safe direction: a source that
+     * has not implemented this produces an empty store, and an empty store is a
+     * blocking pre-flight failure rather than a connection with no anchors.
+     */
+    suspend fun allCertificates(): List<X509Certificate> = emptyList()
+
+    /** Summaries of everything the store holds, for the pre-flight check. */
+    suspend fun allSummaries(): Map<String, CertificateSummary> = emptyMap()
+
     companion object {
         /**
          * A source that holds nothing.
@@ -57,4 +75,8 @@ class TrustStoreCertificateSource(private val store: TrustStore) : CertificateSo
     override suspend fun certificatesFor(ids: List<String>): List<X509Certificate> = store.certificatesFor(ids)
 
     override suspend fun summariesFor(ids: List<String>): Map<String, CertificateSummary> = store.summariesFor(ids)
+
+    override suspend fun allCertificates(): List<X509Certificate> = store.certificatesFor(store.list().map { it.summary.id })
+
+    override suspend fun allSummaries(): Map<String, CertificateSummary> = store.list().associate { it.summary.id to it.summary }
 }

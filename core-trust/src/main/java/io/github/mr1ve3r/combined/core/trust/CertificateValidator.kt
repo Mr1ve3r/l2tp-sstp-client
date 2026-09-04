@@ -64,9 +64,21 @@ object CertificateValidator {
     fun consultsSelectedCertificates(policy: TrustPolicy): Boolean =
         policy == TrustPolicy.CUSTOM_ONLY || policy == TrustPolicy.SYSTEM_PLUS_CUSTOM
 
-    /** Whether [policy] builds a chain, and so wants a CA rather than a leaf. */
+    /**
+     * Whether [policy] needs the profile to name a certificate authority.
+     *
+     * Deliberately not true of [TrustPolicy.STORE_AUTO]: it builds a chain, but
+     * it takes its anchors from the store rather than from the profile, so
+     * demanding a selection would defeat the point of it.
+     */
     fun requiresCertificateAuthority(policy: TrustPolicy): Boolean =
         policy == TrustPolicy.CUSTOM_ONLY || policy == TrustPolicy.SYSTEM_PLUS_CUSTOM
+
+    /** Whether [policy] anchors on the whole store rather than on a selection. */
+    fun consultsWholeStore(policy: TrustPolicy): Boolean = policy == TrustPolicy.STORE_AUTO
+
+    /** Whether [policy] resolves a chain at all, wherever its anchors come from. */
+    fun buildsAChain(policy: TrustPolicy): Boolean = requiresCertificateAuthority(policy) || consultsWholeStore(policy)
 }
 
 /**

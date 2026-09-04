@@ -1095,6 +1095,17 @@ class TunnelVpnService : VpnService() {
                         },
                     )
                 }
+                if (profile.trustPolicy == TrustPolicy.STORE_AUTO) {
+                    // The profile names no certificate, so nothing in the
+                    // interface says which ones are in play. This is the only
+                    // place before the connection where that can be stated.
+                    VpnTunnelEvents.emitEngineLog(
+                        Log.INFO,
+                        TAG,
+                        "Trust policy STORE_AUTO: any certificate imported into this app may vouch for this " +
+                            "server; the one that does is named once the handshake succeeds",
+                    )
+                }
                 SstpEngine(
                     certificates = TrustStoreCertificateSource(TrustStore.get(applicationContext)),
                     // The INSECURE policy must not be honoured by a release
