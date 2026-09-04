@@ -133,7 +133,8 @@ object TrustManagerFactoryProvider {
  */
 class CompositeTrustManager(
     private val system: X509TrustManager,
-    private val custom: X509TrustManager,
+    /** Readable so the engine can ask it which anchor accepted the chain. */
+    val custom: X509TrustManager,
 ) : X509TrustManager {
     override fun checkServerTrusted(chain: Array<out X509Certificate>, authType: String) {
         try {

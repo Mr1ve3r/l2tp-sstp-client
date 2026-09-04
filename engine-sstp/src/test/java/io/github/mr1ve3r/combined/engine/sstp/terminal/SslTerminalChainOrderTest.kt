@@ -106,6 +106,13 @@ class SslTerminalChainOrderTest {
             "the error should name what the certificate does cover: ${mismatch.presented}",
             mismatch.presented.any { "Chain Test CA" in it },
         )
+        // Without this sentence the error reads as though the client were at
+        // fault, and the user goes looking in the certificate store for a
+        // problem that is in the server's configuration.
+        assertTrue(
+            "the error should say the server served its CA: ${mismatch.detail}",
+            mismatch.detail?.contains("configured with its CA") == true,
+        )
     }
 
     /** Runs [terminal] to completion and returns the error it refused with. */
