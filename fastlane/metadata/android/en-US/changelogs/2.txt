@@ -1,0 +1,8 @@
+The application now carries its own artwork everywhere Android draws it.
+
+The launcher icon is adaptive, so it fills the launcher's own mask instead of
+being shrunk onto a white plate, and it has a monochrome layer for Android 13+
+themed icons. The Quick Settings tile and both service notifications use a
+silhouette of the logo rather than stock platform glyphs.
+
+The startup screen shows the L2/SS/TP logo; it still showed upstream's.

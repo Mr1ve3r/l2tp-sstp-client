@@ -14,7 +14,36 @@ publish otherwise.
 
 ## [Unreleased]
 
-## [0.1.0] — unreleased
+## [0.2.0]
+
+The fork's own artwork, in every place Android draws it.
+
+### Added
+
+- **An adaptive launcher icon.** `minSdk` is 31, so every device masks its own
+  icons; with only the legacy bitmap the launcher shrank the square onto a
+  white plate and the logo became a tile inside someone else's circle. The
+  background is the logo's own plate colour and the foreground inset is 20%,
+  measured from the glyph column's half-diagonal against the guaranteed-visible
+  circle rather than taken from the default.
+- **A monochrome layer** for Android 13+ themed icons, derived from the artwork
+  by reading each pixel's distance from the plate colour towards the glyph
+  colour as alpha, so antialiased edges survive.
+
+### Changed
+
+- **The startup screen shows this application's logo.** It still showed
+  upstream's monogram. On Android 12+ the splash icon is masked to a circle of
+  two thirds of the image, so the glyphs are scaled to 52% of the side against
+  the 62% that circle allows.
+- **The Quick Settings tile and both service notifications** use the logo
+  silhouette instead of the platform padlock and share glyphs. Android tints
+  these by alpha, so the colour bitmap the tile had briefly been pointed at
+  would have rendered as a solid block.
+- The F-Droid listing icon and the proxy notification title, both of which the
+  rename had missed.
+
+## [0.1.0]
 
 The first release of this fork: SSTP alongside the inherited L2TP/IPsec, built
 to the phases in [`SPEC`](SPEC).
@@ -107,5 +136,6 @@ to the phases in [`SPEC`](SPEC).
 - **Proxy-only mode**, inherited from TunnelForge, fails its L2TP handshake and
   has not been attributed to a cause. See SPEC appendix В.8.
 
-[Unreleased]: https://github.com/Mr1ve3r/l2tp-sstp-client/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/Mr1ve3r/l2tp-sstp-client/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/Mr1ve3r/l2tp-sstp-client/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/Mr1ve3r/l2tp-sstp-client/releases/tag/v0.1.0
