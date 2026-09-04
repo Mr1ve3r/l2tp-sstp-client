@@ -321,6 +321,7 @@ class ProfileFormState extends Equatable {
           TrustPolicy.system,
           TrustPolicy.systemPlusCustom,
           TrustPolicy.customOnly,
+          TrustPolicy.storeAuto,
           TrustPolicy.pinLeaf,
         ]
       : trustOptions.policies;
@@ -807,7 +808,13 @@ class ProfileFormBloc extends Bloc<ProfileFormEvent, ProfileFormState> {
         trustPolicy: state.trustPolicy,
         // The store keeps certificates and pins apart; the form has one
         // selection list, and where it lands is decided by the policy.
-        trustedCertificateIds: state.trustPolicy == TrustPolicy.pinLeaf
+        //
+        // storeAuto saves nothing: it anchors on the whole store, so a
+        // selection left over from another policy would sit in the profile
+        // meaning nothing and reappear if the policy were switched back.
+        trustedCertificateIds:
+            state.trustPolicy == TrustPolicy.pinLeaf ||
+                state.trustPolicy == TrustPolicy.storeAuto
             ? const <String>[]
             : state.trustedCertificateIds,
         pinnedFingerprints: state.trustPolicy == TrustPolicy.pinLeaf

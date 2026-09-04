@@ -280,6 +280,7 @@ class _ProfileEditorViewState extends State<ProfileEditorView> {
       TrustPolicy.system => t.trustPolicySystem,
       TrustPolicy.systemPlusCustom => t.trustPolicySystemPlusCustom,
       TrustPolicy.customOnly => t.trustPolicyCustomOnly,
+      TrustPolicy.storeAuto => t.trustPolicyStoreAuto,
       TrustPolicy.pinLeaf => t.trustPolicyPinLeaf,
       TrustPolicy.insecure => t.trustPolicyInsecure,
     };
@@ -290,6 +291,7 @@ class _ProfileEditorViewState extends State<ProfileEditorView> {
       TrustPolicy.system => t.trustPolicySystemHelp,
       TrustPolicy.systemPlusCustom => t.trustPolicySystemPlusCustomHelp,
       TrustPolicy.customOnly => t.trustPolicyCustomOnlyHelp,
+      TrustPolicy.storeAuto => t.trustPolicyStoreAutoHelp,
       TrustPolicy.pinLeaf => t.trustPolicyPinLeafHelp,
       TrustPolicy.insecure => t.trustPolicyInsecureHelp,
     };
@@ -425,6 +427,20 @@ class _ProfileEditorViewState extends State<ProfileEditorView> {
                 ),
               ),
             ),
+        ],
+        // No picker under storeAuto: every stored certificate is in play, so
+        // checkboxes would suggest a choice that changes nothing. The count is
+        // shown instead, because it is the one thing that decides how wide the
+        // policy actually is.
+        if (state.trustPolicy == TrustPolicy.storeAuto) ...[
+          const SizedBox(height: 12),
+          Text(
+            t.trustPolicyStoreAutoPicker(
+              state.trustOptions.certificates.length,
+            ),
+            key: const Key('store_auto_certificate_count'),
+            style: muted,
+          ),
         ],
         const SizedBox(height: 12),
         TextField(
