@@ -44,6 +44,14 @@ publish otherwise.
 
 - **A self-signed CA in the store no longer has to be selected by hand** for a
   server that presents its own chain — the case that prompted this work.
+- **Connecting with no matching certificate in the store no longer kills the
+  app.** The certificate check runs as a callback from the TLS library in the
+  middle of a handshake, by which point the native side has consumed most of
+  the thread's stack; the path search then ran out and raised a
+  `StackOverflowError`, which is an `Error` that nothing catches, so the VPN
+  service died instead of reporting a rejected certificate. The search now runs
+  on a thread of its own with room to work, and an overflow there is still
+  turned into an ordinary refusal.
 - **A server configured with its certificate authority in place of the
   certificate that CA issued** now says so. It failed the hostname check with a
   message that read as though the expected hostname were wrong, sending people

@@ -80,6 +80,19 @@ object TestCertificates {
     /** A leaf [chainCa] signed with SHA-1, valid in every other respect. */
     val sha1LeafSignedByChainCa: X509Certificate get() = load("sha1-leaf-signed-by-chain-ca.pem")
 
+    /**
+     * Twelve certificate authorities carrying [ca]'s subject name over twelve
+     * different keys.
+     *
+     * A path builder looks for candidate issuers by name, so against a leaf
+     * [ca] signed every one of these is a branch it has to walk into and
+     * reject. Nothing here is malicious or even unusual -- a re-issued CA keeps
+     * its name -- but it multiplies the search, which is what turned a refusal
+     * into a `StackOverflowError` on a device.
+     */
+    val decoyCasSharingASubject: List<X509Certificate>
+        get() = CertificateParser.parse(bytesOf("decoy-cas-sharing-a-subject.pem"))
+
     /** The CA and the leaf it signed, concatenated in one PEM file. */
     val bundle: List<X509Certificate> get() = CertificateParser.parse(bytesOf("bundle.pem"))
 

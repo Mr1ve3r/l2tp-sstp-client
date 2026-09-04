@@ -120,21 +120,23 @@ class PathBuildingTrustManager(
             return
         }
 
+        // Anchors are deliberately kept out of the candidate pool. The builder
+        // already has them, and offering them a second time as intermediates
+        // multiplies the search at every level for no gain -- badly so under a
+        // whole-store policy, where the pool and the anchor set were the same
+        // list.
+        val candidates = (chain.toList() + extraIntermediates).filterNot(::isAnchor)
+
         val parameters =
             PKIXBuilderParameters(anchors, X509CertSelector().apply { certificate = endEntity }).apply {
                 isRevocationEnabled = false
                 date = Date(clock())
-                addCertStore(
-                    CertStore.getInstance(
-                        "Collection",
-                        CollectionCertStoreParameters(chain.toList() + extraIntermediates),
-                    ),
-                )
+                addCertStore(CertStore.getInstance("Collection", CollectionCertStoreParameters(candidates)))
             }
 
         val result =
             try {
-                CertPathBuilder.getInstance("PKIX").build(parameters) as PKIXCertPathBuilderResult
+                buildOnADeepStack(parameters)
             } catch (e: CertPathBuilderException) {
                 throw translate(e)
             } catch (e: InvalidAlgorithmParameterException) {
@@ -238,6 +240,64 @@ class PathBuildingTrustManager(
         emptyArray()
     }
 
+    /**
+     * Runs the search on a thread of this class's own, with a stack it chose.
+     *
+     * `SunCertPathBuilder` searches by recursion, and how deep it goes is
+     * decided by the certificates in play rather than by anything this code
+     * controls: candidate issuers are matched by name, so authorities sharing a
+     * name multiply the branching, and RFC 5280 exempts self-issued
+     * certificates from the path-length limit that would otherwise cap it. A
+     * store of self-signed router CAs is exactly that shape.
+     *
+     * On a device this ran on a coroutine worker with about a megabyte of
+     * stack, and exhausting it raised a [StackOverflowError] -- an `Error`, so
+     * nothing on the way out caught it, and the whole VPN service died in the
+     * middle of a handshake. Refusing a certificate is a normal outcome and has
+     * to arrive as an exception the engine can report.
+     *
+     * Two things are done about it. The search gets its own thread with a
+     * generous stack, so the depth available no longer depends on who happened
+     * to call. And a [StackOverflowError] on that thread is still caught and
+     * turned into a refusal, because a bound chosen here is a guess and the
+     * consequence of guessing low must not be a crash. Catching it is safe in a
+     * way it usually is not: the thread is this method's own, it is finished
+     * with, and nothing else ran on it.
+     */
+    private fun buildOnADeepStack(parameters: PKIXBuilderParameters): PKIXCertPathBuilderResult {
+        var result: PKIXCertPathBuilderResult? = null
+        var failure: Throwable? = null
+
+        val worker =
+            Thread(null, {
+                try {
+                    result = CertPathBuilder.getInstance("PKIX").build(parameters) as PKIXCertPathBuilderResult
+                } catch (e: StackOverflowError) {
+                    failure = CertificateException(
+                        "The certificates available could not be searched for a path to a trusted one; " +
+                            "the server's certificate is not accepted",
+                        e,
+                    )
+                } catch (e: Throwable) {
+                    failure = e
+                }
+            }, "cert-path-builder", SEARCH_STACK_BYTES)
+
+        worker.start()
+        try {
+            worker.join()
+        } catch (e: InterruptedException) {
+            Thread.currentThread().interrupt()
+            throw CertificateException("Interrupted while checking the server's certificate", e)
+        }
+
+        failure?.let { throw it }
+        return result ?: throw CertificateException("The certificate path search produced no result")
+    }
+
+    /** Whether [certificate] is one of the anchors. */
+    private fun isAnchor(certificate: X509Certificate): Boolean = anchorMatching(certificate) != null
+
     /** The anchor holding [certificate] itself, if there is one. */
     private fun anchorMatching(certificate: X509Certificate): X509Certificate? = anchors
         .mapNotNull(TrustAnchor::getTrustedCert)
@@ -284,6 +344,16 @@ class PathBuildingTrustManager(
     }
 
     companion object {
+        /**
+         * Stack for the search thread.
+         *
+         * Eight megabytes against the megabyte a coroutine worker gets. The
+         * number is not derived from anything -- the depth depends on the
+         * certificates -- it is simply far more headroom than any real store
+         * needs, on a thread that exists for one call and then ends.
+         */
+        private const val SEARCH_STACK_BYTES = 8L * 1024 * 1024
+
         /** `id-kp-serverAuth`, the extended key usage a TLS server needs. */
         private const val SERVER_AUTH_OID = "1.3.6.1.5.5.7.3.1"
 

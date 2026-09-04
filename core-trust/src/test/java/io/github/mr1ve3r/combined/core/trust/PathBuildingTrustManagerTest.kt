@@ -1,5 +1,6 @@
 package io.github.mr1ve3r.combined.core.trust
 
+import io.github.mr1ve3r.combined.engine.TrustPolicy
 import java.security.cert.CertificateException
 import java.security.cert.CertificateExpiredException
 import java.security.cert.X509Certificate
@@ -317,6 +318,80 @@ class PathBuildingTrustManagerTest {
                 )
             }
         assertTrue("expected the algorithm to be named: ${failure.message}", failure.message.orEmpty().contains("SHA1"))
+    }
+
+    /**
+     * A store that cannot vouch for the server must be refused, not crashed on.
+     *
+     * Reported from a device: the connection died with a `StackOverflowError`
+     * out of `SunCertPathBuilder.depthFirstSearchForward`, taking the whole VPN
+     * service with it. Every certificate in a store like this is self-signed,
+     * so each one is its own issuer; RFC 5280 does not count a self-issued
+     * certificate against the path length, so the depth limit never bites and
+     * the search recurses until the stack is gone.
+     *
+     * The refusal has to be an exception the engine can report. An `Error` is
+     * not caught by anything on the way out, and a VPN service that disappears
+     * mid-handshake is the worst possible way to say "wrong certificate".
+     */
+    @Test
+    fun `a store with no issuer for the server is refused rather than crashed on`() {
+        val store =
+            listOf(
+                TestCertificates.selfSigned,
+                TestCertificates.chainCa,
+                TestCertificates.caWithoutBasicConstraints,
+                TestCertificates.expired,
+            )
+        val manager = PathBuildingTrustManager.anchoredOn(certs = store, pool = store, clock = { NOW })
+
+        assertThrows(CertificateException::class.java) {
+            manager.checkServerTrusted(arrayOf(TestCertificates.leafSignedByCa, TestCertificates.ca), AUTH_TYPE)
+        }
+    }
+
+    /**
+     * The same shape, driven through the policy the report came from.
+     */
+    @Test
+    fun `STORE_AUTO with an unrelated store refuses instead of crashing`() {
+        val store = listOf(TestCertificates.selfSigned, TestCertificates.chainCa, TestCertificates.expired)
+        val manager = TrustManagerFactoryProvider.create(TrustPolicy.STORE_AUTO, customCerts = store)
+
+        assertThrows(CertificateException::class.java) {
+            manager.checkServerTrusted(arrayOf(TestCertificates.leafSignedByCa, TestCertificates.ca), AUTH_TYPE)
+        }
+    }
+
+    /**
+     * The store shape that actually took the service down: many authorities
+     * sharing one subject name, none of which issued the server's certificate.
+     *
+     * Each decoy is a candidate issuer by name, so the builder walks into every
+     * one of them. Feeding the anchors back in as path candidates -- which the
+     * whole-store policy used to do -- multiplied that again at every level,
+     * and self-issued certificates are exempt from the path-length limit, so
+     * nothing stopped the recursion before the stack ran out.
+     */
+    @Test
+    fun `many authorities sharing a subject are refused rather than crashed on`() {
+        val store = TestCertificates.decoyCasSharingASubject
+        val manager = PathBuildingTrustManager.anchoredOn(certs = store, pool = store, clock = { NOW })
+
+        assertThrows(CertificateException::class.java) {
+            manager.checkServerTrusted(arrayOf(TestCertificates.leafSignedByCa, TestCertificates.ca), AUTH_TYPE)
+        }
+    }
+
+    /** The real anchor is still found when the decoys are sitting beside it. */
+    @Test
+    fun `the right authority is found among many sharing its name`() {
+        val store = TestCertificates.decoyCasSharingASubject + TestCertificates.ca
+        val manager = PathBuildingTrustManager.anchoredOn(certs = store, pool = store, clock = { NOW })
+
+        manager.checkServerTrusted(arrayOf(TestCertificates.leafSignedByCa), AUTH_TYPE)
+
+        assertEquals(TestCertificates.ca, manager.lastAnchor)
     }
 
     /**
