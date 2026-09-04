@@ -33,10 +33,12 @@ publish otherwise.
   certificate, or includes the anchor in its own chain is resolved instead of
   refused. `CUSTOM_ONLY` and `SYSTEM_PLUS_CUSTOM` moved onto it too, since a
   private CA on a router is exactly the case that produces those chains. No
-  PKIX check was relaxed: `basicConstraints` on the trust anchor, which
-  `CertPathBuilder` does not apply, is reapplied explicitly so that adopting
-  path building could not quietly start accepting a certificate that was never
-  meant to be an authority.
+  RFC 5280 check was relaxed, and the checks the platform's own trust manager
+  added on top of it are written out again rather than lost with it:
+  `basicConstraints` on the trust anchor, an extended-key-usage check so that a
+  certificate the same authority issued for some other purpose cannot stand in
+  for the server, and a refusal of MD2/MD4/MD5/SHA-1 signatures anywhere in the
+  built path.
 
 ### Fixed
 

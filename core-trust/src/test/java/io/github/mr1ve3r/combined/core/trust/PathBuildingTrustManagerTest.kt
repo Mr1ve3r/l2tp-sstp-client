@@ -252,6 +252,74 @@ class PathBuildingTrustManagerTest {
     }
 
     /**
+     * A certificate the trusted authority issued for something other than a TLS
+     * server cannot stand in for one.
+     *
+     * Everything else about this chain is in order -- the authority is trusted,
+     * the signature is good, the name is the server's -- so nothing but the
+     * extended key usage refuses it. `CertPathBuilder` does not look at it, and
+     * the `TrustManagerFactory` this replaced did, which is why the check is
+     * written out here rather than assumed.
+     */
+    @Test
+    fun `a certificate issued for client authentication cannot serve as the server`() {
+        val manager = PathBuildingTrustManager.anchoredOn(listOf(TestCertificates.chainCa), clock = { NOW })
+
+        val failure =
+            assertThrows(CertificateException::class.java) {
+                manager.checkServerTrusted(
+                    arrayOf(TestCertificates.clientAuthLeafSignedByChainCa, TestCertificates.chainCa),
+                    AUTH_TYPE,
+                )
+            }
+        assertTrue("expected the usage to be named: ${failure.message}", failure.message.orEmpty().contains("key usage"))
+    }
+
+    /**
+     * The same check must apply when the server presents a stored certificate
+     * directly, since that path skips the builder entirely.
+     */
+    @Test
+    fun `a stored certificate not meant for a server cannot serve as one either`() {
+        val leaf = TestCertificates.clientAuthLeafSignedByChainCa
+        val manager = PathBuildingTrustManager.anchoredOn(listOf(leaf), clock = { NOW })
+
+        assertThrows(CertificateException::class.java) {
+            manager.checkServerTrusted(arrayOf(leaf), AUTH_TYPE)
+        }
+    }
+
+    /** A certificate with no extended key usage at all is unrestricted, and passes. */
+    @Test
+    fun `a certificate with no extended key usage is still accepted`() {
+        val manager = PathBuildingTrustManager.anchoredOn(listOf(TestCertificates.ca), clock = { NOW })
+
+        manager.checkServerTrusted(arrayOf(TestCertificates.leafSignedByCa, TestCertificates.ca), AUTH_TYPE)
+    }
+
+    /**
+     * A signature nobody can rely on is not a reason to trust anything.
+     *
+     * The other check the platform manager applied and `CertPathBuilder` does
+     * not. It is refused rather than warned about, unlike at import time: there
+     * the user is knowingly adding their own anchor, here the certificate is
+     * one the server chose to send.
+     */
+    @Test
+    fun `a leaf signed with SHA-1 is refused`() {
+        val manager = PathBuildingTrustManager.anchoredOn(listOf(TestCertificates.chainCa), clock = { NOW })
+
+        val failure =
+            assertThrows(CertificateException::class.java) {
+                manager.checkServerTrusted(
+                    arrayOf(TestCertificates.sha1LeafSignedByChainCa, TestCertificates.chainCa),
+                    AUTH_TYPE,
+                )
+            }
+        assertTrue("expected the algorithm to be named: ${failure.message}", failure.message.orEmpty().contains("SHA1"))
+    }
+
+    /**
      * Path building accepts everything the manager it replaced accepted.
      *
      * The switch of `CUSTOM_ONLY` and `SYSTEM_PLUS_CUSTOM` onto path building is

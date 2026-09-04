@@ -199,9 +199,15 @@ PKIX manager over the platform anchors. `CUSTOM_ONLY`, `SYSTEM_PLUS_CUSTOM` and
 rather than validating the chain as it arrived: the presented certificates and
 the store go into one candidate pool and the anchors are kept separate, so a
 missing intermediate, an extra certificate or the anchor arriving inside the
-chain all still resolve. Nothing about PKIX is relaxed to do it -- and because
-`CertPathBuilder` exempts the trust anchor from `basicConstraints` where
-`TrustManagerFactory` did not, that check is reapplied explicitly.
+chain all still resolve. Nothing about RFC 5280 is relaxed to do it. Driving
+`CertPathBuilder` directly does, however, lose the checks Conscrypt layered on
+top of standard validation, so the three that were load-bearing are written out
+again: `basicConstraints` on the trust anchor (which RFC 5280 exempts and
+`TrustManagerFactory` did not), an extended-key-usage check on the end entity,
+and a refusal of MD2/MD4/MD5/SHA-1 signatures anywhere in the built path.
+Conscrypt's blocklist of compromised public authorities is deliberately not
+reproduced: these anchors are certificates the user imported for their own
+server, not the public web PKI.
 `STORE_AUTO` anchors on the whole store instead of on a profile's selection,
 which is what lets a user import their CA without also identifying it; the
 anchor that ends up vouching is logged, because otherwise the choice would be

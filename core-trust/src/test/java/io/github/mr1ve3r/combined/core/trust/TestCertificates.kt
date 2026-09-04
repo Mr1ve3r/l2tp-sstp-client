@@ -23,6 +23,8 @@ import java.security.cert.X509Certificate
  * | `chainCa` | a CA with `keyCertSign`, the anchor for `chain-server.p12` |
  * | `chain-server.p12` | `CN=vpn.example.com` and its key, plus `chainCa` and its key |
  * | `expiredLeafSignedByChainCa` | issued by `chainCa`, lapsed in 2024 while its issuer stayed valid |
+ * | `clientAuthLeafSignedByChainCa` | issued by `chainCa` for clientAuth and e-mail, but named `vpn.example.com` |
+ * | `sha1LeafSignedByChainCa` | issued by `chainCa`, signed with SHA-1 |
  *
  * The last four came from `openssl` rather than `keytool`, because `keytool`
  * cannot emit a self-signed certificate with no `basicConstraints` extension --
@@ -62,6 +64,21 @@ object TestCertificates {
      * differently and only one of them is the user's to fix.
      */
     val expiredLeafSignedByChainCa: X509Certificate get() = load("expired-leaf-signed-by-chain-ca.pem")
+
+    /**
+     * A certificate [chainCa] issued for client authentication and e-mail,
+     * carrying the *server's* name.
+     *
+     * The case an extended key usage check exists for: the authority is
+     * genuinely trusted and the name genuinely matches, so a chain built from
+     * it validates and the hostname check passes. Only the usage says this is
+     * not a server, which is why holding it must not be enough to impersonate
+     * one.
+     */
+    val clientAuthLeafSignedByChainCa: X509Certificate get() = load("client-auth-leaf-signed-by-chain-ca.pem")
+
+    /** A leaf [chainCa] signed with SHA-1, valid in every other respect. */
+    val sha1LeafSignedByChainCa: X509Certificate get() = load("sha1-leaf-signed-by-chain-ca.pem")
 
     /** The CA and the leaf it signed, concatenated in one PEM file. */
     val bundle: List<X509Certificate> get() = CertificateParser.parse(bytesOf("bundle.pem"))

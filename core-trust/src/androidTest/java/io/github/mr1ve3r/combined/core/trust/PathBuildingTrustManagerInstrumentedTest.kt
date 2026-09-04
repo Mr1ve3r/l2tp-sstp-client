@@ -109,6 +109,30 @@ class PathBuildingTrustManagerInstrumentedTest {
         }
     }
 
+    /**
+     * The checks Conscrypt applied and `CertPathBuilder` does not.
+     *
+     * These matter more here than on the JVM: Conscrypt is the manager this
+     * code replaced, so this is where a claim of parity is actually tested.
+     */
+    @Test
+    fun a_certificate_issued_for_client_authentication_cannot_serve_as_the_server() {
+        val manager = PathBuildingTrustManager.anchoredOn(listOf(chainCa), clock = { NOW })
+
+        assertThrows(CertificateException::class.java) {
+            manager.checkServerTrusted(arrayOf(clientAuthLeafSignedByChainCa, chainCa), AUTH_TYPE)
+        }
+    }
+
+    @Test
+    fun a_leaf_signed_with_sha1_is_refused() {
+        val manager = PathBuildingTrustManager.anchoredOn(listOf(chainCa), clock = { NOW })
+
+        assertThrows(CertificateException::class.java) {
+            manager.checkServerTrusted(arrayOf(sha1LeafSignedByChainCa, chainCa), AUTH_TYPE)
+        }
+    }
+
     /** The whole-store policy, end to end, on the provider that ships. */
     @Test
     fun store_auto_anchors_on_everything_and_names_the_one_that_vouched() {
@@ -137,6 +161,8 @@ class PathBuildingTrustManagerInstrumentedTest {
     private val caWithoutBasicConstraints: X509Certificate get() = certificate("ca-no-basic-constraints.pem")
     private val leafSignedByCaWithoutBasicConstraints: X509Certificate get() = certificate("leaf-signed-by-ca-nbc.pem")
     private val expiredLeafSignedByChainCa: X509Certificate get() = certificate("expired-leaf-signed-by-chain-ca.pem")
+    private val clientAuthLeafSignedByChainCa: X509Certificate get() = certificate("client-auth-leaf-signed-by-chain-ca.pem")
+    private val sha1LeafSignedByChainCa: X509Certificate get() = certificate("sha1-leaf-signed-by-chain-ca.pem")
     private val reversedBundle: List<X509Certificate> get() = certificates("reversed-bundle.pem")
 
     private companion object {

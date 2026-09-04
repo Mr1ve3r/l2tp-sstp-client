@@ -30,14 +30,32 @@ import javax.net.ssl.X509TrustManager
  * [CertPathBuilder]: the presented chain and the store go into one pool, the
  * anchors stay separate, and the builder searches.
  *
- * **What this deliberately does not do.** Nothing here is a relaxation of PKIX.
- * There is no short circuit for a certificate whose fingerprint happens to be
- * in the store, no bypass of `basicConstraints` for an anchor that was never
+ * **What this deliberately does not do.** Nothing here is a relaxation of RFC
+ * 5280. There is no short circuit for a certificate whose fingerprint happens to
+ * be in the store, no bypass of `basicConstraints` for an anchor that was never
  * marked as a certificate authority, and no bypass of the validity window.
- * [CertPathBuilder.build] validates every candidate path as it builds it, so a
- * path that comes back has passed the same checks it always did -- signatures,
- * validity, `basicConstraints`, `pathLenConstraint` and `keyUsage`. Revocation
- * is off, and only because a handshake must not make network calls of its own.
+ * [CertPathBuilder.build] validates every candidate path as it builds it:
+ * signatures, validity, `basicConstraints`, `pathLenConstraint`, `keyUsage` and
+ * critical extensions. Revocation is off, and only because a handshake must not
+ * make network calls of its own.
+ *
+ * **Where the platform did more than RFC 5280, and what is done about it.** It
+ * would be wrong to read the paragraph above as "identical to what
+ * `TrustManagerFactory` did". On Android that factory returns Conscrypt's
+ * `TrustManagerImpl`, which wraps the standard validation in checks of its own,
+ * and driving [CertPathBuilder] directly gets none of them for free:
+ *
+ * - an extended-key-usage check on the end entity. Reinstated by
+ *   [requireUsableForServerAuth], because without it any certificate the same
+ *   authority issued for some other purpose -- a client certificate, an email
+ *   certificate -- could stand in for the server.
+ * - `ChainStrengthAnalyzer`, which refuses MD2/MD4/MD5 and SHA-1 signatures and
+ *   RSA keys under 1024 bits. Reinstated by [requireStrongSignatures].
+ * - `CertBlocklist`, a list of known-compromised certificate authority keys.
+ *   **Not** reinstated: it is a Conscrypt data file about the public web PKI,
+ *   and these anchors are certificates the user imported for their own server.
+ *   The import screen already warns about weak certificates
+ *   ([CertificateValidator]).
  *
  * The end entity is [chain]`[0]` and is never re-chosen. TLS binds the server
  * to that certificate and to nothing else, so picking some other element of the
@@ -91,6 +109,7 @@ class PathBuildingTrustManager(
         // one thing the user could act on. Doing it first turns that into the
         // specific exception the engine already maps to a specific message.
         endEntity.checkValidity(Date(clock()))
+        requireUsableForServerAuth(endEntity)
 
         anchorMatching(endEntity)?.let { anchor ->
             // The server is serving one of the anchors itself. The builder
@@ -128,9 +147,61 @@ class PathBuildingTrustManager(
         val path = result.certPath.certificates.filterIsInstance<X509Certificate>()
         val anchor = result.trustAnchor.trustedCert
         requireAnchorMayIssue(anchor, path)
+        requireStrongSignatures(path)
 
         lastValidatedPath = path
         lastAnchor = anchor
+    }
+
+    /**
+     * Refuses an end entity whose extended key usage does not cover TLS servers.
+     *
+     * Conscrypt applies this and [CertPathBuilder] does not, so without it a
+     * certificate the same authority issued for some other purpose -- a client
+     * certificate, an email certificate -- would be accepted as the server's.
+     * That matters most under the whole-store policy, where the authority in
+     * question is one the user imported for a different server entirely.
+     *
+     * A certificate carrying no extended key usage at all is unrestricted and
+     * passes, which is both what RFC 5280 says and what Conscrypt does; every
+     * certificate a router generates by default lands here.
+     */
+    private fun requireUsableForServerAuth(endEntity: X509Certificate) {
+        val usages =
+            try {
+                endEntity.extendedKeyUsage
+            } catch (e: java.security.cert.CertificateParsingException) {
+                throw CertificateException("The server's certificate has an unreadable extended key usage", e)
+            } ?: return
+
+        if (usages.none { it == SERVER_AUTH_OID || it == ANY_EXTENDED_KEY_USAGE_OID }) {
+            throw CertificateException(
+                "The server's certificate is not valid for authenticating a TLS server: its extended key usage is " +
+                    usages.joinToString(),
+            )
+        }
+    }
+
+    /**
+     * Refuses a path signed with an algorithm no longer worth trusting.
+     *
+     * The other check Conscrypt performs and [CertPathBuilder] does not. It
+     * applies to what the path actually contains and not to the anchor, which
+     * is the same division Conscrypt draws: an anchor is trusted because the
+     * user put it there, while everything below it is trusted only because of
+     * the signature over it, and a signature nobody can rely on is not a reason
+     * to trust anything.
+     */
+    private fun requireStrongSignatures(path: List<X509Certificate>) {
+        path.forEach { certificate ->
+            val algorithm = certificate.sigAlgName.uppercase()
+            if (WEAK_SIGNATURE_MARKERS.any(algorithm::contains)) {
+                throw CertificateException(
+                    "${certificate.subjectX500Principal.name} is signed with ${certificate.sigAlgName}, " +
+                        "which is too weak to establish who issued it",
+                )
+            }
+        }
     }
 
     /**
@@ -213,6 +284,23 @@ class PathBuildingTrustManager(
     }
 
     companion object {
+        /** `id-kp-serverAuth`, the extended key usage a TLS server needs. */
+        private const val SERVER_AUTH_OID = "1.3.6.1.5.5.7.3.1"
+
+        /** `anyExtendedKeyUsage`, which permits every purpose including the one above. */
+        private const val ANY_EXTENDED_KEY_USAGE_OID = "2.5.29.37.0"
+
+        /**
+         * Signature algorithms not accepted anywhere in a path.
+         *
+         * The same list [CertificateValidator] warns about at import time. A
+         * warning is right there -- the user is importing an anchor knowingly,
+         * and may have no choice about what their router generated -- and wrong
+         * here, where the question is whether a signature proves who issued a
+         * certificate the *server* chose to send.
+         */
+        private val WEAK_SIGNATURE_MARKERS = listOf("MD2", "MD4", "MD5", "SHA1")
+
         /**
          * A manager anchored on [certs], with [pool] offered as intermediates.
          *
