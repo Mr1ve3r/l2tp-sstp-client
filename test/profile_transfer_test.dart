@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:archive/archive.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:tunnel_forge/core/vpn_protocol.dart';
@@ -40,7 +41,7 @@ void main() {
   group('ProfileTransferEnvelope', () {
     test('round-trips through .tfp json', () {
       final decoded = ProfileTransferEnvelope.fromFileJson(
-        _envelope().toFileJson(includeSecrets: true),
+        _envelope().toFileJson(secrets: TransferSecrets.all),
       );
 
       expect(decoded.profile.displayName, 'Office');
@@ -105,12 +106,62 @@ void main() {
       expect(decoded.certificates.single.alias, 'Work CA');
     });
 
-    test('round-trips through tf uri payload, secrets included', () {
+    test('round-trips through tf uri payload, carrying no secret', () {
       final decoded = ProfileTransferEnvelope.fromTfUri(_envelope().toTfUri());
 
       expect(decoded.profile.server, 'vpn.example.com');
+      expect(decoded.profile.mtu, 1400);
+      expect(decoded.hasSecrets, isFalse);
+      expect(decoded.profile.user, isEmpty);
+    });
+
+    /// A link is base64 over gzip, not encryption, so it is readable by anyone
+    /// it is ever pasted in front of.
+    test('a share link contains no secret in any form', () {
+      final link = _envelope().toTfUri();
+      final payload = base64Url.decode(
+        base64Url.normalize(Uri.parse(link).pathSegments.join()),
+      );
+      final json = utf8.decode(GZipDecoder().decodeBytes(payload));
+
+      expect(json.contains('pw'), isFalse);
+      expect(json.contains('psk'), isFalse);
+      expect(json.contains('alice'), isFalse);
+    });
+
+    /// Links written before the secrets were taken out still open.
+    test('reads a share link written with secrets in it', () {
+      final legacy = utf8.encode(
+        jsonEncode(_envelope().toJson(secrets: TransferSecrets.all)),
+      );
+      final link =
+          'tf://p/${base64UrlEncode(GZipEncoder().encode(legacy)).replaceAll('=', '')}';
+
+      final decoded = ProfileTransferEnvelope.fromTfUri(link);
+
       expect(decoded.password, 'pw');
       expect(decoded.psk, 'psk');
+    });
+
+    /// The proxy credentials are the organisation's, so they travel with the
+    /// set; the VPN login and password are one person's, so they do not.
+    test('a set-shaped export carries the psk but not the vpn login', () {
+      final source = ProfileTransferEnvelope(
+        profile: _profile.copyWith(proxyUsername: 'bob'),
+        password: 'pw',
+        psk: 'psk',
+        proxyPassword: 'proxy-pw',
+      );
+
+      final decoded = ProfileTransferEnvelope.fromFileJson(
+        source.toFileJson(secrets: TransferSecrets.shared),
+      );
+
+      expect(decoded.psk, 'psk');
+      expect(decoded.proxyPassword, 'proxy-pw');
+      expect(decoded.profile.proxyUsername, 'bob');
+      expect(decoded.password, isEmpty);
+      expect(decoded.profile.user, isEmpty);
     });
 
     test('rejects unsupported version', () {

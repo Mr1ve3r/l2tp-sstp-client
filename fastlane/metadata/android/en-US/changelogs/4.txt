@@ -1,0 +1,14 @@
+A set of profiles can now be handed out as one encrypted file.
+
+Export several profiles together under a password and the recipient imports the
+lot in one action. The set carries the pre-shared key, the proxy details and the
+certificates the profiles trust, but not the VPN username and password, so the
+same file can go to everybody and each person enters their own. A profile that
+arrives without credentials is marked, and connecting asks for them instead of
+failing the login. Importing the same set again offers to replace, add or skip
+each profile it recognises; replacing keeps the credentials already entered.
+
+Share links no longer carry secrets. A link is encoding, not encryption, so
+anything in it was readable by everyone it was shown to. Secrets now travel only
+in the password-protected file, which a single profile can use too; links
+written by earlier versions are still read as before.

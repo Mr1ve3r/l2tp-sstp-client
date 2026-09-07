@@ -5,6 +5,7 @@ import 'package:equatable/equatable.dart';
 
 import 'package:tunnel_forge/l10n/app_localizations.dart';
 import 'package:tunnel_forge/features/profiles/domain/failover_group.dart';
+import 'package:tunnel_forge/features/profiles/domain/profile_bundle.dart';
 import 'package:tunnel_forge/features/profiles/domain/profile_models.dart';
 import 'package:tunnel_forge/features/profiles/domain/profile_transfer.dart';
 import 'package:tunnel_forge/features/profiles/data/profile_transfer_contract.dart';
@@ -102,12 +103,68 @@ final class ProfilesCopyShareLinkRequested extends ProfilesEvent {
 }
 
 final class ProfilesExportFileRequested extends ProfilesEvent {
-  const ProfilesExportFileRequested(this.id);
+  const ProfilesExportFileRequested(this.id, {this.password});
 
   final String id;
 
+  /// Seals the file and puts the secrets in it. Without one the file carries
+  /// settings only, which is what it did before a password could be given.
+  final String? password;
+
   @override
-  List<Object?> get props => [id];
+  List<Object?> get props => [id, password];
+}
+
+/// Writes several profiles out as one sealed set.
+final class ProfilesExportBundleRequested extends ProfilesEvent {
+  const ProfilesExportBundleRequested({
+    required this.profileIds,
+    required this.bundleName,
+    required this.password,
+  });
+
+  final List<String> profileIds;
+  final String bundleName;
+  final String password;
+
+  @override
+  List<Object?> get props => [profileIds, bundleName, password];
+}
+
+/// Fills in the login and password of a profile that arrived without them.
+final class ProfilesCredentialsSubmitted extends ProfilesEvent {
+  const ProfilesCredentialsSubmitted({
+    required this.id,
+    required this.user,
+    required this.password,
+  });
+
+  final String id;
+  final String user;
+  final String password;
+
+  @override
+  List<Object?> get props => [id, user, password];
+}
+
+/// Says the sealed file waiting in the state has been dealt with, opened or
+/// not, so the next one is noticed.
+final class ProfilesSealedTransferHandled extends ProfilesEvent {
+  const ProfilesSealedTransferHandled();
+}
+
+/// Stores the entries of an opened set that [choices] asks for.
+final class ProfilesBundleImportRequested extends ProfilesEvent {
+  const ProfilesBundleImportRequested({
+    required this.bundle,
+    required this.choices,
+  });
+
+  final ProfileBundle bundle;
+  final List<BundleImportChoice> choices;
+
+  @override
+  List<Object?> get props => [bundle, choices];
 }
 
 final class ProfilesImportSelectionPolicyChanged extends ProfilesEvent {
@@ -131,6 +188,8 @@ class ProfilesState extends Equatable {
     this.activeGroupId,
     this.savedGroupId,
     this.selectImportedProfileWhenIdle = true,
+    this.profilesAwaitingCredentials = const <String>{},
+    this.pendingSealedTransfer,
     this.message,
   });
 
@@ -151,6 +210,18 @@ class ProfilesState extends Equatable {
   final String? savedGroupId;
 
   final bool selectImportedProfileWhenIdle;
+
+  /// Profiles that arrived in a shared set and still have no login of their
+  /// own. Marked at import rather than guessed from an empty username, which
+  /// an ordinary profile is also allowed to have.
+  final Set<String> profilesAwaitingCredentials;
+
+  /// An encrypted file waiting for its password to be asked for.
+  final SealedTransfer? pendingSealedTransfer;
+
+  bool awaitsCredentials(String? id) =>
+      id != null && profilesAwaitingCredentials.contains(id);
+
   final HomeMessage? message;
 
   bool get hasActiveProfile {
@@ -196,6 +267,9 @@ class ProfilesState extends Equatable {
     bool clearActiveGroupId = false,
     String? savedGroupId,
     bool? selectImportedProfileWhenIdle,
+    Set<String>? profilesAwaitingCredentials,
+    SealedTransfer? pendingSealedTransfer,
+    bool clearPendingSealedTransfer = false,
     HomeMessage? message,
     bool clearMessage = false,
   }) {
@@ -217,6 +291,11 @@ class ProfilesState extends Equatable {
       savedGroupId: savedGroupId,
       selectImportedProfileWhenIdle:
           selectImportedProfileWhenIdle ?? this.selectImportedProfileWhenIdle,
+      profilesAwaitingCredentials:
+          profilesAwaitingCredentials ?? this.profilesAwaitingCredentials,
+      pendingSealedTransfer: clearPendingSealedTransfer
+          ? null
+          : (pendingSealedTransfer ?? this.pendingSealedTransfer),
       message: clearMessage ? null : (message ?? this.message),
     );
   }
@@ -231,8 +310,33 @@ class ProfilesState extends Equatable {
     activeGroupId,
     savedGroupId,
     selectImportedProfileWhenIdle,
+    profilesAwaitingCredentials,
+    pendingSealedTransfer,
     message,
   ];
+}
+
+/// A `.tfp` that arrived encrypted and is waiting for someone to be asked.
+///
+/// A bloc cannot put a password dialog on screen, and the file most often
+/// arrives by a tap on an attachment rather than through the import menu, so
+/// the sealed payload waits in the state until a widget picks it up.
+class SealedTransfer extends Equatable {
+  const SealedTransfer({
+    required this.payload,
+    required this.source,
+    required this.id,
+  });
+
+  final String payload;
+  final String source;
+
+  /// Distinguishes two files that happen to be identical, so the second one
+  /// still reaches the screen.
+  final int id;
+
+  @override
+  List<Object?> get props => [payload, source, id];
 }
 
 class ProfilesBloc extends Bloc<ProfilesEvent, ProfilesState> {
@@ -248,6 +352,12 @@ class ProfilesBloc extends Bloc<ProfilesEvent, ProfilesState> {
     on<ProfilesRefreshRequested>(_onRefreshRequested);
     on<ProfilesCopyShareLinkRequested>(_onCopyShareLinkRequested);
     on<ProfilesExportFileRequested>(_onExportFileRequested);
+    on<ProfilesExportBundleRequested>(_onExportBundleRequested);
+    on<ProfilesBundleImportRequested>(_onBundleImportRequested);
+    on<ProfilesCredentialsSubmitted>(_onCredentialsSubmitted);
+    on<ProfilesSealedTransferHandled>(
+      (event, emit) => emit(state.copyWith(clearPendingSealedTransfer: true)),
+    );
     on<ProfilesImportSelectionPolicyChanged>(_onImportSelectionPolicyChanged);
   }
 
@@ -435,6 +545,24 @@ class ProfilesBloc extends Bloc<ProfilesEvent, ProfilesState> {
       );
       return;
     }
+    final data = transfer.data;
+    if (transfer.type == ProfileTransferContract.typeTfpJson &&
+        data != null &&
+        ProfileTransferEnvelope.looksSealed(data)) {
+      // Nothing can be read out of it here. It waits for a widget to ask for
+      // the password rather than being refused, which is what a file tapped in
+      // a messenger used to get.
+      emit(
+        state.copyWith(
+          pendingSealedTransfer: SealedTransfer(
+            payload: data,
+            source: transfer.source ?? '',
+            id: ++_messageId,
+          ),
+        ),
+      );
+      return;
+    }
     try {
       final envelope = ProfileTransferEnvelope.fromIncomingTransfer(transfer);
       final imported = await _profilesRepository.saveImportedProfile(
@@ -546,7 +674,10 @@ class ProfilesBloc extends Bloc<ProfilesEvent, ProfilesState> {
     Emitter<ProfilesState> emit,
   ) async {
     try {
-      await _profilesRepository.exportProfileFile(event.id);
+      await _profilesRepository.exportProfileFile(
+        event.id,
+        password: event.password,
+      );
       emit(
         state.copyWith(message: _nextMessage(AppText.current.profileFileReady)),
       );
@@ -557,6 +688,126 @@ class ProfilesBloc extends Bloc<ProfilesEvent, ProfilesState> {
         state.copyWith(
           message: _nextMessage(
             AppText.current.couldNotExportTfpFile,
+            error: true,
+          ),
+        ),
+      );
+    }
+  }
+
+  /// Stores the credentials a profile from a shared set was missing.
+  ///
+  /// The pre-shared key, the proxy password and everything else are read back
+  /// and written again untouched: this event knows about two fields, and a save
+  /// that passed empty strings for the rest would clear the very secrets the
+  /// set was sent to deliver.
+  Future<void> _onCredentialsSubmitted(
+    ProfilesCredentialsSubmitted event,
+    Emitter<ProfilesState> emit,
+  ) async {
+    try {
+      final row = await _profilesRepository.loadProfileWithSecrets(event.id);
+      if (row == null) {
+        emit(
+          state.copyWith(
+            message: _nextMessage(
+              AppText.current.couldNotSaveChanges,
+              error: true,
+            ),
+          ),
+        );
+        return;
+      }
+      await _profilesRepository.upsertProfile(
+        row.profile.copyWith(user: event.user.trim()),
+        password: event.password,
+        psk: row.psk,
+        proxyPassword: row.proxyPassword,
+      );
+      await _profilesRepository.clearProfileAwaitingCredentials(event.id);
+      await _reloadProfiles(emit, preferredActiveId: event.id);
+      emit(state.copyWith(message: _nextMessage(AppText.current.profileSaved)));
+    } catch (_) {
+      emit(
+        state.copyWith(
+          message: _nextMessage(
+            AppText.current.couldNotSaveChanges,
+            error: true,
+          ),
+        ),
+      );
+    }
+  }
+
+  Future<void> _onExportBundleRequested(
+    ProfilesExportBundleRequested event,
+    Emitter<ProfilesState> emit,
+  ) async {
+    try {
+      await _profilesRepository.exportProfileBundle(
+        profileIds: event.profileIds,
+        bundleName: event.bundleName,
+        password: event.password,
+      );
+      emit(
+        state.copyWith(
+          message: _nextMessage(AppText.current.profileSetFileReady),
+        ),
+      );
+    } on ProfileRepositoryException catch (error) {
+      emit(state.copyWith(message: _nextMessage(error.message, error: true)));
+    } catch (_) {
+      emit(
+        state.copyWith(
+          message: _nextMessage(
+            AppText.current.couldNotExportProfileSet,
+            error: true,
+          ),
+        ),
+      );
+    }
+  }
+
+  Future<void> _onBundleImportRequested(
+    ProfilesBundleImportRequested event,
+    Emitter<ProfilesState> emit,
+  ) async {
+    try {
+      final result = await _profilesRepository.importProfileBundle(
+        bundle: event.bundle,
+        choices: event.choices,
+      );
+      // A set arriving while a tunnel is up must not move the connection to
+      // one of its profiles, the same rule a single import follows.
+      final select =
+          state.selectImportedProfileWhenIdle && result.firstImportedId != null;
+      await _reloadProfiles(
+        emit,
+        preferredActiveId: select
+            ? result.firstImportedId
+            : state.activeProfileId,
+      );
+      if (select) {
+        await _profilesRepository.setLastProfileId(result.firstImportedId);
+      }
+      emit(
+        state.copyWith(
+          message: _nextMessage(
+            AppText.current.importedProfileSet(
+              result.added,
+              result.replaced,
+              result.skipped,
+            ),
+          ),
+        ),
+      );
+    } on FormatException catch (error) {
+      emit(state.copyWith(message: _nextMessage(error.message, error: true)));
+    } catch (_) {
+      emit(
+        state.copyWith(
+          message: _nextMessage(
+            AppText.current.couldNotImportProfileSet,
             error: true,
           ),
         ),
@@ -611,10 +862,17 @@ class ProfilesBloc extends Bloc<ProfilesEvent, ProfilesState> {
     if (targetId != null) {
       targetRow = await _profilesRepository.loadProfileWithSecrets(targetId);
     }
+    // Narrowed to profiles that still exist, so an id left behind by a deletion
+    // the store did not see cannot mark an unrelated profile later.
+    final awaiting =
+        (await _profilesRepository.loadProfilesAwaitingCredentials())
+            .where((id) => profiles.any((profile) => profile.id == id))
+            .toSet();
     emit(
       state.copyWith(
         loading: false,
         profiles: profiles,
+        profilesAwaitingCredentials: awaiting,
         activeProfileId: targetRow == null ? null : targetId,
         activeProfileRow: targetRow,
         groups: groups,

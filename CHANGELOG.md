@@ -14,6 +14,59 @@ publish otherwise.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-09-07
+
+Profiles can be handed out as a set, and the secrets in a transfer are now
+chosen rather than all-or-nothing.
+
+### Added
+
+- **A set of profiles can be handed out as one encrypted file.** An
+  administrator with six corporate profiles across both protocols exports them
+  together, under a password, and each recipient imports the lot in one action.
+  The set carries the pre-shared key, the proxy details and the certificates the
+  profiles trust; it does not carry the VPN login and password, which belong to
+  the person receiving it rather than the person sending it. The file is the
+  same `.tfp` a single profile uses, so it arrives by attachment, share sheet or
+  file picker exactly as before, and the encryption is the password-sealed
+  container that had been implemented at every layer since phase 8 but that no
+  screen had ever been able to reach.
+- **A password prompt on both ends of an encrypted `.tfp`.** Exporting one
+  profile can now put its secrets inside the container instead of leaving them
+  out; opening a sealed file asks for the password and asks again when it is
+  wrong, rather than failing with a message and no way forward. Tapping a sealed
+  file in a messenger reaches the same prompt as importing one from the menu.
+- **Profiles that arrived without credentials say so, and ask.** A profile out
+  of a shared set is marked in the list, and pressing connect opens a login and
+  password prompt and then starts the connection, instead of spending the
+  timeout on an authentication that had nothing to authenticate with. Starting a
+  failover group containing one refuses up front and names it, because the host
+  resolves group members itself and there is no point mid-run at which a prompt
+  could be put in front of them.
+- **Re-importing a set asks what to do with each profile it recognises.**
+  Replace, add as a new one, or skip, matched on protocol, server, port and
+  name. Replacing keeps the identity of the profile that is already there along
+  with the login and password its owner typed in, so an update from the
+  organisation does not sign anybody out — and a third handout no longer leaves
+  eighteen rows behind.
+
+### Changed
+
+- **`tf://` share links no longer carry secrets.** A link is gzip and base64,
+  not encryption, so every pre-shared key and password one had ever carried was
+  readable by anyone the link was pasted in front of, and it lived on in that
+  conversation's history. Links now carry settings only; secrets travel in the
+  sealed file, which has a password on it. Links written by earlier builds still
+  hand over their secrets when imported, because that history cannot be recalled
+  and refusing to read them would strand the profiles rather than protect them.
+
+### Not implemented
+
+- **Client certificates.** A set carries the certificates a profile trusts,
+  which are the server's and its authority's. Authenticating with a certificate
+  of one's own is not something the profile model has a field for and not
+  something the engines offer, so a set cannot distribute one.
+
 ## [0.3.0] - 2026-09-04
 
 Server certificate chains are now resolved by searching, and a profile no longer
@@ -185,7 +238,8 @@ to the phases in [`SPEC`](SPEC).
 - **Proxy-only mode**, inherited from TunnelForge, fails its L2TP handshake and
   has not been attributed to a cause. See SPEC appendix В.8.
 
-[Unreleased]: https://github.com/Mr1ve3r/l2tp-sstp-client/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/Mr1ve3r/l2tp-sstp-client/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/Mr1ve3r/l2tp-sstp-client/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/Mr1ve3r/l2tp-sstp-client/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/Mr1ve3r/l2tp-sstp-client/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/Mr1ve3r/l2tp-sstp-client/releases/tag/v0.1.0

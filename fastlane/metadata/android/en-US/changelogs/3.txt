@@ -1,0 +1,17 @@
+Server certificate chains are now resolved by searching, so a profile no longer
+has to name the certificate it trusts.
+
+Adds an automatic trust mode: import the server's certificate authority and
+connect, with no second step where the right entry has to be found in a list.
+The price is stated rather than hidden — any certificate in the store may vouch
+for a profile using this mode, so the pre-flight check and the log say so, and
+the certificate that actually vouched is named after the handshake.
+
+A server that omits an intermediate, sends an extra certificate, or includes its
+own anchor in the chain is now resolved instead of refused. No verification
+check was relaxed to do it.
+
+Fixes a crash: connecting with no matching certificate in the store took the VPN
+service down instead of reporting a rejected certificate. Fixes a misleading
+message when a server is configured with its CA in place of the certificate that
+CA issued.

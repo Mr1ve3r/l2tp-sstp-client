@@ -143,6 +143,81 @@
   "profileActions": "Действия с профилем",
   "copyShareLink": "Копировать ссылку",
   "exportTfp": "Экспорт .tfp",
+  "exportProfileSet": "Экспорт набора…",
+  "exportPasswordExplanation": "С паролем файл несёт логин, общий ключ и пароль прокси в зашифрованном виде. Без пароля — только настройки.",
+  "exportWithoutSecrets": "Без секретов",
+  "profileSetName": "Название набора",
+  "profileSetNameHint": "например, VPN компании «Акме»",
+  "profileSetIncludes": "В набор войдут общий ключ, настройки прокси и сертификаты. Логин и пароль VPN не войдут — каждый вводит свои.",
+  "chooseProfilesForSet": "Выберите профили для набора",
+  "noProfilesSelected": "Выберите хотя бы один профиль.",
+  "setPassword": "Пароль набора",
+  "confirmSetPassword": "Повторите пароль",
+  "passwordsDoNotMatch": "Пароли не совпадают.",
+  "passwordTooShort": "Не короче {count} символов.",
+  "@passwordTooShort": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "exportSet": "Экспортировать набор",
+  "profileSetFileReady": "Файл набора готов к сохранению или отправке",
+  "couldNotExportProfileSet": "Не удалось экспортировать набор профилей",
+  "encryptedFileTitle": "Файл зашифрован",
+  "encryptedFileBody": "Введите пароль, которым он был запечатан.",
+  "wrongFilePassword": "Этот пароль не открывает файл.",
+  "openFile": "Открыть",
+  "importProfileSet": "Импорт набора",
+  "profileSetCount": "{count, plural, one{{count} профиль в наборе} few{{count} профиля в наборе} many{{count} профилей в наборе} other{{count} профиля в наборе}}",
+  "@profileSetCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "profileSetEntryCertificates": "{count, plural, =0{Без сертификатов} one{{count} сертификат} few{{count} сертификата} many{{count} сертификатов} other{{count} сертификата}}",
+  "@profileSetEntryCertificates": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "alreadyOnThisDevice": "Уже есть на устройстве",
+  "conflictReplace": "Заменить",
+  "conflictAdd": "Добавить новым",
+  "conflictSkip": "Пропустить",
+  "importSelected": "Импортировать выбранные",
+  "importedProfileSet": "Импортировано {added}, заменено {replaced}, пропущено {skipped}",
+  "@importedProfileSet": {
+    "placeholders": {
+      "added": {
+        "type": "int"
+      },
+      "replaced": {
+        "type": "int"
+      },
+      "skipped": {
+        "type": "int"
+      }
+    }
+  },
+  "couldNotImportProfileSet": "Не удалось импортировать набор профилей",
+  "credentialsNeeded": "Нужны учётные данные",
+  "enterCredentialsTitle": "Введите учётные данные",
+  "enterCredentialsBody": "Профиль пришёл из общего набора, поэтому логина и пароля в нём пока нет.",
+  "connectAction": "Подключить",
+  "groupMemberNeedsCredentials": "Профилю «{name}» нужны логин и пароль, иначе группу не запустить.",
+  "@groupMemberNeedsCredentials": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
   "editProfile": "Изменить профиль",
   "deleteProfile": "Удалить профиль",
   "deleteProfileQuestion": "Удалить профиль?",

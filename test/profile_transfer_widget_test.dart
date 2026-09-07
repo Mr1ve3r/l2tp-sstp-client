@@ -181,7 +181,7 @@ void main() {
     await sendHostTransfer(
       tester,
       type: ProfileTransferContract.typeTfpJson,
-      data: envelope.toFileJson(includeSecrets: true),
+      data: envelope.toFileJson(secrets: TransferSecrets.all),
     );
     await tester.pumpAndSettle();
 
@@ -229,7 +229,7 @@ void main() {
         bridge.emit(
           IncomingProfileTransfer(
             type: ProfileTransferContract.typeTfpJson,
-            data: envelope.toFileJson(includeSecrets: true),
+            data: envelope.toFileJson(secrets: TransferSecrets.all),
             source: 'startup.tfp',
           ),
         );
@@ -338,7 +338,7 @@ void main() {
         .setMockMethodCallHandler(SystemChannels.platform, (call) async {
           if (call.method == 'Clipboard.getData') {
             return <String, Object?>{
-              'text': envelope.toFileJson(includeSecrets: true),
+              'text': envelope.toFileJson(secrets: TransferSecrets.all),
             };
           }
           return null;
@@ -423,7 +423,7 @@ void main() {
     await sendHostTransfer(
       tester,
       type: ProfileTransferContract.typeTfpJson,
-      data: envelope.toFileJson(includeSecrets: true),
+      data: envelope.toFileJson(secrets: TransferSecrets.all),
     );
     await tester.pumpAndSettle();
 
@@ -481,7 +481,7 @@ void main() {
             ),
             password: 'pw',
             psk: '',
-          ).toFileJson(includeSecrets: true),
+          ).toFileJson(secrets: TransferSecrets.all),
           source: 'imported.tfp',
         ),
       );

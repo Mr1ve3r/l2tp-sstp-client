@@ -13,7 +13,10 @@ import 'package:tunnel_forge/features/home/presentation/bloc/profiles_bloc.dart'
 import 'package:tunnel_forge/features/profile_form/presentation/bloc/profile_form_bloc.dart';
 import 'package:tunnel_forge/l10n/app_localizations.dart';
 import 'package:tunnel_forge/features/profiles/domain/failover_group.dart';
+import 'package:tunnel_forge/features/profiles/domain/profile_models.dart';
 import 'package:tunnel_forge/features/profiles/presentation/failover_group_editor.dart';
+import 'package:tunnel_forge/features/profiles/presentation/profile_bundle_export_sheet.dart';
+import 'package:tunnel_forge/features/profiles/presentation/profile_transfer_flow.dart';
 import 'package:tunnel_forge/features/profiles/presentation/profile_editor_sheet.dart';
 import 'package:tunnel_forge/features/profiles/data/profile_store.dart';
 import 'package:tunnel_forge/features/trust/domain/trust_repository.dart';
@@ -266,6 +269,29 @@ class _ProfilePickerSheetState extends State<ProfilePickerSheet> {
     }
   }
 
+  Future<void> _exportProfileFile(String id) async {
+    final choice = await SingleExportPasswordDialog.show(context);
+    if (choice == null || !mounted) return;
+    _profilesBloc.add(
+      ProfilesExportFileRequested(id, password: choice.password),
+    );
+  }
+
+  Future<void> _exportProfileSet(List<Profile> profiles) async {
+    final request = await ProfileBundleExportSheet.show(
+      context,
+      profiles: profiles,
+    );
+    if (request == null || !mounted) return;
+    _profilesBloc.add(
+      ProfilesExportBundleRequested(
+        profileIds: request.profileIds,
+        bundleName: request.bundleName,
+        password: request.password,
+      ),
+    );
+  }
+
   Future<void> _importFromFile() async {
     try {
       final result = await FilePicker.platform.pickFiles(
@@ -286,17 +312,27 @@ class _ProfilePickerSheetState extends State<ProfilePickerSheet> {
         return;
       }
       final contents = utf8.decode(bytes);
-      await _importTransfer(
-        IncomingProfileTransfer(
-          type: ProfileTransferContract.typeTfpJson,
-          data: contents,
-          source: file.name,
-        ),
-      );
+      await _importDocumentText(contents, source: file.name);
     } catch (_) {
       if (!mounted) return;
       showAppSnackBar(context, AppText.current.couldNotImportTfp, error: true);
     }
+  }
+
+  /// Takes a `.tfp` from anywhere and lands it, whatever shape it turns out to
+  /// be: sealed or not, one profile or a set.
+  Future<void> _importDocumentText(
+    String text, {
+    required String source,
+  }) async {
+    await importProfileText(
+      context,
+      bloc: _profilesBloc,
+      store: widget.store,
+      text: text,
+      source: source,
+    );
+    if (mounted) setState(() {});
   }
 
   Future<void> _importFromClipboard() async {
@@ -308,25 +344,20 @@ class _ProfilePickerSheetState extends State<ProfilePickerSheet> {
         showAppSnackBar(context, AppText.current.clipboardEmpty, error: true);
         return;
       }
-      final transfer =
-          text.startsWith('${ProfileTransferEnvelope.uriScheme}://')
-          ? IncomingProfileTransfer(
-              type: ProfileTransferContract.typeTfUri,
-              data: text,
-              source: 'Clipboard',
-            )
-          : IncomingProfileTransfer(
-              type: ProfileTransferContract.typeTfpJson,
-              // Re-encoded rather than passed through so that a malformed
-              // paste fails here, where there is a message to show. The
-              // secrets stay in: this is one hop inside the application, not
-              // an export.
-              data: ProfileTransferEnvelope.fromFileJson(
-                text,
-              ).toFileJson(includeSecrets: true),
-              source: 'Clipboard',
-            );
-      await _importTransfer(transfer);
+      if (text.startsWith('${ProfileTransferEnvelope.uriScheme}://')) {
+        await _importTransfer(
+          IncomingProfileTransfer(
+            type: ProfileTransferContract.typeTfUri,
+            data: text,
+            source: 'Clipboard',
+          ),
+        );
+        return;
+      }
+      // Anything else goes through the same reader a file does, so that a
+      // pasted set, or a pasted container, behaves the way the file would
+      // rather than failing on a shape the clipboard path never learned.
+      await _importDocumentText(text, source: 'Clipboard');
     } on FormatException catch (error) {
       if (!mounted) return;
       final message = error.message.toString();
@@ -433,6 +464,9 @@ class _ProfilePickerSheetState extends State<ProfilePickerSheet> {
                       case _AddProfileAction.importClipboard:
                         await _importFromClipboard();
                         break;
+                      case _AddProfileAction.exportSet:
+                        await _exportProfileSet(state.profiles);
+                        break;
                     }
                   },
                   itemBuilder: (context) => [
@@ -457,6 +491,14 @@ class _ProfilePickerSheetState extends State<ProfilePickerSheet> {
                         label: t.importFromClipboard,
                       ),
                     ),
+                    if (state.profiles.isNotEmpty)
+                      PopupMenuItem<_AddProfileAction>(
+                        value: _AddProfileAction.exportSet,
+                        child: _PopupMenuIconLabel(
+                          icon: Icons.folder_zip_outlined,
+                          label: t.exportProfileSet,
+                        ),
+                      ),
                   ],
                 ),
             ],
@@ -505,6 +547,7 @@ class _ProfilePickerSheetState extends State<ProfilePickerSheet> {
                   itemBuilder: (context, i) {
                     final profile = state.profiles[i];
                     final selected = profile.id == state.activeProfileId;
+                    final awaiting = state.awaitsCredentials(profile.id);
                     return ListTile(
                       selected: selected,
                       title: Text(
@@ -535,13 +578,24 @@ class _ProfilePickerSheetState extends State<ProfilePickerSheet> {
                             ),
                           ),
                           const SizedBox(width: 6),
+                          if (awaiting) ...[
+                            Icon(
+                              key: ValueKey('needs_credentials_${profile.id}'),
+                              Icons.person_off_outlined,
+                              size: 14,
+                              color: cs.tertiary,
+                            ),
+                            const SizedBox(width: 4),
+                          ],
                           Expanded(
                             child: Text(
-                              profile.server,
+                              awaiting ? t.credentialsNeeded : profile.server,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: tt.bodySmall?.copyWith(
-                                color: cs.onSurfaceVariant,
+                                color: awaiting
+                                    ? cs.tertiary
+                                    : cs.onSurfaceVariant,
                               ),
                             ),
                           ),
@@ -564,9 +618,7 @@ class _ProfilePickerSheetState extends State<ProfilePickerSheet> {
                                   );
                                   break;
                                 case _ProfileTileAction.exportFile:
-                                  _profilesBloc.add(
-                                    ProfilesExportFileRequested(profile.id),
-                                  );
+                                  await _exportProfileFile(profile.id);
                                   break;
                                 case _ProfileTileAction.delete:
                                   await _confirmDeleteProfile(profile.id);
@@ -858,7 +910,7 @@ class _PopupMenuIconLabel extends StatelessWidget {
 /// Which of the two things the sheet lists is on screen.
 enum _PickerTab { profiles, groups }
 
-enum _AddProfileAction { create, importFile, importClipboard }
+enum _AddProfileAction { create, importFile, importClipboard, exportSet }
 
 enum _GroupTileAction { edit, delete }
 

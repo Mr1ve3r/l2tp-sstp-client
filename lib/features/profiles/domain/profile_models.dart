@@ -701,6 +701,15 @@ class Profile {
     );
   }
 
+  /// Whether this profile still needs the login and password of whoever holds
+  /// it, which is how a profile out of a shared set arrives.
+  ///
+  /// Judged on the username alone. The password is a secret, and the profile
+  /// list is drawn from rows that carry no secrets; decrypting every stored
+  /// password to put a chip on a tile is not worth what it would cost, and a
+  /// set leaves both fields empty together, so the username answers for both.
+  bool get needsCredentials => user.trim().isEmpty;
+
   List<DnsServerConfig> get manualDnsServers => orderedDnsServers(
     dns1Host: dns1Host,
     dns1Protocol: dns1Protocol,

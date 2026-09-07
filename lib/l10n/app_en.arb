@@ -212,6 +212,81 @@
   "profileActions": "Profile actions",
   "copyShareLink": "Copy share link",
   "exportTfp": "Export .tfp",
+  "exportProfileSet": "Export a set…",
+  "exportPasswordExplanation": "With a password the file carries the login, the pre-shared key and the proxy password, encrypted. Without one it carries settings only.",
+  "exportWithoutSecrets": "Without secrets",
+  "profileSetName": "Set name",
+  "profileSetNameHint": "e.g. Acme corporate VPN",
+  "profileSetIncludes": "The set carries the pre-shared key, the proxy details and the certificates. The VPN username and password are left out, so each person enters their own.",
+  "chooseProfilesForSet": "Choose the profiles to include",
+  "noProfilesSelected": "Choose at least one profile.",
+  "setPassword": "Set password",
+  "confirmSetPassword": "Confirm password",
+  "passwordsDoNotMatch": "The passwords do not match.",
+  "passwordTooShort": "Use at least {count} characters.",
+  "@passwordTooShort": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "exportSet": "Export set",
+  "profileSetFileReady": "Set file ready to save or share",
+  "couldNotExportProfileSet": "Couldn't export the profile set",
+  "encryptedFileTitle": "This file is encrypted",
+  "encryptedFileBody": "Enter the password it was sealed with.",
+  "wrongFilePassword": "That password does not open this file.",
+  "openFile": "Open",
+  "importProfileSet": "Import set",
+  "profileSetCount": "{count, plural, =1{1 profile in this set} other{{count} profiles in this set}}",
+  "@profileSetCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "profileSetEntryCertificates": "{count, plural, =0{No certificates} =1{1 certificate} other{{count} certificates}}",
+  "@profileSetEntryCertificates": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "alreadyOnThisDevice": "Already on this device",
+  "conflictReplace": "Replace",
+  "conflictAdd": "Add as new",
+  "conflictSkip": "Skip",
+  "importSelected": "Import selected",
+  "importedProfileSet": "Imported {added}, replaced {replaced}, skipped {skipped}",
+  "@importedProfileSet": {
+    "placeholders": {
+      "added": {
+        "type": "int"
+      },
+      "replaced": {
+        "type": "int"
+      },
+      "skipped": {
+        "type": "int"
+      }
+    }
+  },
+  "couldNotImportProfileSet": "Couldn't import the profile set",
+  "credentialsNeeded": "Credentials needed",
+  "enterCredentialsTitle": "Enter your credentials",
+  "enterCredentialsBody": "This profile came from a shared set, so it carries no username or password yet.",
+  "connectAction": "Connect",
+  "groupMemberNeedsCredentials": "\"{name}\" needs a username and password before this group can start.",
+  "@groupMemberNeedsCredentials": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
   "editProfile": "Edit profile",
   "deleteProfile": "Delete profile",
   "deleteProfileQuestion": "Delete profile?",
