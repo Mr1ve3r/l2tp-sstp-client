@@ -14,6 +14,11 @@ publish otherwise.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-09-07
+
+Profiles can be handed out as a set, and the secrets in a transfer are now
+chosen rather than all-or-nothing.
+
 ### Added
 
 - **A set of profiles can be handed out as one encrypted file.** An
@@ -233,7 +238,8 @@ to the phases in [`SPEC`](SPEC).
 - **Proxy-only mode**, inherited from TunnelForge, fails its L2TP handshake and
   has not been attributed to a cause. See SPEC appendix В.8.
 
-[Unreleased]: https://github.com/Mr1ve3r/l2tp-sstp-client/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/Mr1ve3r/l2tp-sstp-client/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/Mr1ve3r/l2tp-sstp-client/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/Mr1ve3r/l2tp-sstp-client/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/Mr1ve3r/l2tp-sstp-client/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/Mr1ve3r/l2tp-sstp-client/releases/tag/v0.1.0
