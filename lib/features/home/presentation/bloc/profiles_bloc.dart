@@ -322,7 +322,11 @@ class ProfilesState extends Equatable {
 /// arrives by a tap on an attachment rather than through the import menu, so
 /// the sealed payload waits in the state until a widget picks it up.
 class SealedTransfer extends Equatable {
-  const SealedTransfer({required this.payload, required this.source, required this.id});
+  const SealedTransfer({
+    required this.payload,
+    required this.source,
+    required this.id,
+  });
 
   final String payload;
   final String source;
@@ -352,8 +356,7 @@ class ProfilesBloc extends Bloc<ProfilesEvent, ProfilesState> {
     on<ProfilesBundleImportRequested>(_onBundleImportRequested);
     on<ProfilesCredentialsSubmitted>(_onCredentialsSubmitted);
     on<ProfilesSealedTransferHandled>(
-      (event, emit) =>
-          emit(state.copyWith(clearPendingSealedTransfer: true)),
+      (event, emit) => emit(state.copyWith(clearPendingSealedTransfer: true)),
     );
     on<ProfilesImportSelectionPolicyChanged>(_onImportSelectionPolicyChanged);
   }
@@ -723,13 +726,14 @@ class ProfilesBloc extends Bloc<ProfilesEvent, ProfilesState> {
       );
       await _profilesRepository.clearProfileAwaitingCredentials(event.id);
       await _reloadProfiles(emit, preferredActiveId: event.id);
-      emit(
-        state.copyWith(message: _nextMessage(AppText.current.profileSaved)),
-      );
+      emit(state.copyWith(message: _nextMessage(AppText.current.profileSaved)));
     } catch (_) {
       emit(
         state.copyWith(
-          message: _nextMessage(AppText.current.couldNotSaveChanges, error: true),
+          message: _nextMessage(
+            AppText.current.couldNotSaveChanges,
+            error: true,
+          ),
         ),
       );
     }
@@ -860,9 +864,10 @@ class ProfilesBloc extends Bloc<ProfilesEvent, ProfilesState> {
     }
     // Narrowed to profiles that still exist, so an id left behind by a deletion
     // the store did not see cannot mark an unrelated profile later.
-    final awaiting = (await _profilesRepository.loadProfilesAwaitingCredentials())
-        .where((id) => profiles.any((profile) => profile.id == id))
-        .toSet();
+    final awaiting =
+        (await _profilesRepository.loadProfilesAwaitingCredentials())
+            .where((id) => profiles.any((profile) => profile.id == id))
+            .toSet();
     emit(
       state.copyWith(
         loading: false,

@@ -301,9 +301,7 @@ class _ProfileBundleExportSheetState extends State<ProfileBundleExportSheet> {
                   padding: const EdgeInsets.only(top: 4),
                   child: Text(
                     _selectionError!,
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: cs.error,
-                    ),
+                    style: theme.textTheme.bodySmall?.copyWith(color: cs.error),
                   ),
                 ),
               for (final profile in widget.profiles)

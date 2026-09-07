@@ -38,9 +38,18 @@ Future<void> importProfileText(
   if (document == null || !context.mounted) return;
   switch (document) {
     case SingleProfileDocument(:final envelope):
-      await _importSingle(context, bloc: bloc, envelope: envelope, source: source);
+      await _importSingle(
+        context,
+        bloc: bloc,
+        envelope: envelope,
+        source: source,
+      );
     case ProfileSetDocument(:final bundle):
-      await importProfileBundleInteractively(context, bloc: bloc, bundle: bundle);
+      await importProfileBundleInteractively(
+        context,
+        bloc: bloc,
+        bundle: bundle,
+      );
   }
 }
 
@@ -140,6 +149,10 @@ Future<void> _awaitImport(
     await done;
   } on TimeoutException {
     if (!context.mounted) return;
-    showAppSnackBar(context, AppText.current.profileImportTimedOut, error: true);
+    showAppSnackBar(
+      context,
+      AppText.current.profileImportTimedOut,
+      error: true,
+    );
   }
 }

@@ -152,8 +152,9 @@ class ProfileTransferEnvelope {
 
   /// @param secrets which secrets go in. Nothing by default: the file it
   ///   produces is the one that gets shared.
-  Map<String, Object?> toJson({TransferSecrets secrets = TransferSecrets.none})
-  => <String, Object?>{
+  Map<String, Object?> toJson({
+    TransferSecrets secrets = TransferSecrets.none,
+  }) => <String, Object?>{
     'v': currentVersion,
     'profile': profileFor(secrets).toJson(),
     if (secrets.credentials) 'password': password,

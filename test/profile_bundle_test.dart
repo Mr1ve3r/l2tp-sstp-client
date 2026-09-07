@@ -99,29 +99,32 @@ void main() {
       }
     });
 
-    test('the shared certificate is written once and put back on every entry', () {
-      final bundle = _bundle();
-      expect(bundle.certificatePool, hasLength(1));
+    test(
+      'the shared certificate is written once and put back on every entry',
+      () {
+        final bundle = _bundle();
+        expect(bundle.certificatePool, hasLength(1));
 
-      final text = bundle.toFileJson();
-      expect('QUNNRQ=='.allMatches(text), hasLength(1));
+        final text = bundle.toFileJson();
+        expect('QUNNRQ=='.allMatches(text), hasLength(1));
 
-      final decoded =
-          (ProfileTransferDocument.parse(text) as ProfileSetDocument).bundle;
-      final sstp = decoded.entries.where(
-        (e) => e.profile.protocol == VpnProtocol.sstp,
-      );
-      expect(sstp, hasLength(3));
-      for (final entry in sstp) {
-        expect(entry.certificates, hasLength(1));
-        expect(entry.certificates.single.alias, 'Acme CA');
-      }
-      for (final entry in decoded.entries.where(
-        (e) => e.profile.protocol == VpnProtocol.l2tp,
-      )) {
-        expect(entry.certificates, isEmpty);
-      }
-    });
+        final decoded =
+            (ProfileTransferDocument.parse(text) as ProfileSetDocument).bundle;
+        final sstp = decoded.entries.where(
+          (e) => e.profile.protocol == VpnProtocol.sstp,
+        );
+        expect(sstp, hasLength(3));
+        for (final entry in sstp) {
+          expect(entry.certificates, hasLength(1));
+          expect(entry.certificates.single.alias, 'Acme CA');
+        }
+        for (final entry in decoded.entries.where(
+          (e) => e.profile.protocol == VpnProtocol.l2tp,
+        )) {
+          expect(entry.certificates, isEmpty);
+        }
+      },
+    );
 
     test('an entry keeps the envelope validation', () {
       expect(
@@ -164,7 +167,10 @@ void main() {
         ProfileBundle.exportFileNameFor('Acme corporate VPN'),
         'acme-corporate-vpn.tfp',
       );
-      expect(ProfileBundle.exportFileNameFor('  '), 'tunnel-forge-profiles.tfp');
+      expect(
+        ProfileBundle.exportFileNameFor('  '),
+        'tunnel-forge-profiles.tfp',
+      );
     });
   });
 

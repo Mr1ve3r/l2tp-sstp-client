@@ -91,32 +91,38 @@ void main() {
       repository = ProfilesRepositoryImpl(store, FakeCertificatesRepository());
     });
 
-    test('adds every chosen entry and marks it as awaiting credentials', () async {
-      final bundle = ProfileBundle(
-        name: 'Acme',
-        entries: [_entry(name: 'Amsterdam'), _entry(name: 'Berlin')],
-      );
+    test(
+      'adds every chosen entry and marks it as awaiting credentials',
+      () async {
+        final bundle = ProfileBundle(
+          name: 'Acme',
+          entries: [
+            _entry(name: 'Amsterdam'),
+            _entry(name: 'Berlin'),
+          ],
+        );
 
-      final result = await repository.importProfileBundle(
-        bundle: bundle,
-        choices: const [
-          BundleImportChoice(entryIndex: 0, action: BundleImportAction.add),
-          BundleImportChoice(entryIndex: 1, action: BundleImportAction.add),
-        ],
-      );
+        final result = await repository.importProfileBundle(
+          bundle: bundle,
+          choices: const [
+            BundleImportChoice(entryIndex: 0, action: BundleImportAction.add),
+            BundleImportChoice(entryIndex: 1, action: BundleImportAction.add),
+          ],
+        );
 
-      expect(result.added, 2);
-      expect(result.stored, 2);
-      final profiles = await store.loadProfiles();
-      expect(profiles, hasLength(2));
-      expect(
-        await store.loadProfilesAwaitingCredentials(),
-        profiles.map((profile) => profile.id).toSet(),
-      );
-      final row = await store.loadProfileWithSecrets(profiles.first.id);
-      expect(row!.psk, 'corporate-psk');
-      expect(row.password, isEmpty);
-    });
+        expect(result.added, 2);
+        expect(result.stored, 2);
+        final profiles = await store.loadProfiles();
+        expect(profiles, hasLength(2));
+        expect(
+          await store.loadProfilesAwaitingCredentials(),
+          profiles.map((profile) => profile.id).toSet(),
+        );
+        final row = await store.loadProfileWithSecrets(profiles.first.id);
+        expect(row!.psk, 'corporate-psk');
+        expect(row.password, isEmpty);
+      },
+    );
 
     test('skip stores nothing', () async {
       final result = await repository.importProfileBundle(

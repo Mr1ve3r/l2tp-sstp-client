@@ -20,7 +20,8 @@ class SealedFilePasswordDialog extends StatefulWidget {
     return showDialog<String>(
       context: context,
       useRootNavigator: true,
-      builder: (dialogContext) => SealedFilePasswordDialog(errorText: errorText),
+      builder: (dialogContext) =>
+          SealedFilePasswordDialog(errorText: errorText),
     );
   }
 
@@ -260,7 +261,9 @@ class _ProfileBundleImportSheetState extends State<ProfileBundleImportSheet> {
                 SegmentedButton<BundleImportAction>(
                   key: Key('profile_set_conflict_$index'),
                   showSelectedIcon: false,
-                  style: const ButtonStyle(visualDensity: VisualDensity.compact),
+                  style: const ButtonStyle(
+                    visualDensity: VisualDensity.compact,
+                  ),
                   segments: [
                     ButtonSegment(
                       value: BundleImportAction.replace,
