@@ -83,6 +83,7 @@ class _SingleExportPasswordDialogState
   Widget build(BuildContext context) {
     final t = AppLocalizations.of(context);
     return AlertDialog(
+      scrollable: true,
       title: Text(t.exportTfp),
       content: Column(
         mainAxisSize: MainAxisSize.min,

@@ -49,6 +49,9 @@ class _SealedFilePasswordDialogState extends State<SealedFilePasswordDialog> {
   Widget build(BuildContext context) {
     final t = AppLocalizations.of(context);
     return AlertDialog(
+      // Same reason as the credentials prompt: the field autofocuses, so the
+      // keyboard has already taken the height this was measured against.
+      scrollable: true,
       title: Text(t.encryptedFileTitle),
       content: Column(
         mainAxisSize: MainAxisSize.min,

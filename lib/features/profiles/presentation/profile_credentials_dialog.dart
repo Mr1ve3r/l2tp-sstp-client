@@ -73,6 +73,10 @@ class _ProfileCredentialsDialogState extends State<ProfileCredentialsDialog> {
   Widget build(BuildContext context) {
     final t = AppLocalizations.of(context);
     return AlertDialog(
+      // The keyboard is up the moment this opens — the username field takes
+      // focus itself — so the dialog is laid out against roughly half a screen
+      // and two fields plus an explanation do not fit in it.
+      scrollable: true,
       title: Text(t.enterCredentialsTitle),
       content: Column(
         mainAxisSize: MainAxisSize.min,

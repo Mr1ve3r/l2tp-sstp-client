@@ -6,6 +6,7 @@ import 'package:tunnel_forge/features/profiles/domain/profile_models.dart';
 import 'package:tunnel_forge/features/profiles/domain/profile_transfer.dart';
 import 'package:tunnel_forge/features/profiles/presentation/profile_bundle_export_sheet.dart';
 import 'package:tunnel_forge/features/profiles/presentation/profile_bundle_import_sheet.dart';
+import 'package:tunnel_forge/features/profiles/presentation/profile_credentials_dialog.dart';
 import 'package:tunnel_forge/l10n/app_localizations.dart';
 
 Profile _profile(String id, String name, {String user = 'alice'}) {
@@ -141,6 +142,56 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(result!.profileIds, ['a']);
+    });
+  });
+
+  group('ProfileCredentialsDialog', () {
+    /// It autofocuses its first field, so it is always laid out against a
+    /// screen with the keyboard already on it. A widget test fails on an
+    /// overflow, which is what makes this a regression test rather than a
+    /// screenshot someone has to look at.
+    testWidgets('fits with the keyboard up on a short screen', (tester) async {
+      // Set on the view rather than with a MediaQuery around the page: the
+      // dialog is put up by the root navigator, whose MediaQuery comes from the
+      // view, so anything wrapped around the page below it is not what the
+      // dialog is measured against.
+      tester.view.physicalSize = const Size(360, 640);
+      tester.view.devicePixelRatio = 1.0;
+      tester.view.viewInsets = const FakeViewPadding(bottom: 420);
+      addTearDown(tester.view.reset);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          // Russian, because that is where it was seen and because its strings
+          // are the longer ones: an English-only check would pass on a layout
+          // that still overflows for half the people using it.
+          locale: const Locale('ru'),
+          home: Builder(
+            builder: (context) => Scaffold(
+              body: Center(
+                child: ElevatedButton(
+                  onPressed: () => ProfileCredentialsDialog.show(
+                    context,
+                    profileName: 'Amsterdam',
+                  ),
+                  child: const Text('open'),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('profile_credentials_user')), findsOneWidget);
+      expect(
+        find.byKey(const Key('profile_credentials_password')),
+        findsOneWidget,
+      );
+      expect(tester.takeException(), isNull);
     });
   });
 
