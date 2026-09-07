@@ -187,6 +187,69 @@ A profile from before phase 8 has no protocol, no port, and no SSTP fields.
 what those profiles always meant: L2TP over IPsec, every application in the
 tunnel.
 
+### Handing out a set of profiles
+
+An organisation with several sites has several profiles, and every employee
+needs all of them. Sending six files with a page of instructions is how that
+goes wrong, so a set travels as one file: `ProfileBundle`, version 5 of the
+transfer format, inside the same password-sealed container a single export can
+use.
+
+**A set is composed of transfer envelopes rather than being a widened one.**
+`ProfileTransferEnvelope` is built around one profile — `toProfile`, `hasSecrets`
+and `displayName` all assume it — and a list inside it would leave each of those
+either lying or asking which profile was meant. Holding envelopes reuses their
+validation and their certificate handling word for word, and the two shapes are
+told apart by the version inside the JSON rather than by the extension, because
+a sealed file is opaque from the outside and an extension could not have told
+them apart anyway. Keeping `.tfp` is also what lets the manifest's intent
+filters, the file picker and `MainActivity`'s intake stay exactly as they were.
+
+Certificates are written once into a pool the entries reference by identifier;
+reading a set puts them back on each envelope. Six profiles behind one corporate
+authority would otherwise carry six copies of it. On the way in, no mapping from
+the sender's identifiers is needed: the certificate store is keyed by the
+fingerprint this device computes, so importing the same certificate for six
+profiles is one entry.
+
+**What travels is chosen per secret, not all or nothing.** `TransferSecrets`
+names three: the VPN credentials, the pre-shared key, and the proxy credentials.
+A set takes the last two, because they are the organisation's, and leaves the
+first, because it is one person's. The subtlety worth stating is that the two
+logins are fields of the profile rather than secrets beside it, so leaving a flag
+off has to reach into the profile map and clear them; a login that travelled
+while its password stayed behind would name the person the set was taken from
+and still not connect.
+
+The same type is what took the secrets out of `tf://` links. A link is gzip and
+base64 — encoding, not encryption — and it lives on in whatever conversation it
+was pasted into, so every key it carried was readable by everyone who ever saw
+it. Links carry settings now. A link written by an older build is still read
+with its secrets, because that history cannot be recalled and refusing it would
+strand the profile rather than protect it.
+
+A profile that arrives without credentials is recorded as awaiting them, in
+`SharedPreferences` under `profiles_awaiting_credentials_v1`. Not derived from
+an empty username, which plenty of ordinary profiles have, and not added to the
+profile row, which would be a schema migration in the host for a fact only the
+Flutter side ever asks about. The mark is what puts the label in the list and
+what makes the connect button ask for a login instead of spending the timeout
+failing; it is removed when the credentials are entered, and when the profile is
+deleted, so an id left behind cannot come to mean something else later.
+
+Re-importing is the ordinary case rather than the exception, because a set is
+handed out again every time the organisation changes anything. Entries are
+matched on protocol, server, port and name — never on the login, which is
+exactly the field the set left empty and the recipient filled in — and each
+match offers replace, add, or skip. Replacing keeps the existing profile's
+identity, login and password and overwrites the rest, so an update does not
+sign anybody out.
+
+**Not done: client certificates.** A set carries what a profile trusts, which is
+the server's certificate and its authority's. Authenticating with a certificate
+of one's own has no field in the profile model and no support in either engine,
+so there is nothing for a set to distribute.
+
 ## Trust, in `core-trust`
 
 Verification splits into three questions that fail differently, so they are

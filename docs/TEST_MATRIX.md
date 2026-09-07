@@ -127,7 +127,36 @@ that is where the platform keeps changing:
 
 ---
 
-## 3. Security checklist
+## 3. Handing out a set of profiles
+
+Two devices, because the whole point is the trip between them, and a real
+messenger, because `share_plus` and the receiving intent are the parts no test
+covers.
+
+Set up on device A: three L2TP profiles and three SSTP profiles, each with a
+pre-shared key, the SSTP ones trusting an imported authority and set to
+`STORE_AUTO` or `SYSTEM_PLUS_CUSTOM`.
+
+| # | Step | Expected | Result |
+|---|---|---|---|
+| 1 | Export a set of all six with a password | One `.tfp` offered to the share sheet, named after the set | |
+| 2 | Send it to device B through a messenger, tap the attachment | Device B asks for the password | |
+| 3 | Enter a wrong password | Asked again, in the same field, with no way to a dead end | |
+| 4 | Enter the right password | The six entries are listed, all ticked | |
+| 5 | Import | Six profiles stored; PSK and certificates present; login and password empty and marked | |
+| 6 | Open the certificate list on B | The shared authority is **one** entry, not six | |
+| 7 | Press connect on an imported profile | The credentials prompt opens; after entering them the tunnel comes up | |
+| 8 | Import the same file again, choose **Replace** for all | Still six profiles; the credentials entered in step 7 survive | |
+| 9 | Import it again choosing **Add as new** for one | Seven profiles; the added one is marked as needing credentials | |
+| 10 | Put an imported profile with no credentials into a failover group and start it | Refused before connecting, naming that profile | |
+
+One check that needs no second device: copy a profile's `tf://` share link,
+decode it (`base64url`, then gunzip) and read the JSON. It must contain no
+`psk`, no `password` and no username.
+
+---
+
+## 4. Security checklist
 
 SPEC appendix А, to be re-checked before each release rather than assumed from
 the last one. The items that need a device or a build artifact rather than a
@@ -148,7 +177,7 @@ code read:
 
 ---
 
-## 4. Release artifact checks
+## 5. Release artifact checks
 
 SPEC 11.4's remaining two criteria, which are about the built APK rather than
 about behaviour:

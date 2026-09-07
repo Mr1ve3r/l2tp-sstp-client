@@ -12,6 +12,7 @@ import 'package:tunnel_forge/core/network/connectivity_checker.dart';
 import 'package:tunnel_forge/features/profiles/domain/failover_group.dart';
 import 'package:tunnel_forge/features/profiles/domain/profile_models.dart';
 import 'package:tunnel_forge/features/profiles/data/profile_store.dart';
+import 'package:tunnel_forge/features/profiles/domain/profile_bundle.dart';
 import 'package:tunnel_forge/features/profiles/domain/profile_transfer.dart';
 import 'package:tunnel_forge/features/profiles/data/profile_transfer_bridge.dart';
 import 'package:tunnel_forge/core/logging/log_entry.dart';
@@ -67,7 +68,7 @@ class ProfilesRepositoryImpl implements ProfilesRepository {
     final text = password == null || password.isEmpty
         ? envelope.toFileJson()
         : await _profileStore.sealExport(
-            envelope.toFileJson(includeSecrets: true),
+            envelope.toFileJson(secrets: TransferSecrets.all),
             password,
           );
     final bytes = Uint8List.fromList(utf8.encode(text));
@@ -86,13 +87,191 @@ class ProfilesRepositoryImpl implements ProfilesRepository {
   }
 
   @override
-  Future<ProfileTransferEnvelope> openSealedTransfer(
+  Future<void> exportProfileBundle({
+    required List<String> profileIds,
+    required String bundleName,
+    required String password,
+    TransferSecrets secrets = TransferSecrets.shared,
+  }) async {
+    if (profileIds.isEmpty) {
+      throw const ProfileRepositoryException(
+        'Choose at least one profile to put in the set.',
+      );
+    }
+    if (password.isEmpty) {
+      throw const ProfileRepositoryException(
+        'A set needs a password: it carries the pre-shared key.',
+      );
+    }
+    final entries = <ProfileTransferEnvelope>[];
+    for (final id in profileIds) {
+      entries.add(await _envelopeFor(id));
+    }
+    final bundle = ProfileBundle(
+      name: bundleName.trim(),
+      entries: entries,
+      createdAt: DateTime.now().toUtc(),
+    );
+    final sealed = await _profileStore.sealExport(
+      bundle.toFileJson(secrets: secrets),
+      password,
+    );
+    await SharePlus.instance.share(
+      ShareParams(
+        files: [
+          XFile.fromData(
+            Uint8List.fromList(utf8.encode(sealed)),
+            mimeType: ProfileTransferEnvelope.mimeType,
+          ),
+        ],
+        fileNameOverrides: [ProfileBundle.exportFileNameFor(bundle.name)],
+        title: 'Export TunnelForge profiles',
+      ),
+    );
+  }
+
+  @override
+  Future<ProfileTransferDocument> openSealedTransfer(
     String payload,
     String password,
   ) async {
-    return ProfileTransferEnvelope.fromFileJson(
+    return ProfileTransferDocument.parse(
       await _profileStore.openExport(payload, password),
     );
+  }
+
+  @override
+  Future<Set<String>> loadProfilesAwaitingCredentials() =>
+      _profileStore.loadProfilesAwaitingCredentials();
+
+  @override
+  Future<void> clearProfileAwaitingCredentials(String id) =>
+      _profileStore.clearProfileAwaitingCredentials(id);
+
+  @override
+  Future<BundleImportResult> importProfileBundle({
+    required ProfileBundle bundle,
+    required List<BundleImportChoice> choices,
+  }) async {
+    var added = 0;
+    var replaced = 0;
+    var skipped = 0;
+    String? firstImportedId;
+    final awaitingCredentials = <String>[];
+    for (final choice in choices) {
+      if (choice.entryIndex < 0 || choice.entryIndex >= bundle.entries.length) {
+        continue;
+      }
+      final entry = bundle.entries[choice.entryIndex];
+      switch (choice.action) {
+        case BundleImportAction.skip:
+          skipped++;
+        case BundleImportAction.add:
+          final stored = await saveImportedProfile(
+            entry,
+            selectAsLastProfile: false,
+          );
+          added++;
+          firstImportedId ??= stored.id;
+          if (stored.needsCredentials) awaitingCredentials.add(stored.id);
+        case BundleImportAction.replace:
+          final targetId = choice.targetProfileId;
+          if (targetId == null) {
+            final stored = await saveImportedProfile(
+              entry,
+              selectAsLastProfile: false,
+            );
+            added++;
+            firstImportedId ??= stored.id;
+            if (stored.needsCredentials) awaitingCredentials.add(stored.id);
+            continue;
+          }
+          final outcome = await _replaceProfile(targetId, entry);
+          // The target can have been deleted between the sheet opening and
+          // this running, in which case nothing was replaced and the summary
+          // must not claim otherwise.
+          if (outcome.replaced) {
+            replaced++;
+          } else {
+            added++;
+          }
+          firstImportedId ??= outcome.profile.id;
+          if (outcome.profile.needsCredentials) {
+            awaitingCredentials.add(outcome.profile.id);
+          }
+      }
+    }
+    // Marked from what actually landed rather than from what the file said:
+    // a replace keeps the login the recipient had already typed in, and that
+    // profile is not waiting for anything.
+    await _profileStore.markProfilesAwaitingCredentials(awaitingCredentials);
+    return BundleImportResult(
+      added: added,
+      replaced: replaced,
+      skipped: skipped,
+      firstImportedId: firstImportedId,
+    );
+  }
+
+  /// Overwrites [targetId] with [entry], keeping what the set left out.
+  ///
+  /// The login and password are the recipient's own, typed in after the last
+  /// handout; a new handout carries neither, so taking the incoming empty
+  /// fields at face value would sign them out every time the organisation
+  /// changed an MTU.
+  Future<({Profile profile, bool replaced})> _replaceProfile(
+    String targetId,
+    ProfileTransferEnvelope entry,
+  ) async {
+    final existing = await _profileStore.loadProfileWithSecrets(targetId);
+    if (existing == null) {
+      return (
+        profile: await saveImportedProfile(entry, selectAsLastProfile: false),
+        replaced: false,
+      );
+    }
+    final incoming = entry.toProfile(targetId);
+    final merged = incoming.copyWith(
+      user: entry.profile.user.trim().isEmpty
+          ? existing.profile.user
+          : entry.profile.user,
+      proxyUsername: entry.profile.proxyUsername.trim().isEmpty
+          ? existing.profile.proxyUsername
+          : entry.profile.proxyUsername,
+      trustedCertificateIds: await _storeCertificatesOf(entry),
+    );
+    await _profileStore.upsertProfile(
+      merged,
+      password: entry.password.isEmpty ? existing.password : entry.password,
+      psk: entry.psk.isEmpty ? existing.psk : entry.psk,
+      proxyPassword: entry.proxyPassword.isEmpty
+          ? existing.proxyPassword
+          : entry.proxyPassword,
+    );
+    return (profile: merged, replaced: true);
+  }
+
+  /// Imports the certificates [entry] brought and returns their ids here.
+  ///
+  /// The ids in the file are the sending device's fingerprints; the store
+  /// recomputes them, which is what makes a certificate six profiles share one
+  /// entry rather than six.
+  Future<List<String>> _storeCertificatesOf(
+    ProfileTransferEnvelope entry,
+  ) async {
+    final store = _certificates;
+    if (entry.certificates.isEmpty || store == null) return const <String>[];
+    final stored = await store.import(
+      entry.certificates
+          .map(
+            (certificate) => CertificateImportRequest(
+              pem: certificate.pem,
+              alias: certificate.alias,
+            ),
+          )
+          .toList(),
+    );
+    return stored.map((e) => e.fields.id).toList(growable: false);
   }
 
   /// The profile [id] with its secrets and the certificates it selects.

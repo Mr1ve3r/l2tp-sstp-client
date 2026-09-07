@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:tunnel_forge/core/network/connectivity_checker.dart';
 import 'package:tunnel_forge/features/profiles/domain/failover_group.dart';
 import 'package:tunnel_forge/features/profiles/domain/profile_models.dart';
+import 'package:tunnel_forge/features/profiles/domain/profile_bundle.dart';
 import 'package:tunnel_forge/features/profiles/domain/profile_transfer.dart';
 import 'package:tunnel_forge/core/logging/log_entry.dart';
 import 'package:tunnel_forge/features/tunnel/domain/tunnel_runtime_state.dart';
@@ -46,11 +47,38 @@ abstract class ProfilesRepository {
   /// with one, the secrets go inside an encrypted container (SPEC 8.1.4).
   Future<void> exportProfileFile(String id, {String? password});
 
-  /// Reads a container written by [exportProfileFile] with a password.
-  Future<ProfileTransferEnvelope> openSealedTransfer(
+  /// Writes several profiles out as one sealed set.
+  ///
+  /// [password] is required rather than optional: a set exists to be handed
+  /// around, and by default it carries the pre-shared key. [secrets] says what
+  /// travels; the default leaves out the login and password, which belong to
+  /// whoever receives the set rather than to whoever made it.
+  Future<void> exportProfileBundle({
+    required List<String> profileIds,
+    required String bundleName,
+    required String password,
+    TransferSecrets secrets,
+  });
+
+  /// Reads a container written by [exportProfileFile] or
+  /// [exportProfileBundle], which may hold either shape.
+  Future<ProfileTransferDocument> openSealedTransfer(
     String payload,
     String password,
   );
+
+  /// Profiles that came out of a shared set without a login and password and
+  /// have not been given one since.
+  Future<Set<String>> loadProfilesAwaitingCredentials();
+
+  /// Says [id] has been given its credentials and is waiting no longer.
+  Future<void> clearProfileAwaitingCredentials(String id);
+
+  /// Stores the entries of [bundle] that [choices] asks for.
+  Future<BundleImportResult> importProfileBundle({
+    required ProfileBundle bundle,
+    required List<BundleImportChoice> choices,
+  });
   String newProfileId();
 }
 

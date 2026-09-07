@@ -42,6 +42,44 @@ class TransferredCertificate {
   }
 }
 
+/// Which of a profile's secrets a transfer is allowed to carry.
+///
+/// A boolean was enough while every export either carried all three secrets or
+/// none of them. A set shared across an organisation is neither: the pre-shared
+/// key and the proxy credentials belong to everyone who is given the set, and
+/// the VPN login and password belong to one person.
+class TransferSecrets {
+  const TransferSecrets({
+    this.credentials = false,
+    this.psk = false,
+    this.proxy = false,
+  });
+
+  /// Settings only. What a file exported without a password may contain.
+  static const TransferSecrets none = TransferSecrets();
+
+  /// Everything, for a transfer that stays inside the application or goes
+  /// into a container someone has put a password on.
+  static const TransferSecrets all = TransferSecrets(
+    credentials: true,
+    psk: true,
+    proxy: true,
+  );
+
+  /// What an organisation shares: its own secrets, none of anybody's own.
+  static const TransferSecrets shared = TransferSecrets(psk: true, proxy: true);
+
+  /// The VPN login and password, which are one person's rather than the site's.
+  final bool credentials;
+
+  final bool psk;
+
+  /// The proxy login and password.
+  final bool proxy;
+
+  bool get any => credentials || psk || proxy;
+}
+
 /// One profile on its way in or out of the application (SPEC 8.1.4).
 ///
 /// The profile is carried as the same map the store speaks, rather than
@@ -112,29 +150,45 @@ class ProfileTransferEnvelope {
     );
   }
 
-  /// @param includeSecrets whether the password, PSK and proxy password go in.
-  ///   Off by default: the file it produces is the one that gets shared.
-  Map<String, Object?> toJson({bool includeSecrets = false}) =>
-      <String, Object?>{
-        'v': currentVersion,
-        'profile': profile.toJson(),
-        if (includeSecrets) 'password': password,
-        if (includeSecrets) 'psk': psk,
-        if (includeSecrets) 'proxyPassword': proxyPassword,
-        'certificates': certificates
-            .map((certificate) => certificate.toJson())
-            .toList(),
-      };
+  /// @param secrets which secrets go in. Nothing by default: the file it
+  ///   produces is the one that gets shared.
+  Map<String, Object?> toJson({TransferSecrets secrets = TransferSecrets.none})
+  => <String, Object?>{
+    'v': currentVersion,
+    'profile': profileFor(secrets).toJson(),
+    if (secrets.credentials) 'password': password,
+    if (secrets.psk) 'psk': psk,
+    if (secrets.proxy) 'proxyPassword': proxyPassword,
+    'certificates': certificates
+        .map((certificate) => certificate.toJson())
+        .toList(),
+  };
 
-  String toFileJson({bool includeSecrets = false}) =>
-      const JsonEncoder.withIndent(
-        '  ',
-      ).convert(toJson(includeSecrets: includeSecrets));
+  /// The profile as [secrets] allows it to travel.
+  ///
+  /// The two logins are fields of the profile rather than secrets beside it, so
+  /// leaving a flag off has to reach into the profile and clear them. Carrying
+  /// a login onwards while its password stays behind would be the worst of
+  /// both: it names the person the set was taken from and still cannot connect.
+  Profile profileFor(TransferSecrets secrets) => profile.copyWith(
+    user: secrets.credentials ? profile.user : '',
+    proxyUsername: secrets.proxy ? profile.proxyUsername : '',
+  );
 
-  /// A share link. Deliberately carries the secrets: handing someone the link
-  /// is the act of handing them the connection.
+  String toFileJson({TransferSecrets secrets = TransferSecrets.none}) =>
+      const JsonEncoder.withIndent('  ').convert(toJson(secrets: secrets));
+
+  /// A share link.
+  ///
+  /// It carries settings and nothing else. A link is pasted into whatever
+  /// conversation is at hand and lives on in that history, and the payload is
+  /// gzip and base64 rather than encryption, so anyone who ever sees the link
+  /// can read every byte of it. Secrets travel in the sealed container instead,
+  /// which is a file with a password on it. A link written by an older build
+  /// still hands over its secrets on import; that history cannot be recalled,
+  /// and refusing to read it would only strand the profile.
   String toTfUri() {
-    final jsonBytes = utf8.encode(jsonEncode(toJson(includeSecrets: true)));
+    final jsonBytes = utf8.encode(jsonEncode(toJson()));
     final compressed = GZipEncoder().encode(jsonBytes);
     final payload = base64UrlEncode(compressed).replaceAll('=', '');
     return '$uriScheme://$uriHost/$payload';
@@ -290,14 +344,15 @@ class ProfileTransferEnvelope {
   }
 
   static String exportFileNameFor(Profile profile) {
-    final base = _sanitizeFileName(
+    final base = sanitizeFileName(
       profile.displayName.trim().isEmpty ? profile.server : profile.displayName,
     );
     final fallback = base.isEmpty ? 'tunnel-forge-profile' : base;
     return '$fallback.$fileExtension';
   }
 
-  static String _sanitizeFileName(String value) {
+  /// A name the user chose, reduced to something every file system accepts.
+  static String sanitizeFileName(String value) {
     return value
         .trim()
         .replaceAll(RegExp(r'[\\/:*?"<>|]+'), '-')

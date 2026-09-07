@@ -79,6 +79,15 @@ class ProfileStore {
   /// started by this application, while the last *profile* is what the service
   /// reads when the system starts it with no Dart running (SPEC В.13).
   static const prefsKeyLastGroupId = 'vpn_last_failover_group_id_v1';
+
+  /// Profiles that arrived in a shared set and are still waiting for the login
+  /// and password of whoever received it.
+  ///
+  /// Kept here rather than derived from an empty username, which several
+  /// perfectly ordinary profiles also have, and rather than added to the
+  /// profile row, which would be a schema migration in the host for a fact only
+  /// this side ever asks about.
+  static const prefsKeyAwaitingCredentials = 'profiles_awaiting_credentials_v1';
   static const prefsKeyConnectionMode = 'connection_mode_v1';
   static const prefsKeyProxyHttpPort = 'proxy_http_port_v1';
   static const prefsKeyProxySocksPort = 'proxy_socks_port_v1';
@@ -176,6 +185,30 @@ class ProfileStore {
       return;
     }
     await p.setString(prefsKeyLastGroupId, id);
+  }
+
+  Future<Set<String>> loadProfilesAwaitingCredentials() async {
+    final p = await _prefs();
+    return (p.getStringList(prefsKeyAwaitingCredentials) ?? const <String>[])
+        .toSet();
+  }
+
+  Future<void> markProfilesAwaitingCredentials(Iterable<String> ids) async {
+    if (ids.isEmpty) return;
+    final p = await _prefs();
+    final next = {...await loadProfilesAwaitingCredentials(), ...ids};
+    await p.setStringList(prefsKeyAwaitingCredentials, next.toList());
+  }
+
+  /// Takes [id] off the list, which is what entering the credentials does.
+  ///
+  /// Also called when a profile is deleted: an id left behind would come back
+  /// to mean something the day a new profile happened to be given it.
+  Future<void> clearProfileAwaitingCredentials(String id) async {
+    final p = await _prefs();
+    final next = await loadProfilesAwaitingCredentials()
+      ..remove(id);
+    await p.setStringList(prefsKeyAwaitingCredentials, next.toList());
   }
 
   /// Wraps [payload] in a password-encrypted container (SPEC 8.1.4).
@@ -405,6 +438,7 @@ class ProfileStore {
   Future<void> deleteProfile(String id) async {
     if (id.isEmpty) return;
     await _backend.delete(id);
+    await clearProfileAwaitingCredentials(id);
   }
 
   Future<

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -13,6 +14,8 @@ import 'package:tunnel_forge/core/network/connectivity_checker.dart';
 import 'package:tunnel_forge/l10n/app_localizations.dart';
 import 'package:tunnel_forge/features/profiles/domain/profile_models.dart';
 import 'package:tunnel_forge/features/profiles/presentation/profile_picker_sheet.dart';
+import 'package:tunnel_forge/features/profiles/presentation/profile_credentials_dialog.dart';
+import 'package:tunnel_forge/features/profiles/presentation/profile_transfer_flow.dart';
 import 'package:tunnel_forge/features/profiles/data/profile_store.dart';
 import 'package:tunnel_forge/features/profiles/domain/failover_group.dart';
 import 'package:tunnel_forge/core/logging/log_entry.dart';
@@ -86,6 +89,9 @@ class _VpnHomePageViewState extends State<_VpnHomePageView>
   final ScrollController _logsScroll = ScrollController();
   bool _logsStickToBottom = true;
   int _lastProfilesMessageId = 0;
+
+  /// The sealed file this screen has already put a prompt on screen for.
+  int _handledSealedTransferId = 0;
   int _lastTunnelMessageId = 0;
   int _lastSettingsMessageId = 0;
   bool _lastTunnelUp = false;
@@ -153,6 +159,35 @@ class _VpnHomePageViewState extends State<_VpnHomePageView>
       _lastProfilesMessageId = message.id;
       _toast(message.text, error: message.error);
     }
+    await _handlePendingSealedTransfer(state);
+  }
+
+  /// Asks for the password of an encrypted `.tfp` that arrived from outside.
+  ///
+  /// The bloc cannot put a dialog on screen, so it leaves the file in the state
+  /// and this picks it up. The guard is not decoration: the listener fires on
+  /// every state change, and the prompt is asynchronous, so without it a second
+  /// change while the dialog is open would stack a second dialog on top of it.
+  Future<void> _handlePendingSealedTransfer(ProfilesState state) async {
+    final pending = state.pendingSealedTransfer;
+    if (pending == null || pending.id == _handledSealedTransferId) return;
+    _handledSealedTransferId = pending.id;
+    final bloc = context.read<ProfilesBloc>();
+    try {
+      await importProfileText(
+        context,
+        bloc: bloc,
+        store: widget.locator<ProfileStore>(),
+        text: pending.payload,
+        source: pending.source,
+      );
+    } on FormatException catch (error) {
+      if (mounted) _toast(error.message, error: true);
+    } catch (_) {
+      if (mounted) _toast(AppText.current.couldNotImportProfile, error: true);
+    }
+    if (!mounted) return;
+    bloc.add(const ProfilesSealedTransferHandled());
   }
 
   ConnectivityPingRequest _connectivityPingRequest(
@@ -336,6 +371,50 @@ class _VpnHomePageViewState extends State<_VpnHomePageView>
     );
   }
 
+  /// Asks for the credentials a profile out of a shared set never carried, and
+  /// starts the connection once they are stored.
+  ///
+  /// Returns true when the caller should stop: either the user backed out, or
+  /// the credentials went in and this restarted the connect itself, on a
+  /// [ProfilesState] fresh enough to hold them.
+  Future<bool> _askForCredentials(
+    ProfileSecretRow row,
+    SettingsState settingsState,
+    TunnelState tunnelState,
+  ) async {
+    final bloc = context.read<ProfilesBloc>();
+    final credentials = await ProfileCredentialsDialog.show(
+      context,
+      profileName: row.profile.displayName,
+      initialUser: row.profile.user,
+    );
+    if (credentials == null || !mounted) return true;
+    final initialMessageId = bloc.state.message?.id ?? 0;
+    final saved = bloc.stream
+        .firstWhere(
+          (state) =>
+              !state.loading &&
+              state.message != null &&
+              state.message!.id > initialMessageId,
+        )
+        .timeout(const Duration(seconds: 10));
+    bloc.add(
+      ProfilesCredentialsSubmitted(
+        id: row.profile.id,
+        user: credentials.user,
+        password: credentials.password,
+      ),
+    );
+    try {
+      final state = await saved;
+      if (!mounted || state.message?.error == true) return true;
+      _primaryAction(state, settingsState, tunnelState);
+    } on TimeoutException {
+      if (mounted) _toast(AppText.current.couldNotSaveChanges, error: true);
+    }
+    return true;
+  }
+
   void _primaryAction(
     ProfilesState profilesState,
     SettingsState settingsState,
@@ -360,6 +439,10 @@ class _VpnHomePageViewState extends State<_VpnHomePageView>
       return;
     }
     final profile = row.profile;
+    if (profilesState.awaitsCredentials(profile.id)) {
+      unawaited(_askForCredentials(row, settingsState, tunnelState));
+      return;
+    }
     if (settingsState.connectionMode == ConnectionMode.vpnTunnel) {
       context.read<SettingsBloc>().add(
         const SettingsBatteryOptimizationVpnConnectAttempted(),
@@ -412,6 +495,20 @@ class _VpnHomePageViewState extends State<_VpnHomePageView>
     if (!profilesState.hasActiveGroup) {
       _handleMissingProfileTap(profilesState);
       return;
+    }
+    // A member out of a shared set has nothing to authenticate with, and the
+    // host resolves the members itself once the group is running, so there is
+    // no point mid-run at which a prompt could be put in front of it. Saying so
+    // here names the profile; letting it run would spend the group's whole
+    // timeout budget failing on it instead.
+    for (final member in profilesState.activeGroupMembers) {
+      if (profilesState.awaitsCredentials(member.id)) {
+        _toast(
+          AppText.current.groupMemberNeedsCredentials(member.displayName),
+          error: true,
+        );
+        return;
+      }
     }
     if (settingsState.connectionMode == ConnectionMode.vpnTunnel) {
       context.read<SettingsBloc>().add(
