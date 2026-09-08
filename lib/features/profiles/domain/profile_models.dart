@@ -2,6 +2,7 @@ import 'package:equatable/equatable.dart';
 
 import 'package:tunnel_forge/core/vpn_protocol.dart';
 import 'package:tunnel_forge/features/trust/domain/trust_models.dart';
+import 'package:tunnel_forge/core/network/connectivity_target.dart';
 import 'package:tunnel_forge/l10n/app_localizations.dart';
 
 /// Connection surface: Android VPN/TUN vs. local proxy listeners only.
@@ -346,7 +347,12 @@ class SystemSurfaceSettings {
       Object.hash(disconnectActionEnabled, quickSettingsTileEnabled);
 }
 
-/// Global endpoint used by the connectivity badge for direct reachability checks.
+/// Global endpoint used by the connectivity badge for direct reachability
+/// checks.
+///
+/// [url] is a URL only by name and by history. Since an address is also
+/// accepted — `10.0.0.1`, `probe.acme.internal:53` — what it really holds is a
+/// [ConnectivityCheckTarget]; see [target].
 class ConnectivityCheckSettings {
   const ConnectivityCheckSettings({
     this.url = defaultUrl,
@@ -376,15 +382,19 @@ class ConnectivityCheckSettings {
     return value;
   }
 
+  /// What this setting aims at, or null when it names nothing usable.
+  ConnectivityCheckTarget? get target =>
+      ConnectivityCheckTarget.tryParse(normalizeUrl(url));
+
+  /// Why [text] cannot be checked, or null if it can.
+  ///
+  /// An address without a scheme is accepted: it is dialled as a socket rather
+  /// than fetched, which is the only thing that can be done with a gateway or a
+  /// resolver, and the only thing worth doing with a host that speaks no HTTP.
   static String? validateUrl(String text) {
     final normalized = normalizeUrl(text);
-    final uri = Uri.tryParse(normalized);
-    if (uri == null || !uri.hasScheme || uri.host.isEmpty) {
-      return AppText.current.enterValidHttpUrl;
-    }
-    final scheme = uri.scheme.toLowerCase();
-    if (scheme != 'http' && scheme != 'https') {
-      return AppText.current.onlyHttpAndHttpsSupported;
+    if (ConnectivityCheckTarget.tryParse(normalized) == null) {
+      return AppText.current.enterValidCheckTarget;
     }
     return null;
   }

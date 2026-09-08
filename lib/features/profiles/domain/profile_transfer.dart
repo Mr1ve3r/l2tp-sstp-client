@@ -152,11 +152,19 @@ class ProfileTransferEnvelope {
 
   /// @param secrets which secrets go in. Nothing by default: the file it
   ///   produces is the one that gets shared.
+  /// @param includeConnectivityCheck whether the profile's own connectivity
+  ///   check travels. It is settings rather than a secret, but it names a host
+  ///   on the sender's network, and a recipient outside that network would get
+  ///   a badge that reports the tunnel broken when it is not.
   Map<String, Object?> toJson({
     TransferSecrets secrets = TransferSecrets.none,
+    bool includeConnectivityCheck = true,
   }) => <String, Object?>{
     'v': currentVersion,
-    'profile': profileFor(secrets).toJson(),
+    'profile': profileFor(
+      secrets,
+      includeConnectivityCheck: includeConnectivityCheck,
+    ).toJson(),
     if (secrets.credentials) 'password': password,
     if (secrets.psk) 'psk': psk,
     if (secrets.proxy) 'proxyPassword': proxyPassword,
@@ -171,13 +179,35 @@ class ProfileTransferEnvelope {
   /// leaving a flag off has to reach into the profile and clear them. Carrying
   /// a login onwards while its password stays behind would be the worst of
   /// both: it names the person the set was taken from and still cannot connect.
-  Profile profileFor(TransferSecrets secrets) => profile.copyWith(
+  Profile profileFor(
+    TransferSecrets secrets, {
+    bool includeConnectivityCheck = true,
+  }) => profile.copyWith(
     user: secrets.credentials ? profile.user : '',
     proxyUsername: secrets.proxy ? profile.proxyUsername : '',
+    connectivityCheckUrl: includeConnectivityCheck
+        ? profile.connectivityCheckUrl
+        : '',
+    connectivityCheckTimeoutMs: includeConnectivityCheck
+        ? profile.connectivityCheckTimeoutMs
+        : 0,
   );
 
-  String toFileJson({TransferSecrets secrets = TransferSecrets.none}) =>
-      const JsonEncoder.withIndent('  ').convert(toJson(secrets: secrets));
+  /// Whether this profile names a connectivity check of its own, and so has
+  /// something for the export form to offer.
+  bool get hasConnectivityCheck =>
+      profile.connectivityCheckUrl.trim().isNotEmpty ||
+      profile.connectivityCheckTimeoutMs > 0;
+
+  String toFileJson({
+    TransferSecrets secrets = TransferSecrets.none,
+    bool includeConnectivityCheck = true,
+  }) => const JsonEncoder.withIndent('  ').convert(
+    toJson(
+      secrets: secrets,
+      includeConnectivityCheck: includeConnectivityCheck,
+    ),
+  );
 
   /// A share link.
   ///

@@ -68,15 +68,19 @@ class ProfileBundle {
     return pool.values.toList(growable: false);
   }
 
+  /// @param includeConnectivityCheck whether the entries carry the
+  ///   connectivity check each profile names; see
+  ///   [ProfileTransferEnvelope.toJson].
   Map<String, Object?> toJson({
     TransferSecrets secrets = TransferSecrets.shared,
+    bool includeConnectivityCheck = true,
   }) => <String, Object?>{
     'v': version,
     'kind': kind,
     'name': name,
     if (createdAt != null) 'createdAt': createdAt!.toUtc().toIso8601String(),
     'entries': entries
-        .map((entry) => _entryJson(entry, secrets))
+        .map((entry) => _entryJson(entry, secrets, includeConnectivityCheck))
         .toList(growable: false),
     'certificates': certificatePool
         .map((certificate) => certificate.toJson())
@@ -85,16 +89,32 @@ class ProfileBundle {
       'groups': groups.map((group) => group.toJson()).toList(growable: false),
   };
 
-  String toFileJson({TransferSecrets secrets = TransferSecrets.shared}) =>
-      const JsonEncoder.withIndent('  ').convert(toJson(secrets: secrets));
+  String toFileJson({
+    TransferSecrets secrets = TransferSecrets.shared,
+    bool includeConnectivityCheck = true,
+  }) => const JsonEncoder.withIndent('  ').convert(
+    toJson(
+      secrets: secrets,
+      includeConnectivityCheck: includeConnectivityCheck,
+    ),
+  );
+
+  /// Whether any entry names a connectivity check, and so whether the export
+  /// form has anything to ask about.
+  bool get hasConnectivityCheck =>
+      entries.any((entry) => entry.hasConnectivityCheck);
 
   /// One entry, spelled the way the envelope spells itself minus what the set
   /// says once for everybody: the version, and the certificates themselves.
   static Map<String, Object?> _entryJson(
     ProfileTransferEnvelope entry,
     TransferSecrets secrets,
+    bool includeConnectivityCheck,
   ) {
-    final map = entry.toJson(secrets: secrets);
+    final map = entry.toJson(
+      secrets: secrets,
+      includeConnectivityCheck: includeConnectivityCheck,
+    );
     map.remove('v');
     map.remove('certificates');
     map['certificateIds'] = entry.certificates
@@ -307,6 +327,23 @@ class BundleImportChoice {
 
   /// Which profile [BundleImportAction.replace] overwrites. Ignored otherwise.
   final String? targetProfileId;
+}
+
+/// What the import sheet decided about a set.
+///
+/// The groups are a separate answer rather than something derived from the
+/// entries: a recipient can want every profile of a set and none of the order
+/// the sender tries them in, and the sheet has to be able to say so.
+class BundleImportSelection {
+  const BundleImportSelection({
+    required this.choices,
+    this.groupIndexes = const <int>[],
+  });
+
+  final List<BundleImportChoice> choices;
+
+  /// Indexes into [ProfileBundle.groups] of the groups to keep.
+  final List<int> groupIndexes;
 }
 
 class BundleImportResult {

@@ -45,7 +45,16 @@ abstract class ProfilesRepository {
 
   /// Writes the profile out. Without [password] the file carries no secret;
   /// with one, the secrets go inside an encrypted container (SPEC 8.1.4).
-  Future<void> exportProfileFile(String id, {String? password});
+  ///
+  /// [includeConnectivityCheck] says whether the profile's own connectivity
+  /// check goes with it. It names a host on the sender's network, which is
+  /// worth handing over inside an organisation and worth leaving out when the
+  /// file is going anywhere else.
+  Future<void> exportProfileFile(
+    String id, {
+    String? password,
+    bool includeConnectivityCheck = true,
+  });
 
   /// Writes several profiles out as one sealed set.
   ///
@@ -62,6 +71,7 @@ abstract class ProfilesRepository {
     required String bundleName,
     required String password,
     List<String> groupIds,
+    bool includeConnectivityCheck,
     TransferSecrets secrets,
   });
 
@@ -80,9 +90,14 @@ abstract class ProfilesRepository {
   Future<void> clearProfileAwaitingCredentials(String id);
 
   /// Stores the entries of [bundle] that [choices] asks for.
+  ///
+  /// [groupIndexes] names the failover groups to keep, by index into
+  /// [ProfileBundle.groups]. Null means all of them, which is what a caller
+  /// that never showed the user a choice means.
   Future<BundleImportResult> importProfileBundle({
     required ProfileBundle bundle,
     required List<BundleImportChoice> choices,
+    List<int>? groupIndexes,
   });
   String newProfileId();
 }

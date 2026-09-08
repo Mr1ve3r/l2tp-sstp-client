@@ -470,10 +470,40 @@ void main() {
       200,
       scrollable: settingsScrollView(),
     );
+    // A scheme this application cannot speak. A bare address is not an error
+    // any more -- it is dialled as a socket -- so the invalid case has to be
+    // something that is neither a URL it can fetch nor a host it can reach.
     await tester.enterText(connectivityUrlField(), 'ftp://example.com');
     await tester.pump();
 
-    expect(find.text('Only HTTP and HTTPS URLs are supported'), findsOneWidget);
+    expect(
+      find.text(
+        'Enter an http(s) URL, or an address like 10.0.0.1 or probe.example:53',
+      ),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('a bare address is accepted as a check target', (tester) async {
+    ConnectivityCheckSettings? changed;
+    await tester.pumpWidget(
+      buildPanel(
+        proxySettings: const ProxySettings(),
+        connectionMode: ConnectionMode.vpnTunnel,
+        onConnectivityCheckSettingsChanged: (settings) => changed = settings,
+      ),
+    );
+
+    await tester.scrollUntilVisible(
+      connectivityUrlField(),
+      200,
+      scrollable: settingsScrollView(),
+    );
+    await tester.enterText(connectivityUrlField(), '10.0.0.1:53');
+    await tester.pump();
+
+    expect(find.textContaining('Enter an http(s) URL'), findsNothing);
+    expect(changed?.url, '10.0.0.1:53');
   });
 
   testWidgets('invalid connectivity timeout shows validation error', (

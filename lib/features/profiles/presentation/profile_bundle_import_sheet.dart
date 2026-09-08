@@ -111,13 +111,13 @@ class ProfileBundleImportSheet extends StatefulWidget {
   /// The profiles already on this device, which is what a conflict is against.
   final List<Profile> existing;
 
-  static Future<List<BundleImportChoice>?> show(
+  static Future<BundleImportSelection?> show(
     BuildContext context, {
     required ProfileBundle bundle,
     required List<Profile> existing,
   }) {
     final theme = Theme.of(context);
-    return showModalBottomSheet<List<BundleImportChoice>>(
+    return showModalBottomSheet<BundleImportSelection>(
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
@@ -140,6 +140,7 @@ class _ProfileBundleImportSheetState extends State<ProfileBundleImportSheet> {
   late final List<Profile?> _matches;
   late final List<bool> _chosen;
   late final List<BundleImportAction> _actions;
+  late final List<bool> _chosenGroups;
 
   @override
   void initState() {
@@ -153,17 +154,36 @@ class _ProfileBundleImportSheetState extends State<ProfileBundleImportSheet> {
       for (final match in _matches)
         match == null ? BundleImportAction.add : BundleImportAction.replace,
     ];
+    _chosenGroups = List<bool>.filled(widget.bundle.groups.length, true);
   }
 
+  /// How many members of [group] are still ticked.
+  ///
+  /// A group is built from what actually lands, so this is what it would come
+  /// out as. At zero there is nothing to build and the row is disabled.
+  int _remainingMembers(BundledFailoverGroup group) => group.memberIndexes
+      .where((index) => index < _chosen.length && _chosen[index])
+      .length;
+
   void _submit() {
-    Navigator.of(context).pop(<BundleImportChoice>[
-      for (var i = 0; i < widget.bundle.length; i++)
-        BundleImportChoice(
-          entryIndex: i,
-          action: _chosen[i] ? _actions[i] : BundleImportAction.skip,
-          targetProfileId: _matches[i]?.id,
-        ),
-    ]);
+    Navigator.of(context).pop(
+      BundleImportSelection(
+        choices: <BundleImportChoice>[
+          for (var i = 0; i < widget.bundle.length; i++)
+            BundleImportChoice(
+              entryIndex: i,
+              action: _chosen[i] ? _actions[i] : BundleImportAction.skip,
+              targetProfileId: _matches[i]?.id,
+            ),
+        ],
+        groupIndexes: <int>[
+          for (var i = 0; i < widget.bundle.groups.length; i++)
+            if (_chosenGroups[i] &&
+                _remainingMembers(widget.bundle.groups[i]) > 0)
+              i,
+        ],
+      ),
+    );
   }
 
   @override
@@ -197,15 +217,23 @@ class _ProfileBundleImportSheetState extends State<ProfileBundleImportSheet> {
             const SizedBox(height: 12),
             for (var i = 0; i < widget.bundle.length; i++)
               _entryTile(context, i),
+            if (widget.bundle.groups.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Text(t.failoverGroups, style: theme.textTheme.titleSmall),
+              for (var i = 0; i < widget.bundle.groups.length; i++)
+                _groupTile(context, i),
+            ],
             const SizedBox(height: 20),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.end,
+            OverflowBar(
+              alignment: MainAxisAlignment.end,
+              overflowAlignment: OverflowBarAlignment.end,
+              spacing: 8,
+              overflowSpacing: 8,
               children: [
                 TextButton(
                   onPressed: () => Navigator.of(context).pop(),
                   child: Text(t.cancel),
                 ),
-                const SizedBox(width: 8),
                 FilledButton(
                   key: const Key('profile_set_import_submit'),
                   onPressed: chosenCount == 0 ? null : _submit,
@@ -215,6 +243,35 @@ class _ProfileBundleImportSheetState extends State<ProfileBundleImportSheet> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  /// One of the set's failover groups.
+  ///
+  /// The subtitle counts what would actually land rather than what the set
+  /// says, because unticking a profile above silently shortens the group, and
+  /// a recipient who has just skipped two of three members should be able to
+  /// see that before they import a group of one.
+  Widget _groupTile(BuildContext context, int index) {
+    final t = AppLocalizations.of(context);
+    final group = widget.bundle.groups[index];
+    final remaining = _remainingMembers(group);
+
+    return CheckboxListTile(
+      key: Key('profile_set_group_$index'),
+      value: _chosenGroups[index] && remaining > 0,
+      onChanged: remaining == 0
+          ? null
+          : (on) => setState(() => _chosenGroups[index] = on ?? false),
+      dense: true,
+      contentPadding: EdgeInsets.zero,
+      controlAffinity: ListTileControlAffinity.leading,
+      title: Text(group.name),
+      subtitle: Text(
+        remaining == 0
+            ? t.groupHasNoChosenProfiles
+            : t.failoverGroupProfileCount(remaining),
       ),
     );
   }

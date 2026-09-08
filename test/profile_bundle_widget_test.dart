@@ -10,12 +10,18 @@ import 'package:tunnel_forge/features/profiles/presentation/profile_bundle_impor
 import 'package:tunnel_forge/features/profiles/presentation/profile_credentials_dialog.dart';
 import 'package:tunnel_forge/l10n/app_localizations.dart';
 
-Profile _profile(String id, String name, {String user = 'alice'}) {
+Profile _profile(
+  String id,
+  String name, {
+  String user = 'alice',
+  String connectivityCheckUrl = '',
+}) {
   return Profile(
     id: id,
     displayName: name,
     server: '${name.toLowerCase()}.acme.example',
     user: user,
+    connectivityCheckUrl: connectivityCheckUrl,
     protocol: VpnProtocol.l2tp,
     port: 1701,
     dnsAutomatic: true,
@@ -143,6 +149,67 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(result!.profileIds, ['a']);
+    });
+
+    /// The check names a host on the sender's network, so handing it over is a
+    /// decision rather than a default — but only when there is one to make.
+    testWidgets(
+      'the connectivity check is only asked about when there is one',
+      (tester) async {
+        await tester.pumpWidget(
+          _host((context) async {
+            await ProfileBundleExportSheet.show(
+              context,
+              profiles: [_profile('a', 'Amsterdam')],
+            );
+          }),
+        );
+        await tester.tap(find.text('open'));
+        await tester.pumpAndSettle();
+
+        expect(
+          find.byKey(const Key('profile_set_connectivity_check')),
+          findsNothing,
+        );
+      },
+    );
+
+    testWidgets('unticking the check leaves it out of the set', (tester) async {
+      ProfileBundleExportRequest? result;
+      await tester.pumpWidget(
+        _host((context) async {
+          result = await ProfileBundleExportSheet.show(
+            context,
+            profiles: [
+              _profile(
+                'a',
+                'Amsterdam',
+                connectivityCheckUrl: 'http://probe.acme.internal/',
+              ),
+            ],
+          );
+        }),
+      );
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('profile_set_connectivity_check')));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const Key('profile_set_password')),
+        'long-enough-password',
+      );
+      await tester.enterText(
+        find.byKey(const Key('profile_set_password_confirm')),
+        'long-enough-password',
+      );
+      await tester.ensureVisible(
+        find.byKey(const Key('profile_set_export_submit')),
+      );
+      await tester.tap(find.byKey(const Key('profile_set_export_submit')));
+      await tester.pumpAndSettle();
+
+      expect(result!.includeConnectivityCheck, isFalse);
     });
 
     /// A group is offered whole or not at all: half a failover group is a list
@@ -289,10 +356,10 @@ void main() {
     testWidgets('offers replace for an entry already on the device', (
       tester,
     ) async {
-      List<BundleImportChoice>? choices;
+      BundleImportSelection? selection;
       await tester.pumpWidget(
         _host((context) async {
-          choices = await ProfileBundleImportSheet.show(
+          selection = await ProfileBundleImportSheet.show(
             context,
             bundle: bundle(),
             existing: [_profile('local-a', 'Amsterdam')],
@@ -309,18 +376,95 @@ void main() {
       await tester.tap(find.byKey(const Key('profile_set_import_submit')));
       await tester.pumpAndSettle();
 
-      expect(choices, hasLength(2));
-      expect(choices![0].action, BundleImportAction.replace);
-      expect(choices![0].targetProfileId, 'local-a');
-      expect(choices![1].action, BundleImportAction.add);
-      expect(choices![1].targetProfileId, isNull);
+      expect(selection!.choices, hasLength(2));
+      expect(selection!.choices[0].action, BundleImportAction.replace);
+      expect(selection!.choices[0].targetProfileId, 'local-a');
+      expect(selection!.choices[1].action, BundleImportAction.add);
+      expect(selection!.choices[1].targetProfileId, isNull);
+    });
+
+    testWidgets('a group can be left behind while its profiles are taken', (
+      tester,
+    ) async {
+      BundleImportSelection? selection;
+      final withGroup = ProfileBundle(
+        name: 'Acme',
+        entries: bundle().entries,
+        groups: const [
+          BundledFailoverGroup(name: 'Acme', memberIndexes: [0, 1]),
+        ],
+      );
+      await tester.pumpWidget(
+        _host((context) async {
+          selection = await ProfileBundleImportSheet.show(
+            context,
+            bundle: withGroup,
+            existing: const <Profile>[],
+          );
+        }),
+      );
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+
+      // Ticked to begin with; untick it and the profiles still come.
+      await tester.tap(find.byKey(const Key('profile_set_group_0')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('profile_set_import_submit')));
+      await tester.pumpAndSettle();
+
+      expect(selection!.groupIndexes, isEmpty);
+      expect(selection!.choices, hasLength(2));
+      expect(selection!.choices[0].action, BundleImportAction.add);
+    });
+
+    testWidgets('a group with every member skipped cannot be chosen', (
+      tester,
+    ) async {
+      BundleImportSelection? selection;
+      final withGroup = ProfileBundle(
+        name: 'Acme',
+        entries: bundle().entries,
+        // One member, so the entry it names can be skipped while another
+        // entry stays ticked and keeps the submit button alive.
+        groups: const [
+          BundledFailoverGroup(name: 'Acme', memberIndexes: [1]),
+        ],
+      );
+      await tester.pumpWidget(
+        _host((context) async {
+          selection = await ProfileBundleImportSheet.show(
+            context,
+            bundle: withGroup,
+            existing: const <Profile>[],
+          );
+        }),
+      );
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('profile_set_entry_1')));
+      await tester.pumpAndSettle();
+
+      expect(
+        tester
+            .widget<CheckboxListTile>(
+              find.byKey(const Key('profile_set_group_0')),
+            )
+            .onChanged,
+        isNull,
+      );
+
+      await tester.tap(find.byKey(const Key('profile_set_import_submit')));
+      await tester.pumpAndSettle();
+
+      expect(selection!.groupIndexes, isEmpty);
     });
 
     testWidgets('an unticked entry comes back as a skip', (tester) async {
-      List<BundleImportChoice>? choices;
+      BundleImportSelection? selection;
       await tester.pumpWidget(
         _host((context) async {
-          choices = await ProfileBundleImportSheet.show(
+          selection = await ProfileBundleImportSheet.show(
             context,
             bundle: bundle(),
             existing: const <Profile>[],
@@ -335,8 +479,8 @@ void main() {
       await tester.tap(find.byKey(const Key('profile_set_import_submit')));
       await tester.pumpAndSettle();
 
-      expect(choices![0].action, BundleImportAction.add);
-      expect(choices![1].action, BundleImportAction.skip);
+      expect(selection!.choices[0].action, BundleImportAction.add);
+      expect(selection!.choices[1].action, BundleImportAction.skip);
     });
   });
 }

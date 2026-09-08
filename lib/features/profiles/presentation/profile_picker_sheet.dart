@@ -269,11 +269,22 @@ class _ProfilePickerSheetState extends State<ProfilePickerSheet> {
     }
   }
 
-  Future<void> _exportProfileFile(String id) async {
-    final choice = await SingleExportPasswordDialog.show(context);
+  Future<void> _exportProfileFile(Profile profile) async {
+    final choice = await SingleExportPasswordDialog.show(
+      context,
+      // Only asked about when there is something to ask about: a profile that
+      // names no check of its own has nothing to leave out.
+      offerConnectivityCheck:
+          profile.connectivityCheckUrl.trim().isNotEmpty ||
+          profile.connectivityCheckTimeoutMs > 0,
+    );
     if (choice == null || !mounted) return;
     _profilesBloc.add(
-      ProfilesExportFileRequested(id, password: choice.password),
+      ProfilesExportFileRequested(
+        profile.id,
+        password: choice.password,
+        includeConnectivityCheck: choice.includeConnectivityCheck,
+      ),
     );
   }
 
@@ -293,6 +304,7 @@ class _ProfilePickerSheetState extends State<ProfilePickerSheet> {
         bundleName: request.bundleName,
         password: request.password,
         groupIds: request.groupIds,
+        includeConnectivityCheck: request.includeConnectivityCheck,
       ),
     );
   }
@@ -623,7 +635,7 @@ class _ProfilePickerSheetState extends State<ProfilePickerSheet> {
                                   );
                                   break;
                                 case _ProfileTileAction.exportFile:
-                                  await _exportProfileFile(profile.id);
+                                  await _exportProfileFile(profile);
                                   break;
                                 case _ProfileTileAction.delete:
                                   await _confirmDeleteProfile(profile.id);

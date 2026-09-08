@@ -103,7 +103,11 @@ final class ProfilesCopyShareLinkRequested extends ProfilesEvent {
 }
 
 final class ProfilesExportFileRequested extends ProfilesEvent {
-  const ProfilesExportFileRequested(this.id, {this.password});
+  const ProfilesExportFileRequested(
+    this.id, {
+    this.password,
+    this.includeConnectivityCheck = true,
+  });
 
   final String id;
 
@@ -111,8 +115,11 @@ final class ProfilesExportFileRequested extends ProfilesEvent {
   /// settings only, which is what it did before a password could be given.
   final String? password;
 
+  /// Whether the profile's own connectivity check goes with it.
+  final bool includeConnectivityCheck;
+
   @override
-  List<Object?> get props => [id, password];
+  List<Object?> get props => [id, password, includeConnectivityCheck];
 }
 
 /// Writes several profiles out as one sealed set.
@@ -122,6 +129,7 @@ final class ProfilesExportBundleRequested extends ProfilesEvent {
     required this.bundleName,
     required this.password,
     this.groupIds = const <String>[],
+    this.includeConnectivityCheck = true,
   });
 
   final List<String> profileIds;
@@ -131,8 +139,17 @@ final class ProfilesExportBundleRequested extends ProfilesEvent {
   /// The failover groups to carry along, by id.
   final List<String> groupIds;
 
+  /// Whether the entries carry the connectivity check they name.
+  final bool includeConnectivityCheck;
+
   @override
-  List<Object?> get props => [profileIds, bundleName, password, groupIds];
+  List<Object?> get props => [
+    profileIds,
+    bundleName,
+    password,
+    groupIds,
+    includeConnectivityCheck,
+  ];
 }
 
 /// Fills in the login and password of a profile that arrived without them.
@@ -162,13 +179,17 @@ final class ProfilesBundleImportRequested extends ProfilesEvent {
   const ProfilesBundleImportRequested({
     required this.bundle,
     required this.choices,
+    this.groupIndexes,
   });
 
   final ProfileBundle bundle;
   final List<BundleImportChoice> choices;
 
+  /// The set's failover groups to keep, by index. Null means all of them.
+  final List<int>? groupIndexes;
+
   @override
-  List<Object?> get props => [bundle, choices];
+  List<Object?> get props => [bundle, choices, groupIndexes];
 }
 
 final class ProfilesImportSelectionPolicyChanged extends ProfilesEvent {
@@ -681,6 +702,7 @@ class ProfilesBloc extends Bloc<ProfilesEvent, ProfilesState> {
       await _profilesRepository.exportProfileFile(
         event.id,
         password: event.password,
+        includeConnectivityCheck: event.includeConnectivityCheck,
       );
       emit(
         state.copyWith(message: _nextMessage(AppText.current.profileFileReady)),
@@ -753,6 +775,7 @@ class ProfilesBloc extends Bloc<ProfilesEvent, ProfilesState> {
         bundleName: event.bundleName,
         password: event.password,
         groupIds: event.groupIds,
+        includeConnectivityCheck: event.includeConnectivityCheck,
       );
       emit(
         state.copyWith(
@@ -781,6 +804,7 @@ class ProfilesBloc extends Bloc<ProfilesEvent, ProfilesState> {
       final result = await _profilesRepository.importProfileBundle(
         bundle: event.bundle,
         choices: event.choices,
+        groupIndexes: event.groupIndexes,
       );
       // A set arriving while a tunnel is up must not move the connection to
       // one of its profiles, the same rule a single import follows.

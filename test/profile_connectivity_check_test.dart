@@ -2,6 +2,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tunnel_forge/core/vpn_protocol.dart';
 import 'package:tunnel_forge/features/profiles/domain/profile_models.dart';
+import 'package:tunnel_forge/features/profiles/domain/profile_bundle.dart';
 import 'package:tunnel_forge/features/profiles/domain/profile_transfer.dart';
 
 Profile _profile({String url = '', int timeoutMs = 0}) {
@@ -89,6 +90,69 @@ void main() {
 
       expect(stored.connectivityCheckUrl, 'http://probe.acme.internal/');
       expect(stored.connectivityCheckTimeoutMs, 1500);
+    });
+
+    /// The check names a host on the sender's network. Inside an organisation
+    /// that is the point; outside it, the recipient would get a badge that
+    /// calls a working tunnel broken.
+    test('the export can be told to leave the check behind', () {
+      final envelope = ProfileTransferEnvelope(
+        profile: _profile(url: 'http://probe.acme.internal/', timeoutMs: 1500),
+        psk: 'corporate-psk',
+      );
+
+      final decoded = ProfileTransferEnvelope.fromFileJson(
+        envelope.toFileJson(includeConnectivityCheck: false),
+      );
+
+      expect(decoded.profile.connectivityCheckUrl, isEmpty);
+      expect(decoded.profile.connectivityCheckTimeoutMs, 0);
+      // Everything else still travels.
+      expect(decoded.profile.server, 'ams.acme.example');
+    });
+
+    test('a set carries the choice through to its entries', () {
+      final bundle = ProfileBundle(
+        name: 'Acme',
+        entries: [
+          ProfileTransferEnvelope(
+            profile: _profile(
+              url: 'http://probe.acme.internal/',
+              timeoutMs: 1500,
+            ),
+          ),
+        ],
+      );
+
+      final kept =
+          (ProfileTransferDocument.parse(bundle.toFileJson())
+                  as ProfileSetDocument)
+              .bundle;
+      expect(
+        kept.entries.single.profile.connectivityCheckUrl,
+        'http://probe.acme.internal/',
+      );
+
+      final dropped =
+          (ProfileTransferDocument.parse(
+                    bundle.toFileJson(includeConnectivityCheck: false),
+                  )
+                  as ProfileSetDocument)
+              .bundle;
+      expect(dropped.entries.single.profile.connectivityCheckUrl, isEmpty);
+      expect(dropped.entries.single.profile.connectivityCheckTimeoutMs, 0);
+    });
+
+    test('a profile with no check of its own has nothing to offer', () {
+      final envelope = ProfileTransferEnvelope(profile: _profile());
+
+      expect(envelope.hasConnectivityCheck, isFalse);
+      expect(
+        ProfileTransferEnvelope(
+          profile: _profile(url: 'http://probe.acme.internal/'),
+        ).hasConnectivityCheck,
+        isTrue,
+      );
     });
 
     test('a profile written before the field existed reads as no override', () {

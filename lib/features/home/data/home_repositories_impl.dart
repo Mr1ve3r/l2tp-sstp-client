@@ -61,14 +61,23 @@ class ProfilesRepositoryImpl implements ProfilesRepository {
   Future<void> setLastGroupId(String? id) => _profileStore.setLastGroupId(id);
 
   @override
-  Future<void> exportProfileFile(String id, {String? password}) async {
+  Future<void> exportProfileFile(
+    String id, {
+    String? password,
+    bool includeConnectivityCheck = true,
+  }) async {
     final envelope = await _envelopeFor(id);
     // Without a password the file carries no secret at all. With one it
     // carries them inside the container and nowhere else (SPEC 8.1.4).
     final text = password == null || password.isEmpty
-        ? envelope.toFileJson()
+        ? envelope.toFileJson(
+            includeConnectivityCheck: includeConnectivityCheck,
+          )
         : await _profileStore.sealExport(
-            envelope.toFileJson(secrets: TransferSecrets.all),
+            envelope.toFileJson(
+              secrets: TransferSecrets.all,
+              includeConnectivityCheck: includeConnectivityCheck,
+            ),
             password,
           );
     final bytes = Uint8List.fromList(utf8.encode(text));
@@ -92,6 +101,7 @@ class ProfilesRepositoryImpl implements ProfilesRepository {
     required String bundleName,
     required String password,
     List<String> groupIds = const <String>[],
+    bool includeConnectivityCheck = true,
     TransferSecrets secrets = TransferSecrets.shared,
   }) async {
     if (profileIds.isEmpty) {
@@ -115,7 +125,10 @@ class ProfilesRepositoryImpl implements ProfilesRepository {
       groups: await _bundledGroups(groupIds, profileIds),
     );
     final sealed = await _profileStore.sealExport(
-      bundle.toFileJson(secrets: secrets),
+      bundle.toFileJson(
+        secrets: secrets,
+        includeConnectivityCheck: includeConnectivityCheck,
+      ),
       password,
     );
     await SharePlus.instance.share(
@@ -194,6 +207,7 @@ class ProfilesRepositoryImpl implements ProfilesRepository {
   Future<BundleImportResult> importProfileBundle({
     required ProfileBundle bundle,
     required List<BundleImportChoice> choices,
+    List<int>? groupIndexes,
   }) async {
     var added = 0;
     var replaced = 0;
@@ -253,7 +267,7 @@ class ProfilesRepositoryImpl implements ProfilesRepository {
     // a replace keeps the login the recipient had already typed in, and that
     // profile is not waiting for anything.
     await _profileStore.markProfilesAwaitingCredentials(awaitingCredentials);
-    final groups = await _importGroups(bundle, landedIds);
+    final groups = await _importGroups(bundle, landedIds, groupIndexes);
     return BundleImportResult(
       added: added,
       replaced: replaced,
@@ -277,13 +291,16 @@ class ProfilesRepositoryImpl implements ProfilesRepository {
   Future<({int added, int updated})> _importGroups(
     ProfileBundle bundle,
     Map<int, String> landedIds,
+    List<int>? groupIndexes,
   ) async {
     if (bundle.groups.isEmpty) return (added: 0, updated: 0);
     final existing = await _profileStore.loadFailoverGroups();
     final taken = existing.map((group) => group.displayName).toSet();
     var added = 0;
     var updated = 0;
-    for (final bundled in bundle.groups) {
+    for (var index = 0; index < bundle.groups.length; index++) {
+      if (groupIndexes != null && !groupIndexes.contains(index)) continue;
+      final bundled = bundle.groups[index];
       final memberIds = <String>[];
       for (final index in bundled.memberIndexes) {
         final id = landedIds[index];

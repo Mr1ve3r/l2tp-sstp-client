@@ -13,6 +13,7 @@ class ProfileBundleExportRequest {
     required this.bundleName,
     required this.password,
     this.groupIds = const <String>[],
+    this.includeConnectivityCheck = true,
   });
 
   final List<String> profileIds;
@@ -23,14 +24,23 @@ class ProfileBundleExportRequest {
   /// in [profileIds] can be ticked, so the set never describes a group that
   /// arrives missing a member.
   final List<String> groupIds;
+
+  /// Whether the profiles carry the connectivity check they name.
+  final bool includeConnectivityCheck;
 }
 
 /// What exporting one profile decided: seal it under a password, or not.
 class SingleExportChoice {
-  const SingleExportChoice(this.password);
+  const SingleExportChoice(
+    this.password, {
+    this.includeConnectivityCheck = true,
+  });
 
   /// Null when the file is to carry settings only, as it always used to.
   final String? password;
+
+  /// Whether the profile's own connectivity check goes with it.
+  final bool includeConnectivityCheck;
 }
 
 /// Offers to put a password on a single profile's export.
@@ -42,13 +52,26 @@ class SingleExportChoice {
 /// here for the same reason it is on a set: a typo in a password that seals a
 /// file is only discovered when the file will not open.
 class SingleExportPasswordDialog extends StatefulWidget {
-  const SingleExportPasswordDialog({super.key});
+  const SingleExportPasswordDialog({
+    super.key,
+    this.offerConnectivityCheck = false,
+  });
 
-  static Future<SingleExportChoice?> show(BuildContext context) {
+  /// Whether the profile names a connectivity check, and so whether there is
+  /// anything to ask about. A tick box over a field the profile leaves empty
+  /// would be a question with one answer.
+  final bool offerConnectivityCheck;
+
+  static Future<SingleExportChoice?> show(
+    BuildContext context, {
+    bool offerConnectivityCheck = false,
+  }) {
     return showDialog<SingleExportChoice>(
       context: context,
       useRootNavigator: true,
-      builder: (dialogContext) => const SingleExportPasswordDialog(),
+      builder: (dialogContext) => SingleExportPasswordDialog(
+        offerConnectivityCheck: offerConnectivityCheck,
+      ),
     );
   }
 
@@ -62,6 +85,7 @@ class _SingleExportPasswordDialogState
   final TextEditingController _password = TextEditingController();
   final TextEditingController _confirm = TextEditingController();
   bool _reveal = false;
+  bool _includeConnectivityCheck = true;
   String? _error;
 
   @override
@@ -83,7 +107,12 @@ class _SingleExportPasswordDialogState
       };
     });
     if (_error != null) return;
-    Navigator.of(context).pop(SingleExportChoice(password));
+    Navigator.of(context).pop(
+      SingleExportChoice(
+        password,
+        includeConnectivityCheck: _includeConnectivityCheck,
+      ),
+    );
   }
 
   @override
@@ -127,6 +156,7 @@ class _SingleExportPasswordDialogState
               border: const OutlineInputBorder(),
             ),
           ),
+          if (widget.offerConnectivityCheck) _connectivityCheckBox(context),
         ],
       ),
       actions: [
@@ -136,8 +166,12 @@ class _SingleExportPasswordDialogState
         ),
         TextButton(
           key: const Key('single_export_without_secrets'),
-          onPressed: () =>
-              Navigator.of(context).pop(const SingleExportChoice(null)),
+          onPressed: () => Navigator.of(context).pop(
+            SingleExportChoice(
+              null,
+              includeConnectivityCheck: _includeConnectivityCheck,
+            ),
+          ),
           child: Text(t.exportWithoutSecrets),
         ),
         FilledButton(
@@ -146,6 +180,21 @@ class _SingleExportPasswordDialogState
           child: Text(t.exportSet),
         ),
       ],
+    );
+  }
+
+  Widget _connectivityCheckBox(BuildContext context) {
+    final t = AppLocalizations.of(context);
+    return CheckboxListTile(
+      key: const Key('single_export_connectivity_check'),
+      value: _includeConnectivityCheck,
+      onChanged: (on) =>
+          setState(() => _includeConnectivityCheck = on ?? false),
+      dense: true,
+      contentPadding: EdgeInsets.zero,
+      controlAffinity: ListTileControlAffinity.leading,
+      title: Text(t.includeConnectivityCheck),
+      subtitle: Text(t.includeConnectivityCheckHelp),
     );
   }
 }
@@ -207,6 +256,7 @@ class _ProfileBundleExportSheetState extends State<ProfileBundleExportSheet> {
   final Set<String> _selected = <String>{};
   final Set<String> _selectedGroups = <String>{};
   bool _reveal = false;
+  bool _includeConnectivityCheck = true;
   String? _selectionError;
   String? _passwordError;
 
@@ -227,6 +277,15 @@ class _ProfileBundleExportSheetState extends State<ProfileBundleExportSheet> {
   /// of servers to try that is missing the ones it would fall back to.
   bool _isComplete(FailoverGroup group) =>
       !group.isEmpty && group.memberIds.every(_selected.contains);
+
+  /// Whether any chosen profile names a connectivity check, and so whether the
+  /// tick box has anything to decide.
+  bool get _anyConnectivityCheck => widget.profiles.any(
+    (profile) =>
+        _selected.contains(profile.id) &&
+        (profile.connectivityCheckUrl.trim().isNotEmpty ||
+            profile.connectivityCheckTimeoutMs > 0),
+  );
 
   @override
   void dispose() {
@@ -291,6 +350,7 @@ class _ProfileBundleExportSheetState extends State<ProfileBundleExportSheet> {
             if (_selectedGroups.contains(group.id) && _isComplete(group))
               group.id,
         ],
+        includeConnectivityCheck: _includeConnectivityCheck,
       ),
     );
   }
@@ -394,6 +454,20 @@ class _ProfileBundleExportSheetState extends State<ProfileBundleExportSheet> {
                     ),
                   ),
               ],
+              if (_anyConnectivityCheck) ...[
+                const SizedBox(height: 8),
+                CheckboxListTile(
+                  key: const Key('profile_set_connectivity_check'),
+                  value: _includeConnectivityCheck,
+                  onChanged: (on) =>
+                      setState(() => _includeConnectivityCheck = on ?? false),
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  controlAffinity: ListTileControlAffinity.leading,
+                  title: Text(t.includeConnectivityCheck),
+                  subtitle: Text(t.includeConnectivityCheckHelp),
+                ),
+              ],
               const SizedBox(height: 8),
               TextField(
                 key: const Key('profile_set_password'),
@@ -426,14 +500,16 @@ class _ProfileBundleExportSheetState extends State<ProfileBundleExportSheet> {
                 ),
               ),
               const SizedBox(height: 20),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.end,
+              OverflowBar(
+                alignment: MainAxisAlignment.end,
+                overflowAlignment: OverflowBarAlignment.end,
+                spacing: 8,
+                overflowSpacing: 8,
                 children: [
                   TextButton(
                     onPressed: () => Navigator.of(context).pop(),
                     child: Text(t.cancel),
                   ),
-                  const SizedBox(width: 8),
                   FilledButton(
                     key: const Key('profile_set_export_submit'),
                     onPressed: _submit,
