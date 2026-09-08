@@ -172,6 +172,18 @@ class ProfileStore {
     if (await loadLastGroupId() == id) await setLastGroupId(null);
   }
 
+  /// Which system surfaces the application shows (SPEC 7.1.3, 7.1.4).
+  ///
+  /// Read from the host rather than from [SharedPreferences] like the settings
+  /// around it: the service needs the same answer when Flutter is not running,
+  /// and two copies of one flag is one copy too many.
+  Future<SystemSurfaceSettings> loadSystemSurfaceSettings() =>
+      _backend.loadUiPreferences();
+
+  Future<SystemSurfaceSettings> saveSystemSurfaceSettings(
+    SystemSurfaceSettings settings,
+  ) => _backend.saveUiPreferences(settings);
+
   Future<String?> loadLastGroupId() async {
     final p = await _prefs();
     final id = p.getString(prefsKeyLastGroupId);

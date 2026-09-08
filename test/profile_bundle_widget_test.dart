@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tunnel_forge/core/vpn_protocol.dart';
+import 'package:tunnel_forge/features/profiles/domain/failover_group.dart';
 import 'package:tunnel_forge/features/profiles/domain/profile_bundle.dart';
 import 'package:tunnel_forge/features/profiles/domain/profile_models.dart';
 import 'package:tunnel_forge/features/profiles/domain/profile_transfer.dart';
@@ -142,6 +143,81 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(result!.profileIds, ['a']);
+    });
+
+    /// A group is offered whole or not at all: half a failover group is a list
+    /// of servers to try that is missing the ones it would fall back to.
+    testWidgets('a group whose profile is dropped cannot travel', (
+      tester,
+    ) async {
+      ProfileBundleExportRequest? result;
+      await tester.pumpWidget(
+        _host((context) async {
+          result = await ProfileBundleExportSheet.show(
+            context,
+            profiles: [_profile('a', 'Amsterdam'), _profile('b', 'Berlin')],
+            groups: const [
+              FailoverGroup(id: 'g', name: 'Acme', memberIds: ['a', 'b']),
+            ],
+          );
+        }),
+      );
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+
+      // Everything is ticked to begin with, the group included; dropping one of
+      // its profiles has to drop the group with it.
+      await tester.tap(find.byKey(const Key('profile_set_pick_b')));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const Key('profile_set_password')),
+        'long-enough-password',
+      );
+      await tester.enterText(
+        find.byKey(const Key('profile_set_password_confirm')),
+        'long-enough-password',
+      );
+      await tester.ensureVisible(
+        find.byKey(const Key('profile_set_export_submit')),
+      );
+      await tester.tap(find.byKey(const Key('profile_set_export_submit')));
+      await tester.pumpAndSettle();
+
+      expect(result!.profileIds, ['a']);
+      expect(result!.groupIds, isEmpty);
+    });
+
+    testWidgets('a group travels when all of its profiles do', (tester) async {
+      ProfileBundleExportRequest? result;
+      await tester.pumpWidget(
+        _host((context) async {
+          result = await ProfileBundleExportSheet.show(
+            context,
+            profiles: [_profile('a', 'Amsterdam'), _profile('b', 'Berlin')],
+            groups: const [
+              FailoverGroup(id: 'g', name: 'Acme', memberIds: ['a', 'b']),
+            ],
+          );
+        }),
+      );
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+
+      await tester.enterText(
+        find.byKey(const Key('profile_set_password')),
+        'long-enough-password',
+      );
+      await tester.enterText(
+        find.byKey(const Key('profile_set_password_confirm')),
+        'long-enough-password',
+      );
+      await tester.ensureVisible(
+        find.byKey(const Key('profile_set_export_submit')),
+      );
+      await tester.tap(find.byKey(const Key('profile_set_export_submit')));
+      await tester.pumpAndSettle();
+
+      expect(result!.groupIds, ['g']);
     });
   });
 

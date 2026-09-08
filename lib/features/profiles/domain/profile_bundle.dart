@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:tunnel_forge/features/profiles/domain/failover_group.dart';
 import 'package:tunnel_forge/features/profiles/domain/profile_models.dart';
 import 'package:tunnel_forge/features/profiles/domain/profile_transfer.dart';
 
@@ -21,10 +22,16 @@ class ProfileBundle {
     required this.name,
     required this.entries,
     this.createdAt,
+    this.groups = const <BundledFailoverGroup>[],
   });
 
-  /// Version 5 is the set. Version 4 and below are one profile (SPEC 8.1.4).
-  static const int version = 5;
+  /// Version 6 is the set with its failover groups. Version 4 and below are
+  /// one profile (SPEC 8.1.4).
+  static const int version = 6;
+
+  /// Version 5 is what 0.4.0 wrote: the same set without groups. A recipient
+  /// who has already been handed one must keep being able to open it.
+  static const int legacyVersion = 5;
 
   /// Distinguishes a set from a profile inside the same `.tfp` extension.
   static const String kind = 'bundle';
@@ -33,6 +40,10 @@ class ProfileBundle {
   final String name;
 
   final List<ProfileTransferEnvelope> entries;
+
+  /// The failover groups the set carries, naming their members by position in
+  /// [entries]. Empty in a set written before version 6.
+  final List<BundledFailoverGroup> groups;
 
   /// When the set was written, so a recipient holding two can tell which is
   /// the newer. Absent in a set written by something that did not record it.
@@ -70,6 +81,8 @@ class ProfileBundle {
     'certificates': certificatePool
         .map((certificate) => certificate.toJson())
         .toList(growable: false),
+    if (groups.isNotEmpty)
+      'groups': groups.map((group) => group.toJson()).toList(growable: false),
   };
 
   String toFileJson({TransferSecrets secrets = TransferSecrets.shared}) =>
@@ -90,7 +103,8 @@ class ProfileBundle {
     return map;
   }
 
-  static bool looksLikeBundle(Map<String, Object?> map) => map['v'] == version;
+  static bool looksLikeBundle(Map<String, Object?> map) =>
+      map['v'] == version || map['v'] == legacyVersion;
 
   static ProfileBundle fromJsonMap(Map<String, Object?> map) {
     if (!looksLikeBundle(map)) {
@@ -113,11 +127,17 @@ class ProfileBundle {
       }
       entries.add(_entryFromJson(Map<String, Object?>.from(raw), pool));
     }
+    final groups = <BundledFailoverGroup>[];
+    for (final raw in (map['groups'] as List<Object?>?) ?? const <Object?>[]) {
+      final group = BundledFailoverGroup.tryFromJson(raw, entries.length);
+      if (group != null) groups.add(group);
+    }
     final createdAt = map['createdAt'];
     return ProfileBundle(
       name: (map['name'] as String?)?.trim() ?? '',
       entries: entries,
       createdAt: createdAt is String ? DateTime.tryParse(createdAt) : null,
+      groups: groups,
     );
   }
 
@@ -147,6 +167,79 @@ class ProfileBundle {
     final base = ProfileTransferEnvelope.sanitizeFileName(bundleName);
     final fallback = base.isEmpty ? 'tunnel-forge-profiles' : base;
     return '$fallback.${ProfileTransferEnvelope.fileExtension}';
+  }
+}
+
+/// A failover group travelling inside a set (SPEC 10.1, 8.1.4).
+///
+/// The members are positions in [ProfileBundle.entries] rather than profile
+/// ids. An id belongs to the device that made the profile: importing an entry
+/// as a new profile mints a fresh one, and importing it over an existing
+/// profile keeps that profile's own. Either way the ids in the file name
+/// nothing here, so a group written with them would arrive empty.
+class BundledFailoverGroup {
+  const BundledFailoverGroup({
+    required this.name,
+    required this.memberIndexes,
+    this.connectTimeoutSec = FailoverGroup.defaultConnectTimeoutSec,
+  });
+
+  final String name;
+
+  /// How long one member may take before the group tries the next.
+  final int connectTimeoutSec;
+
+  /// Indexes into [ProfileBundle.entries], in the order the group tries them.
+  final List<int> memberIndexes;
+
+  /// The group as it would be stored, once [memberIds] are known.
+  FailoverGroup toFailoverGroup({
+    required String id,
+    required List<String> memberIds,
+  }) => FailoverGroup(
+    id: id,
+    name: name,
+    connectTimeoutSec: connectTimeoutSec,
+    memberIds: memberIds,
+  );
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    'name': name,
+    'connectTimeoutSec': connectTimeoutSec,
+    'memberIndexes': memberIndexes,
+  };
+
+  /// The group in [raw], or null if it is not one this set can use.
+  ///
+  /// A group without a name or without a member left after the bounds check is
+  /// dropped rather than repaired, the way [FailoverGroup.tryFromJson] drops a
+  /// row without an id: it could only be shown as something that does nothing.
+  ///
+  /// @param entryCount how many entries the set has, so an index pointing past
+  ///   them — a truncated or hand-edited file — is discarded rather than
+  ///   carried into the import.
+  static BundledFailoverGroup? tryFromJson(Object? raw, int entryCount) {
+    if (raw is! Map) return null;
+    final name = (raw['name'] as String?)?.trim() ?? '';
+    if (name.isEmpty) return null;
+    final indexes = <int>[];
+    final rawMembers = raw['memberIndexes'];
+    if (rawMembers is List) {
+      for (final entry in rawMembers) {
+        final index = (entry as num?)?.toInt();
+        if (index == null || index < 0 || index >= entryCount) continue;
+        if (!indexes.contains(index)) indexes.add(index);
+      }
+    }
+    if (indexes.isEmpty) return null;
+    return BundledFailoverGroup(
+      name: name,
+      connectTimeoutSec: FailoverGroup.normalizeTimeout(
+        (raw['connectTimeoutSec'] as num?)?.toInt() ??
+            FailoverGroup.defaultConnectTimeoutSec,
+      ),
+      memberIndexes: indexes,
+    );
   }
 }
 
@@ -221,6 +314,8 @@ class BundleImportResult {
     this.added = 0,
     this.replaced = 0,
     this.skipped = 0,
+    this.groupsAdded = 0,
+    this.groupsUpdated = 0,
     this.firstImportedId,
   });
 
@@ -228,10 +323,18 @@ class BundleImportResult {
   final int replaced;
   final int skipped;
 
+  /// Failover groups the set brought that were not here before.
+  final int groupsAdded;
+
+  /// Groups the set brought that were already here and were rewritten.
+  final int groupsUpdated;
+
   /// What to select afterwards, so importing a set leaves something chosen.
   final String? firstImportedId;
 
   int get stored => added + replaced;
+
+  int get groupsStored => groupsAdded + groupsUpdated;
 }
 
 /// Finds the profile an entry would overwrite.

@@ -53,10 +53,15 @@ abstract class ProfilesRepository {
   /// around, and by default it carries the pre-shared key. [secrets] says what
   /// travels; the default leaves out the login and password, which belong to
   /// whoever receives the set rather than to whoever made it.
+  ///
+  /// [groupIds] names the failover groups to put in the set. A group whose
+  /// members are not all in [profileIds] is left out: it would arrive as a
+  /// group that is missing the server it exists to fall back to.
   Future<void> exportProfileBundle({
     required List<String> profileIds,
     required String bundleName,
     required String password,
+    List<String> groupIds,
     TransferSecrets secrets,
   });
 
@@ -92,6 +97,13 @@ abstract class SettingsRepository {
   Future<ConnectivityCheckSettings> loadConnectivityCheckSettings();
   Future<void> saveConnectivityCheckSettings(
     ConnectivityCheckSettings settings,
+  );
+
+  /// Which system surfaces the application shows: the notification's button
+  /// and the Quick Settings tile (SPEC 7.1.3, 7.1.4).
+  Future<SystemSurfaceSettings> loadSystemSurfaceSettings();
+  Future<SystemSurfaceSettings> saveSystemSurfaceSettings(
+    SystemSurfaceSettings settings,
   );
   Future<LogDisplayLevel> loadLogDisplayLevel();
   Future<void> saveLogDisplayLevel(LogDisplayLevel level);

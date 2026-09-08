@@ -66,6 +66,12 @@
   "lanSharingEnabled": "Доступ из локальной сети включён для этого сеанса.",
   "connectToDetectLan": "Подключитесь, чтобы определить текущий локальный IP для других устройств.",
   "lanDisabled": "Доступ из локальной сети отключён.",
+  "profileConnectivityHelp": "Оставьте пустым, чтобы использовать проверку из настроек. Организация может указать здесь свой пробник, доступный только через туннель.",
+  "systemSurfaces": "Уведомление и плитка",
+  "notificationDisconnectButton": "Кнопка «Отключить» в уведомлении",
+  "notificationDisconnectButtonHelp": "Само уведомление скрыть нельзя — Android требует его, пока работает туннель, — а кнопку можно. Отключите, чтобы в шторке было меньше всего.",
+  "quickSettingsTile": "Плитка быстрых настроек",
+  "quickSettingsTileHelp": "Показывает плитку в редакторе плиток Android. При отключении уже добавленная плитка пропадает; при включении она снова появится в редакторе, откуда её можно добавить.",
   "connectivityCheck": "Проверка связи",
   "batteryOptimization": "Оптимизация батареи",
   "batteryOptimizationAllowed": "Разрешена работа в фоне.",
@@ -150,6 +156,16 @@
   "profileSetNameHint": "например, VPN компании «Акме»",
   "profileSetIncludes": "В набор войдут общий ключ, настройки прокси и сертификаты. Логин и пароль VPN не войдут — каждый вводит свои.",
   "chooseProfilesForSet": "Выберите профили для набора",
+  "chooseGroupsForSet": "Группы переключения в наборе",
+  "groupNeedsItsProfiles": "Отметьте все её профили, чтобы включить группу",
+  "importedFailoverGroups": "{count, plural, one{{count} группа} few{{count} группы} other{{count} групп}}",
+  "@importedFailoverGroups": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "noProfilesSelected": "Выберите хотя бы один профиль.",
   "setPassword": "Пароль набора",
   "confirmSetPassword": "Повторите пароль",

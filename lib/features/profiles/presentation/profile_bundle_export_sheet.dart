@@ -2,6 +2,7 @@
 import 'package:flutter/material.dart';
 
 import 'package:tunnel_forge/core/vpn_protocol.dart';
+import 'package:tunnel_forge/features/profiles/domain/failover_group.dart';
 import 'package:tunnel_forge/features/profiles/domain/profile_models.dart';
 import 'package:tunnel_forge/l10n/app_localizations.dart';
 
@@ -11,11 +12,17 @@ class ProfileBundleExportRequest {
     required this.profileIds,
     required this.bundleName,
     required this.password,
+    this.groupIds = const <String>[],
   });
 
   final List<String> profileIds;
   final String bundleName;
   final String password;
+
+  /// The failover groups to carry along. Only groups all of whose members are
+  /// in [profileIds] can be ticked, so the set never describes a group that
+  /// arrives missing a member.
+  final List<String> groupIds;
 }
 
 /// What exporting one profile decided: seal it under a password, or not.
@@ -152,9 +159,17 @@ class _SingleExportPasswordDialogState
 /// recipient, at which point nothing can be done about it, which is why the
 /// second field is here rather than left as tidiness.
 class ProfileBundleExportSheet extends StatefulWidget {
-  const ProfileBundleExportSheet({super.key, required this.profiles});
+  const ProfileBundleExportSheet({
+    super.key,
+    required this.profiles,
+    this.groups = const <FailoverGroup>[],
+  });
 
   final List<Profile> profiles;
+
+  /// The failover groups this device has, offered when their members are all
+  /// in the set.
+  final List<FailoverGroup> groups;
 
   /// The shortest password the form accepts. PBKDF2 buys time against a
   /// guesser, not against a password there is nothing to guess.
@@ -163,6 +178,7 @@ class ProfileBundleExportSheet extends StatefulWidget {
   static Future<ProfileBundleExportRequest?> show(
     BuildContext context, {
     required List<Profile> profiles,
+    List<FailoverGroup> groups = const <FailoverGroup>[],
   }) {
     final theme = Theme.of(context);
     return showModalBottomSheet<ProfileBundleExportRequest>(
@@ -174,7 +190,8 @@ class ProfileBundleExportSheet extends StatefulWidget {
       backgroundColor:
           theme.bottomSheetTheme.backgroundColor ??
           theme.colorScheme.surfaceContainerLow,
-      builder: (sheetContext) => ProfileBundleExportSheet(profiles: profiles),
+      builder: (sheetContext) =>
+          ProfileBundleExportSheet(profiles: profiles, groups: groups),
     );
   }
 
@@ -188,6 +205,7 @@ class _ProfileBundleExportSheetState extends State<ProfileBundleExportSheet> {
   final TextEditingController _password = TextEditingController();
   final TextEditingController _confirm = TextEditingController();
   final Set<String> _selected = <String>{};
+  final Set<String> _selectedGroups = <String>{};
   bool _reveal = false;
   String? _selectionError;
   String? _passwordError;
@@ -198,7 +216,17 @@ class _ProfileBundleExportSheetState extends State<ProfileBundleExportSheet> {
     // Every profile starts chosen: a set is usually all of them, and taking
     // one out is a smaller act than putting six in.
     _selected.addAll(widget.profiles.map((profile) => profile.id));
+    _selectedGroups.addAll(
+      widget.groups.where(_isComplete).map((group) => group.id),
+    );
   }
+
+  /// Whether every member of [group] is currently ticked.
+  ///
+  /// A group is offered whole or not at all: half a failover group is a list
+  /// of servers to try that is missing the ones it would fall back to.
+  bool _isComplete(FailoverGroup group) =>
+      !group.isEmpty && group.memberIds.every(_selected.contains);
 
   @override
   void dispose() {
@@ -216,6 +244,23 @@ class _ProfileBundleExportSheetState extends State<ProfileBundleExportSheet> {
         _selected.remove(id);
       }
       _selectionError = null;
+      // A group whose member was just unticked cannot travel, so it unticks
+      // itself rather than being silently dropped at export time.
+      _selectedGroups.removeWhere(
+        (groupId) => !widget.groups
+            .where((group) => group.id == groupId)
+            .every(_isComplete),
+      );
+    });
+  }
+
+  void _toggleGroup(String id, bool? on) {
+    setState(() {
+      if (on ?? false) {
+        _selectedGroups.add(id);
+      } else {
+        _selectedGroups.remove(id);
+      }
     });
   }
 
@@ -241,6 +286,11 @@ class _ProfileBundleExportSheetState extends State<ProfileBundleExportSheet> {
         ],
         bundleName: _name.text.trim(),
         password: password,
+        groupIds: [
+          for (final group in widget.groups)
+            if (_selectedGroups.contains(group.id) && _isComplete(group))
+              group.id,
+        ],
       ),
     );
   }
@@ -323,6 +373,27 @@ class _ProfileBundleExportSheetState extends State<ProfileBundleExportSheet> {
                     ' · ${profile.server}',
                   ),
                 ),
+              if (widget.groups.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Text(t.chooseGroupsForSet, style: theme.textTheme.titleSmall),
+                for (final group in widget.groups)
+                  CheckboxListTile(
+                    key: Key('profile_set_group_pick_${group.id}'),
+                    value: _selectedGroups.contains(group.id),
+                    onChanged: _isComplete(group)
+                        ? (on) => _toggleGroup(group.id, on)
+                        : null,
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    controlAffinity: ListTileControlAffinity.leading,
+                    title: Text(group.displayName),
+                    subtitle: Text(
+                      _isComplete(group)
+                          ? t.failoverGroupProfileCount(group.memberIds.length)
+                          : t.groupNeedsItsProfiles,
+                    ),
+                  ),
+              ],
               const SizedBox(height: 8),
               TextField(
                 key: const Key('profile_set_password'),

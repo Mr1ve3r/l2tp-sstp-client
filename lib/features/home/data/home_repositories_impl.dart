@@ -91,6 +91,7 @@ class ProfilesRepositoryImpl implements ProfilesRepository {
     required List<String> profileIds,
     required String bundleName,
     required String password,
+    List<String> groupIds = const <String>[],
     TransferSecrets secrets = TransferSecrets.shared,
   }) async {
     if (profileIds.isEmpty) {
@@ -111,6 +112,7 @@ class ProfilesRepositoryImpl implements ProfilesRepository {
       name: bundleName.trim(),
       entries: entries,
       createdAt: DateTime.now().toUtc(),
+      groups: await _bundledGroups(groupIds, profileIds),
     );
     final sealed = await _profileStore.sealExport(
       bundle.toFileJson(secrets: secrets),
@@ -128,6 +130,46 @@ class ProfilesRepositoryImpl implements ProfilesRepository {
         title: 'Export TunnelForge profiles',
       ),
     );
+  }
+
+  /// The groups in [groupIds] rewritten to name their members by position in
+  /// [profileIds].
+  ///
+  /// A group with a member outside the set is dropped. The export sheet only
+  /// offers whole groups, so this is the case where the selection changed
+  /// after a group was ticked rather than something the user asked for.
+  Future<List<BundledFailoverGroup>> _bundledGroups(
+    List<String> groupIds,
+    List<String> profileIds,
+  ) async {
+    if (groupIds.isEmpty) return const <BundledFailoverGroup>[];
+    final positionOf = <String, int>{
+      for (var i = 0; i < profileIds.length; i++) profileIds[i]: i,
+    };
+    final wanted = groupIds.toSet();
+    final bundled = <BundledFailoverGroup>[];
+    for (final group in await _profileStore.loadFailoverGroups()) {
+      if (!wanted.contains(group.id) || group.isEmpty) continue;
+      final indexes = <int>[];
+      var complete = true;
+      for (final memberId in group.memberIds) {
+        final position = positionOf[memberId];
+        if (position == null) {
+          complete = false;
+          break;
+        }
+        indexes.add(position);
+      }
+      if (!complete || indexes.isEmpty) continue;
+      bundled.add(
+        BundledFailoverGroup(
+          name: group.displayName,
+          connectTimeoutSec: group.connectTimeoutSec,
+          memberIndexes: indexes,
+        ),
+      );
+    }
+    return bundled;
   }
 
   @override
@@ -158,6 +200,9 @@ class ProfilesRepositoryImpl implements ProfilesRepository {
     var skipped = 0;
     String? firstImportedId;
     final awaitingCredentials = <String>[];
+    // Which profile each entry turned into, so the set's groups can be
+    // rebuilt out of the ids this device gave them.
+    final landedIds = <int, String>{};
     for (final choice in choices) {
       if (choice.entryIndex < 0 || choice.entryIndex >= bundle.entries.length) {
         continue;
@@ -172,6 +217,7 @@ class ProfilesRepositoryImpl implements ProfilesRepository {
             selectAsLastProfile: false,
           );
           added++;
+          landedIds[choice.entryIndex] = stored.id;
           firstImportedId ??= stored.id;
           if (stored.needsCredentials) awaitingCredentials.add(stored.id);
         case BundleImportAction.replace:
@@ -182,6 +228,7 @@ class ProfilesRepositoryImpl implements ProfilesRepository {
               selectAsLastProfile: false,
             );
             added++;
+            landedIds[choice.entryIndex] = stored.id;
             firstImportedId ??= stored.id;
             if (stored.needsCredentials) awaitingCredentials.add(stored.id);
             continue;
@@ -195,6 +242,7 @@ class ProfilesRepositoryImpl implements ProfilesRepository {
           } else {
             added++;
           }
+          landedIds[choice.entryIndex] = outcome.profile.id;
           firstImportedId ??= outcome.profile.id;
           if (outcome.profile.needsCredentials) {
             awaitingCredentials.add(outcome.profile.id);
@@ -205,12 +253,92 @@ class ProfilesRepositoryImpl implements ProfilesRepository {
     // a replace keeps the login the recipient had already typed in, and that
     // profile is not waiting for anything.
     await _profileStore.markProfilesAwaitingCredentials(awaitingCredentials);
+    final groups = await _importGroups(bundle, landedIds);
     return BundleImportResult(
       added: added,
       replaced: replaced,
       skipped: skipped,
+      groupsAdded: groups.added,
+      groupsUpdated: groups.updated,
       firstImportedId: firstImportedId,
     );
+  }
+
+  /// Stores the set's failover groups against the profiles that landed.
+  ///
+  /// A member the recipient chose to skip is left out rather than made to
+  /// block its group: a group of the three sites they took is worth having,
+  /// and an id for a profile that was never stored could not be saved anyway.
+  ///
+  /// A group whose name and membership are already here is rewritten instead
+  /// of duplicated. The same set is handed out again whenever the organisation
+  /// changes something, and the third handout should not leave three groups
+  /// called the same thing.
+  Future<({int added, int updated})> _importGroups(
+    ProfileBundle bundle,
+    Map<int, String> landedIds,
+  ) async {
+    if (bundle.groups.isEmpty) return (added: 0, updated: 0);
+    final existing = await _profileStore.loadFailoverGroups();
+    final taken = existing.map((group) => group.displayName).toSet();
+    var added = 0;
+    var updated = 0;
+    for (final bundled in bundle.groups) {
+      final memberIds = <String>[];
+      for (final index in bundled.memberIndexes) {
+        final id = landedIds[index];
+        if (id != null) memberIds.add(id);
+      }
+      if (memberIds.isEmpty) continue;
+      final match = existing
+          .where(
+            (group) =>
+                group.displayName.toLowerCase() == bundled.name.toLowerCase() &&
+                _sameMembers(group.memberIds, memberIds),
+          )
+          .firstOrNull;
+      if (match != null) {
+        await _profileStore.saveFailoverGroup(
+          match.copyWith(connectTimeoutSec: bundled.connectTimeoutSec),
+        );
+        updated++;
+        continue;
+      }
+      final name = _unusedGroupName(bundled.name, taken);
+      taken.add(name);
+      // An empty id is how `ProfileChannel.readGroup` is already told to mint
+      // one and stamp the creation time.
+      await _profileStore.saveFailoverGroup(
+        bundled
+            .toFailoverGroup(id: '', memberIds: memberIds)
+            .copyWith(name: name),
+      );
+      added++;
+    }
+    return (added: added, updated: updated);
+  }
+
+  /// Whether two membership lists name the same profiles in the same order.
+  static bool _sameMembers(List<String> a, List<String> b) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
+  }
+
+  /// [name], or [name] with a counter, so two different groups do not end up
+  /// sharing one label in the picker.
+  static String _unusedGroupName(String name, Set<String> taken) {
+    if (!taken.any((used) => used.toLowerCase() == name.toLowerCase())) {
+      return name;
+    }
+    for (var suffix = 2; ; suffix++) {
+      final candidate = '$name ($suffix)';
+      if (!taken.any((used) => used.toLowerCase() == candidate.toLowerCase())) {
+        return candidate;
+      }
+    }
   }
 
   /// Overwrites [targetId] with [entry], keeping what the set left out.
@@ -413,6 +541,18 @@ class SettingsRepositoryImpl implements SettingsRepository {
   @override
   Future<ConnectivityCheckSettings> loadConnectivityCheckSettings() {
     return _profileStore.loadConnectivityCheckSettings();
+  }
+
+  @override
+  Future<SystemSurfaceSettings> loadSystemSurfaceSettings() {
+    return _profileStore.loadSystemSurfaceSettings();
+  }
+
+  @override
+  Future<SystemSurfaceSettings> saveSystemSurfaceSettings(
+    SystemSurfaceSettings settings,
+  ) {
+    return _profileStore.saveSystemSurfaceSettings(settings);
   }
 
   @override

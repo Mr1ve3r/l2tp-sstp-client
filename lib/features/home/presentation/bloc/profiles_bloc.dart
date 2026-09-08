@@ -121,14 +121,18 @@ final class ProfilesExportBundleRequested extends ProfilesEvent {
     required this.profileIds,
     required this.bundleName,
     required this.password,
+    this.groupIds = const <String>[],
   });
 
   final List<String> profileIds;
   final String bundleName;
   final String password;
 
+  /// The failover groups to carry along, by id.
+  final List<String> groupIds;
+
   @override
-  List<Object?> get props => [profileIds, bundleName, password];
+  List<Object?> get props => [profileIds, bundleName, password, groupIds];
 }
 
 /// Fills in the login and password of a profile that arrived without them.
@@ -748,6 +752,7 @@ class ProfilesBloc extends Bloc<ProfilesEvent, ProfilesState> {
         profileIds: event.profileIds,
         bundleName: event.bundleName,
         password: event.password,
+        groupIds: event.groupIds,
       );
       emit(
         state.copyWith(
@@ -790,14 +795,18 @@ class ProfilesBloc extends Bloc<ProfilesEvent, ProfilesState> {
       if (select) {
         await _profilesRepository.setLastProfileId(result.firstImportedId);
       }
+      final summary = AppText.current.importedProfileSet(
+        result.added,
+        result.replaced,
+        result.skipped,
+      );
       emit(
         state.copyWith(
           message: _nextMessage(
-            AppText.current.importedProfileSet(
-              result.added,
-              result.replaced,
-              result.skipped,
-            ),
+            result.groupsStored == 0
+                ? summary
+                : '$summary, '
+                      '${AppText.current.importedFailoverGroups(result.groupsStored)}',
           ),
         ),
       );

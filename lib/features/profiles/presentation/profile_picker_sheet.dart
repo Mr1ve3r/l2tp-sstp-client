@@ -277,10 +277,14 @@ class _ProfilePickerSheetState extends State<ProfilePickerSheet> {
     );
   }
 
-  Future<void> _exportProfileSet(List<Profile> profiles) async {
+  Future<void> _exportProfileSet(
+    List<Profile> profiles,
+    List<FailoverGroup> groups,
+  ) async {
     final request = await ProfileBundleExportSheet.show(
       context,
       profiles: profiles,
+      groups: groups,
     );
     if (request == null || !mounted) return;
     _profilesBloc.add(
@@ -288,6 +292,7 @@ class _ProfilePickerSheetState extends State<ProfilePickerSheet> {
         profileIds: request.profileIds,
         bundleName: request.bundleName,
         password: request.password,
+        groupIds: request.groupIds,
       ),
     );
   }
@@ -465,7 +470,7 @@ class _ProfilePickerSheetState extends State<ProfilePickerSheet> {
                         await _importFromClipboard();
                         break;
                       case _AddProfileAction.exportSet:
-                        await _exportProfileSet(state.profiles);
+                        await _exportProfileSet(state.profiles, state.groups);
                         break;
                     }
                   },

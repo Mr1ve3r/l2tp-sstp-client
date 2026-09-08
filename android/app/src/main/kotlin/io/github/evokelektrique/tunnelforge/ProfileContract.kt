@@ -53,6 +53,18 @@ object ProfileContract {
     const val GROUP_FIELD_CREATED_AT = "createdAt"
     const val GROUP_FIELD_MEMBER_IDS = "memberIds"
 
+    /**
+     * System surfaces the application puts itself on: the notification's
+     * "Disconnect" button and the Quick Settings tile. They live on this
+     * channel rather than in a Flutter setting because the service reads them
+     * when no Dart code is running (SPEC В.13).
+     */
+    const val LOAD_UI_PREFERENCES = "loadUiPreferences"
+    const val SAVE_UI_PREFERENCES = "saveUiPreferences"
+
+    const val FIELD_NOTIFICATION_DISCONNECT_ACTION = "notificationDisconnectAction"
+    const val FIELD_QUICK_SETTINGS_TILE = "quickSettingsTile"
+
     const val ARG_ID = "id"
     const val ARG_PROFILE = "profile"
     const val ARG_PROFILES = "profiles"
@@ -93,6 +105,8 @@ object ProfileContract {
     const val FIELD_PROXY_HOST = "proxyHost"
     const val FIELD_PROXY_PORT = "proxyPort"
     const val FIELD_PROXY_USERNAME = "proxyUsername"
+    const val FIELD_CONNECTIVITY_CHECK_URL = "connectivityCheckUrl"
+    const val FIELD_CONNECTIVITY_CHECK_TIMEOUT_MS = "connectivityCheckTimeoutMs"
 
     /** Error codes returned to Flutter. */
     const val ERROR_BAD_ARGS = "bad_args"

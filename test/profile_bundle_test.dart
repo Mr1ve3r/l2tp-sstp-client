@@ -1,5 +1,8 @@
+import 'dart:convert';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tunnel_forge/core/vpn_protocol.dart';
+import 'package:tunnel_forge/features/profiles/domain/failover_group.dart';
 import 'package:tunnel_forge/features/profiles/domain/profile_bundle.dart';
 import 'package:tunnel_forge/features/profiles/domain/profile_models.dart';
 import 'package:tunnel_forge/features/profiles/domain/profile_transfer.dart';
@@ -159,6 +162,87 @@ void main() {
       expect(
         () => ProfileBundle.fromJsonMap({'v': 99, 'entries': <Object?>[]}),
         throwsFormatException,
+      );
+    });
+
+    /// A set is what an organisation hands out, and the order its gateways are
+    /// tried in is part of what it is handing out.
+    test('carries a failover group and names its members by position', () {
+      final bundle = ProfileBundle(
+        name: 'Acme corporate VPN',
+        entries: _bundle().entries,
+        groups: const [
+          BundledFailoverGroup(
+            name: 'Acme',
+            connectTimeoutSec: 20,
+            memberIndexes: [3, 0],
+          ),
+        ],
+      );
+
+      final decoded =
+          (ProfileTransferDocument.parse(bundle.toFileJson())
+                  as ProfileSetDocument)
+              .bundle;
+
+      expect(decoded.groups, hasLength(1));
+      expect(decoded.groups.single.name, 'Acme');
+      expect(decoded.groups.single.connectTimeoutSec, 20);
+      expect(decoded.groups.single.memberIndexes, [3, 0]);
+    });
+
+    test('a set written before groups existed still opens', () {
+      final legacy = jsonDecode(_bundle().toFileJson()) as Map<String, Object?>;
+      legacy['v'] = ProfileBundle.legacyVersion;
+      legacy.remove('groups');
+
+      final decoded = ProfileBundle.fromJsonMap(legacy);
+
+      expect(decoded.length, 6);
+      expect(decoded.groups, isEmpty);
+    });
+
+    test('drops a group whose members are not in the set', () {
+      final decoded = ProfileBundle.fromJsonMap(<String, Object?>{
+        ...jsonDecode(_bundle().toFileJson()) as Map<String, Object?>,
+        'groups': <Object?>[
+          // Past the end of a six-entry set, and so nothing this set can build.
+          <String, Object?>{
+            'name': 'Truncated',
+            'memberIndexes': <Object?>[9],
+          },
+          <String, Object?>{
+            'name': '',
+            'memberIndexes': <Object?>[0],
+          },
+          <String, Object?>{
+            'name': 'Acme',
+            // The repeat is the same server twice; a group tries it once.
+            'memberIndexes': <Object?>[1, 1, 2],
+          },
+        ],
+      });
+
+      expect(decoded.groups, hasLength(1));
+      expect(decoded.groups.single.name, 'Acme');
+      expect(decoded.groups.single.memberIndexes, [1, 2]);
+    });
+
+    test('clamps a group budget the way the store would', () {
+      final decoded = ProfileBundle.fromJsonMap(<String, Object?>{
+        ...jsonDecode(_bundle().toFileJson()) as Map<String, Object?>,
+        'groups': <Object?>[
+          <String, Object?>{
+            'name': 'Acme',
+            'connectTimeoutSec': 9000,
+            'memberIndexes': <Object?>[0],
+          },
+        ],
+      });
+
+      expect(
+        decoded.groups.single.connectTimeoutSec,
+        FailoverGroup.defaultConnectTimeoutSec,
       );
     });
 

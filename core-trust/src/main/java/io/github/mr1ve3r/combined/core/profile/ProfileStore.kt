@@ -113,6 +113,26 @@ class ProfileStore(
         return dao.loadAll().singleOrNull()
     }
 
+    /**
+     * Whether the ongoing notification carries its "Disconnect" button.
+     *
+     * Read here rather than from a Flutter setting because the notification is
+     * posted on paths where no Dart code is running: an always-on start, a
+     * sticky restart after the process was killed, a start from the tile.
+     */
+    fun notificationDisconnectActionEnabled(): Boolean = prefs.getBoolean(KEY_NOTIFICATION_ACTION, true)
+
+    fun setNotificationDisconnectActionEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_NOTIFICATION_ACTION, enabled).apply()
+    }
+
+    /** Whether the Quick Settings tile is offered at all. */
+    fun quickSettingsTileEnabled(): Boolean = prefs.getBoolean(KEY_QUICK_TILE, true)
+
+    fun setQuickSettingsTileEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_QUICK_TILE, enabled).apply()
+    }
+
     /** Whether the one-time import of the Flutter-side profiles has already run (SPEC 8.1.3). */
     fun legacyImportDone(): Boolean = prefs.getBoolean(KEY_LEGACY_IMPORT_DONE, false)
 
@@ -127,6 +147,15 @@ class ProfileStore(
 
         private const val KEY_LAST_PROFILE_ID = "lastProfileId"
         private const val KEY_LEGACY_IMPORT_DONE = "legacyImportDone"
+
+        /**
+         * Which system surfaces the application puts itself on. Kept in this
+         * file, beside [KEY_LAST_PROFILE_ID], because the service reads them
+         * without Flutter — see [notificationDisconnectActionEnabled].
+         */
+        const val KEY_NOTIFICATION_ACTION: String = "notificationDisconnectAction"
+        const val KEY_QUICK_TILE: String = "quickSettingsTile"
+
         private const val ID_BYTES = 16
 
         /** An identifier for a new profile: random, and URL-safe so it can go in a file name. */

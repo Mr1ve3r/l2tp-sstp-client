@@ -18,12 +18,14 @@ class SettingsPanel extends StatefulWidget {
     required this.proxySettings,
     this.proxyExposure,
     required this.connectivityCheckSettings,
+    required this.systemSurfaceSettings,
     required this.batteryOptimizationStatus,
     required this.batteryOptimizationBusy,
     required this.onConnectionModeChanged,
     required this.onSplitTunnelSettingsChanged,
     required this.onProxySettingsChanged,
     required this.onConnectivityCheckSettingsChanged,
+    required this.onSystemSurfaceSettingsChanged,
     required this.onRefreshBatteryOptimization,
     required this.onRequestBatteryOptimization,
     required this.onChooseApps,
@@ -53,6 +55,9 @@ class SettingsPanel extends StatefulWidget {
   final ProxySettings proxySettings;
   final ProxyExposure? proxyExposure;
   final ConnectivityCheckSettings connectivityCheckSettings;
+
+  /// Which system surfaces the application shows (SPEC 7.1.3, 7.1.4).
+  final SystemSurfaceSettings systemSurfaceSettings;
   final BatteryOptimizationStatus batteryOptimizationStatus;
   final bool batteryOptimizationBusy;
   final ValueChanged<ConnectionMode> onConnectionModeChanged;
@@ -60,6 +65,7 @@ class SettingsPanel extends StatefulWidget {
   final ValueChanged<ProxySettings> onProxySettingsChanged;
   final ValueChanged<ConnectivityCheckSettings>
   onConnectivityCheckSettingsChanged;
+  final ValueChanged<SystemSurfaceSettings> onSystemSurfaceSettingsChanged;
   final VoidCallback onRefreshBatteryOptimization;
   final VoidCallback onRequestBatteryOptimization;
   final VoidCallback onChooseApps;
@@ -516,6 +522,51 @@ class _SettingsPanelState extends State<SettingsPanel> {
                       : widget.onRefreshBatteryOptimization,
                   icon: const Icon(Icons.refresh),
                   tooltip: t.refresh,
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: _kSectionGap),
+        _sectionTitle(t.systemSurfaces),
+        const SizedBox(height: _kSectionHeaderGap),
+        Card(
+          margin: EdgeInsets.zero,
+          clipBehavior: Clip.antiAlias,
+          child: Padding(
+            padding: _kCardContentPadding,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SwitchListTile(
+                  key: const Key('notification_disconnect_action_switch'),
+                  contentPadding: EdgeInsets.zero,
+                  title: _cardTitle(t.notificationDisconnectButton),
+                  subtitle: _cardText(
+                    t.notificationDisconnectButtonHelp,
+                    color: widget.colorScheme.onSurfaceVariant,
+                  ),
+                  value: widget.systemSurfaceSettings.disconnectActionEnabled,
+                  onChanged: (value) => widget.onSystemSurfaceSettingsChanged(
+                    widget.systemSurfaceSettings.copyWith(
+                      disconnectActionEnabled: value,
+                    ),
+                  ),
+                ),
+                SwitchListTile(
+                  key: const Key('quick_settings_tile_switch'),
+                  contentPadding: EdgeInsets.zero,
+                  title: _cardTitle(t.quickSettingsTile),
+                  subtitle: _cardText(
+                    t.quickSettingsTileHelp,
+                    color: widget.colorScheme.onSurfaceVariant,
+                  ),
+                  value: widget.systemSurfaceSettings.quickSettingsTileEnabled,
+                  onChanged: (value) => widget.onSystemSurfaceSettingsChanged(
+                    widget.systemSurfaceSettings.copyWith(
+                      quickSettingsTileEnabled: value,
+                    ),
+                  ),
                 ),
               ],
             ),

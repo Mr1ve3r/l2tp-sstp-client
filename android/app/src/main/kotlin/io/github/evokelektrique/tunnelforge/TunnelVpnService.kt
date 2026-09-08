@@ -212,6 +212,16 @@ class TunnelVpnService : VpnService() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
+            ACTION_REFRESH_NOTIFICATION -> {
+                // The button was turned on or off while a session was up.
+                // Without this the change would only show at the next connect.
+                if (running.get()) {
+                    updateForegroundNotification(connectedNotificationText())
+                    return START_STICKY
+                }
+                stopSelf()
+                return START_NOT_STICKY
+            }
             ACTION_STOP -> {
                 cancelPendingStopSelf()
                 // Before anything else: a group mid-walk would otherwise start
@@ -1644,11 +1654,17 @@ class TunnelVpnService : VpnService() {
             .setShowWhen(showTimer)
             .setUsesChronometer(showTimer)
             .apply { if (showTimer && connectedSince > 0L) setWhen(connectedSince) }
-            .addAction(
-                0,
-                getString(R.string.vpn_notification_action_disconnect),
-                disconnectPendingIntent(),
-            )
+            .apply {
+                // The button is what the setting turns off; the notification
+                // itself stays, because a foreground service must have one.
+                if (SystemSurfacePreferences.notificationDisconnectActionEnabled(this@TunnelVpnService)) {
+                    addAction(
+                        0,
+                        getString(R.string.vpn_notification_action_disconnect),
+                        disconnectPendingIntent(),
+                    )
+                }
+            }
             .setOngoing(true)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
             .build()
@@ -1714,6 +1730,10 @@ class TunnelVpnService : VpnService() {
         /** Connects a failover group: its members, in order, until one comes up (SPEC 10.1). */
         const val ACTION_START_GROUP = "io.github.evokelektrique.tunnelforge.action.START_GROUP"
         const val ACTION_STOP = "io.github.evokelektrique.tunnelforge.action.STOP"
+
+        /** Rebuilds the ongoing notification in place, after a setting changed it. */
+        const val ACTION_REFRESH_NOTIFICATION =
+            "io.github.evokelektrique.tunnelforge.action.REFRESH_NOTIFICATION"
         const val EXTRA_GROUP_ID = "groupId"
         const val EXTRA_ATTEMPT_ID = "attemptId"
         const val EXTRA_SERVER = "server"

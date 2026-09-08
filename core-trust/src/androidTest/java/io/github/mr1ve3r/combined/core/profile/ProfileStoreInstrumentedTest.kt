@@ -134,6 +134,26 @@ class ProfileStoreInstrumentedTest {
         assertTrue(store.legacyImportDone())
     }
 
+    /**
+     * The two surface flags outlive the process (SPEC 7.1.3, 7.1.4).
+     *
+     * That is the whole reason they are stored here rather than in the Flutter
+     * layer's preferences: the notification is posted by a service the system
+     * starts for an always-on tunnel, long before any Dart code runs.
+     */
+    @Test
+    fun theSurfaceFlagsDefaultToOnAndSurviveARestart() {
+        assertTrue(store.notificationDisconnectActionEnabled())
+        assertTrue(store.quickSettingsTileEnabled())
+
+        store.setNotificationDisconnectActionEnabled(false)
+        openStore()
+
+        assertFalse(store.notificationDisconnectActionEnabled())
+        // Turning one off says nothing about the other.
+        assertTrue(store.quickSettingsTileEnabled())
+    }
+
     private fun openStore() {
         if (::database.isInitialized) database.close()
         database = Room.databaseBuilder(context, TrustDatabase::class.java, DATABASE_NAME).build()
@@ -253,17 +273,48 @@ class TrustDatabaseMigrationTest {
     }
 
     /**
+     * Version 4 gives a profile its own connectivity check (SPEC 8.1).
+     *
+     * The two columns are added to a table that already has rows in it, so what
+     * matters here is that the existing profile survives and comes out with the
+     * defaults that mean "use the application-wide setting".
+     */
+    @Test
+    fun version3UpgradesToVersion4() {
+        helper.createDatabase(NAME, 3).use { database ->
+            database.execSQL(
+                "INSERT INTO profiles VALUES ('id-1', 'Work', 'SSTP', 'vpn.example.org', 'alice', " +
+                    "'profile/id-1/password', 1400, 1, 1, '', 'DNS_OVER_UDP', '', 'DNS_OVER_UDP', 'OFF', '[]', " +
+                    "0, 1, 1, 'profile/id-1/psk', NULL, '[]', '[]', 443, 'SYSTEM', '[]', NULL, 'TLS_1_2', " +
+                    "'[\"MSCHAPV2\"]', 0, '', 8080, '', 'profile/id-1/proxyPassword')",
+            )
+        }
+
+        val migrated = helper.runMigrationsAndValidate(NAME, 4, true, TrustDatabase.MIGRATION_3_4)
+
+        migrated.query(
+            "SELECT connectivityCheckUrl, connectivityCheckTimeoutMs FROM profiles WHERE id = 'id-1'",
+        ).use { cursor ->
+            cursor.moveToFirst()
+            assertEquals("", cursor.getString(0))
+            assertEquals(0, cursor.getInt(1))
+        }
+        migrated.close()
+    }
+
+    /**
      * The upgrade a real install actually performs (SPEC 11.1).
      *
      * Neither single-step test covers this. A phone that last ran the version 1
-     * build and then takes the current release runs both migrations back to
+     * build and then takes the current release runs every migration back to
      * back, in one open, and it is the *sequence* that can break: `MIGRATION_1_2`
-     * rebuilds `profile_certificate_ref`, and `MIGRATION_2_3` then adds tables
-     * with a foreign key on `profiles`. Passing them to Room in one call is the
-     * only way to see the chain the way the device sees it.
+     * rebuilds `profile_certificate_ref`, `MIGRATION_2_3` then adds tables
+     * with a foreign key on `profiles`, and `MIGRATION_3_4` adds columns to it.
+     * Passing them to Room in one call is the only way to see the chain the way
+     * the device sees it.
      */
     @Test
-    fun version1UpgradesToVersion3InOneRun() {
+    fun version1UpgradesToLatestInOneRun() {
         helper.createDatabase(NAME, 1).use { database ->
             database.execSQL(
                 "INSERT INTO server_certificates VALUES ('aa11', 'Work CA', 'ca', 'CN=ca', 'CN=ca', '01', 0, 1, " +
@@ -273,13 +324,14 @@ class TrustDatabaseMigrationTest {
 
         val migrated = helper.runMigrationsAndValidate(
             NAME,
-            3,
+            4,
             true,
             TrustDatabase.MIGRATION_1_2,
             TrustDatabase.MIGRATION_2_3,
+            TrustDatabase.MIGRATION_3_4,
         )
 
-        // Validation against `schemas/3.json` is most of the assertion: it is
+        // Validation against `schemas/4.json` is most of the assertion: it is
         // what fails if either step leaves the database a shape Room did not
         // generate. The counts below add the part validation cannot see --
         // that the certificate the user imported under version 1 is still here.

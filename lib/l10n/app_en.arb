@@ -94,6 +94,12 @@
   "lanSharingEnabled": "LAN sharing is enabled for this session.",
   "connectToDetectLan": "Connect to detect the current LAN IP for other devices.",
   "lanDisabled": "LAN access is disabled.",
+  "profileConnectivityHelp": "Leave empty to use the connectivity check set in Settings. An organisation handing out a set can point this at a probe only reachable through the tunnel.",
+  "systemSurfaces": "Notification and tile",
+  "notificationDisconnectButton": "Disconnect button in the notification",
+  "notificationDisconnectButtonHelp": "The ongoing notification cannot be hidden — Android requires one while the tunnel runs — but its button can. Turn this off for a quieter shade.",
+  "quickSettingsTile": "Quick Settings tile",
+  "quickSettingsTileHelp": "Offers the tile in Android's tile editor. Turning it off removes a tile you have already placed; turning it back on puts it back in the editor, ready to be added again.",
   "connectivityCheck": "Connectivity check",
   "batteryOptimization": "Battery optimization",
   "batteryOptimizationAllowed": "Allowed for background use.",
@@ -219,6 +225,16 @@
   "profileSetNameHint": "e.g. Acme corporate VPN",
   "profileSetIncludes": "The set carries the pre-shared key, the proxy details and the certificates. The VPN username and password are left out, so each person enters their own.",
   "chooseProfilesForSet": "Choose the profiles to include",
+  "chooseGroupsForSet": "Failover groups to include",
+  "groupNeedsItsProfiles": "Tick all of its profiles to include this group",
+  "importedFailoverGroups": "{count, plural, =1{1 group} other{{count} groups}}",
+  "@importedFailoverGroups": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "noProfilesSelected": "Choose at least one profile.",
   "setPassword": "Set password",
   "confirmSetPassword": "Confirm password",
