@@ -141,6 +141,31 @@ class TrustStoreInstrumentedTest {
         assertEquals(1, store.list().single().usageCount)
     }
 
+    /**
+     * Importing a certificate the store already has keeps the profiles that
+     * selected it.
+     *
+     * The same shared set opened twice imports the same corporate CA twice,
+     * and `@Insert(onConflict = REPLACE)` made the second import a delete
+     * followed by an insert. `profile_certificate_ref` cascades on that
+     * delete, so every profile trusting the CA quietly lost its trust anchor —
+     * including profiles that had nothing to do with the set being imported.
+     */
+    @Test
+    fun reimportingACertificateKeepsTheProfilesThatSelectedIt() = runBlocking {
+        val stored = store.import(certificate(SELF_SIGNED_PEM), alias = "", now = NOW)
+        store.setCertificatesFor(PROFILE_ID, listOf(stored.id))
+
+        val again = store.import(certificate(SELF_SIGNED_PEM), alias = "Renamed", now = NOW + 1)
+
+        assertEquals(stored.id, again.id)
+        // The import time is the first one: the certificate is the same one.
+        assertEquals(NOW, again.importedAt)
+        assertEquals(1, again.usageCount)
+        restart()
+        assertEquals(listOf(stored.id), store.certificateIdsFor(PROFILE_ID))
+    }
+
     @Test
     fun subjectAlternativeNamesSurviveTheJsonConverter() = runBlocking {
         val stored = store.import(certificate(SAN_PEM), alias = "", now = NOW)

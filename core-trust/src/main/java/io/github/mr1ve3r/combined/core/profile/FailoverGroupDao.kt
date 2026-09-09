@@ -5,6 +5,7 @@ import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Transaction
+import androidx.room.Upsert
 import kotlinx.coroutines.flow.Flow
 
 /** Reads and writes for failover groups and their membership (SPEC 10.1.1). */
@@ -21,7 +22,20 @@ interface FailoverGroupDao {
     @Query("SELECT * FROM failover_groups WHERE id = :id")
     suspend fun find(id: String): FailoverGroup?
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    /**
+     * Stores [group], replacing an earlier version of it.
+     *
+     * `@Upsert` rather than `@Insert(onConflict = REPLACE)`. The two sound
+     * alike and are not: `INSERT OR REPLACE` is a *delete* followed by an
+     * insert, so every `ON DELETE CASCADE` pointing at the row fires, and the
+     * children are gone before the new row lands. `@Upsert` updates the row in
+     * place, which is what saving an edit was always supposed to mean.
+     *
+     * Here the children are the group's own membership rows. They survived only
+     * because [setMembers] runs immediately afterwards and writes them again;
+     * that ordering is no longer load-bearing.
+     */
+    @Upsert
     suspend fun upsert(group: FailoverGroup)
 
     @Query("DELETE FROM failover_groups WHERE id = :id")
