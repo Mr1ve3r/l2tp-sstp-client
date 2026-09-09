@@ -2,7 +2,7 @@ name: tunnel_forge
 description: L2/SS/TP - L2TP/IPsec and SSTP VPN for Android.
 publish_to: "none"
 
-version: 0.4.0+4
+version: 0.5.0+5
 
 environment:
   sdk: ^3.11.0
