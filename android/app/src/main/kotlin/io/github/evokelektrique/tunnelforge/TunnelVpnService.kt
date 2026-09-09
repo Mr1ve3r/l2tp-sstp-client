@@ -150,9 +150,9 @@ class TunnelVpnService : VpnService() {
         mainHandler.postDelayed(pendingStopSelfRunnable, 300L)
     }
 
-    // This application stays outside the tunnel in every mode (SPEC 3.1).
-    // Upstream did the opposite; see effectiveInclusivePackages for the
-    // reasoning and docs/MANUAL_TEST_PHASE3.md for what that changed.
+    // This application travels inside the tunnel in every mode. It is put
+    // there by TunnelBuilder rather than by these lists: the user's selection
+    // is the user's, and this application is not something they picked.
     private fun perAppRoutingFor(
         splitTunnelEnabled: Boolean,
         splitTunnelMode: String,
@@ -701,7 +701,7 @@ class TunnelVpnService : VpnService() {
                             effectiveExclusivePkgs,
                         ),
                     ipv4Only = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q,
-                    excludeOwnPackage = packageName,
+                    ownPackage = packageName,
                     // SPEC 3.1.1 asks for this; upstream never called it. The
                     // choice was deferred to phase 4 and taken there (SPEC В.1).
                     //
@@ -1852,14 +1852,17 @@ class TunnelVpnService : VpnService() {
             }
 
         /**
-         * Packages to route through the tunnel in inclusive mode.
+         * Packages the *user* chose to route through the tunnel in inclusive
+         * mode.
          *
-         * This application is **not** among them. Upstream TunnelForge added it
-         * here, so its own traffic went through the tunnel; SPEC 3.1 asks for
-         * the opposite, and the project owner confirmed that choice. The app
-         * reaches the network only to carry the tunnel, and those sockets are
-         * already excluded through [SocketProtector][
-         * io.github.mr1ve3r.combined.engine.SocketProtector].
+         * This application is filtered out of the selection rather than added
+         * to it, and that has not changed: the picker offers installed
+         * applications, and this one is not a choice the user should have to
+         * make. It does travel inside the tunnel — `TunnelBuilder` names it
+         * separately, from [TunnelConfig.ownPackage][
+         * io.github.mr1ve3r.combined.core.tunnel.TunnelConfig.ownPackage] —
+         * because a connectivity check that went around the tunnel measured
+         * the wrong network, which is what it did until that changed.
          *
          * @param selfPackageName this application, filtered out rather than
          *   added. Kept as a parameter so the intent is visible at call sites.

@@ -478,7 +478,8 @@ void main() {
 
     expect(
       find.text(
-        'Enter an http(s) URL, or an address like 10.0.0.1 or probe.example:53',
+        'Enter an http(s) URL, a service like smb://disk.example, '
+        'or an address like 10.0.0.1:445',
       ),
       findsOneWidget,
     );
@@ -504,6 +505,29 @@ void main() {
 
     expect(find.textContaining('Enter an http(s) URL'), findsNothing);
     expect(changed?.url, '10.0.0.1:53');
+  });
+
+  /// The shape an SMB share is named in: a scheme standing for a port number.
+  testWidgets('a service scheme is accepted as a check target', (tester) async {
+    ConnectivityCheckSettings? changed;
+    await tester.pumpWidget(
+      buildPanel(
+        proxySettings: const ProxySettings(),
+        connectionMode: ConnectionMode.vpnTunnel,
+        onConnectivityCheckSettingsChanged: (settings) => changed = settings,
+      ),
+    );
+
+    await tester.scrollUntilVisible(
+      connectivityUrlField(),
+      200,
+      scrollable: settingsScrollView(),
+    );
+    await tester.enterText(connectivityUrlField(), 'smb://disk.corp.example');
+    await tester.pump();
+
+    expect(find.textContaining('Enter an http(s) URL'), findsNothing);
+    expect(changed?.url, 'smb://disk.corp.example');
   });
 
   testWidgets('invalid connectivity timeout shows validation error', (

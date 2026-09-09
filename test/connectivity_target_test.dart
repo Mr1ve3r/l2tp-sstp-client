@@ -64,6 +64,73 @@ void main() {
       expect(ported.port, 853);
     });
 
+    /// The case this was asked for: an SMB share that answers to its name.
+    /// A scheme is a name for a port number, so nothing has to be remembered.
+    test('a service scheme is dialled on the port it stands for', () {
+      final smb =
+          ConnectivityCheckTarget.tryParse('smb://disk.corp.example')
+              as TcpCheckTarget;
+      expect(smb.host, 'disk.corp.example');
+      expect(smb.port, 445);
+
+      expect(
+        (ConnectivityCheckTarget.tryParse('rdp://ts.corp.example')
+                as TcpCheckTarget)
+            .port,
+        3389,
+      );
+      expect(
+        (ConnectivityCheckTarget.tryParse('ssh://git.corp.example')
+                as TcpCheckTarget)
+            .port,
+        22,
+      );
+      expect(
+        (ConnectivityCheckTarget.tryParse('dns://10.0.0.1') as TcpCheckTarget)
+            .port,
+        53,
+      );
+    });
+
+    test('an explicit port wins over the scheme default', () {
+      final target =
+          ConnectivityCheckTarget.tryParse('smb://disk.corp.example:4445')
+              as TcpCheckTarget;
+
+      expect(target.host, 'disk.corp.example');
+      expect(target.port, 4445);
+    });
+
+    test('tcp:// is the escape hatch for anything unlisted', () {
+      final target =
+          ConnectivityCheckTarget.tryParse('tcp://build.corp.example:8443')
+              as TcpCheckTarget;
+
+      expect(target.host, 'build.corp.example');
+      expect(target.port, 8443);
+    });
+
+    test('a scheme is read whatever its case, with or without slashes', () {
+      for (final text in <String>[
+        'SMB://disk.corp.example',
+        'smb:disk.corp.example',
+        'smb:/disk.corp.example',
+      ]) {
+        final target = ConnectivityCheckTarget.tryParse(text);
+        expect(target, isA<TcpCheckTarget>(), reason: text);
+        expect((target as TcpCheckTarget).port, 445, reason: text);
+      }
+    });
+
+    /// Reaching the server is all that can be measured, so a share name is not
+    /// quietly accepted and then ignored.
+    test('a path after the host is refused', () {
+      expect(
+        ConnectivityCheckTarget.tryParse('smb://disk.example/share'),
+        isNull,
+      );
+    });
+
     test('a scheme this application cannot speak is refused', () {
       expect(ConnectivityCheckTarget.tryParse('ftp://example.org'), isNull);
       expect(ConnectivityCheckTarget.tryParse('file:///etc/hosts'), isNull);

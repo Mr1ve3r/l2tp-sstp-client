@@ -97,24 +97,26 @@ class TunnelBuilder(
     private fun applyPerAppRouting(spec: TunnelInterfaceSpec, config: TunnelConfig) {
         when (val routing = config.perAppRouting) {
             is PerAppRouting.AllApps -> {
+                // This application included: it is an application on the device
+                // like any other, and its connectivity check is only worth
+                // anything if it travels the way everything else does.
                 onEvent("per-app routing off: full-device tunnel")
-                config.excludeOwnPackage?.let(spec::addDisallowedApplication)
             }
 
             is PerAppRouting.Include -> {
-                // Self-exclusion is meaningless here: anything not named is
-                // already outside the tunnel.
-                onEvent("per-app routing inclusive: ${routing.packages.size} package(s)")
-                routing.packages.forEach(spec::addAllowedApplication)
+                // Nothing here is in the tunnel unless it is named, so this is
+                // the one mode where the application has to name itself.
+                val packages =
+                    config.ownPackage
+                        ?.let { routing.packages + it }
+                        ?: routing.packages
+                onEvent("per-app routing inclusive: ${packages.size} package(s)")
+                packages.forEach(spec::addAllowedApplication)
             }
 
             is PerAppRouting.Exclude -> {
-                val packages =
-                    config.excludeOwnPackage
-                        ?.let { routing.packages + it }
-                        ?: routing.packages
-                onEvent("per-app routing exclusive: ${packages.size} package(s)")
-                packages.forEach(spec::addDisallowedApplication)
+                onEvent("per-app routing exclusive: ${routing.packages.size} package(s)")
+                routing.packages.forEach(spec::addDisallowedApplication)
             }
         }
     }

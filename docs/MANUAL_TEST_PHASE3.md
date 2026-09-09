@@ -114,6 +114,24 @@ the app to the inclusive list, with two tests asserting it, so
 `effectiveInclusivePackages` now filters the package out instead and those
 tests were rewritten. Item R3 below re-checks the mode this affects.
 
+> **Reversed on 2026-09-08.** Testing the connectivity check against an
+> internal host showed what the exclusion cost: `addDisallowedApplication`
+> works on the whole UID, so every socket the application opened went over the
+> underlying network. The check therefore measured the phone's ordinary
+> internet rather than the tunnel — invisible against a public probe like
+> `generate_204`, fatal against a host that only exists behind the VPN.
+>
+> The application now travels inside the tunnel in all three modes, named by
+> `TunnelConfig.ownPackage`. Nothing about the transport depended on the
+> exclusion: the sockets that carry the tunnel are protected individually
+> through `SocketProtector`, and the peer's own address is kept off the
+> tunnel's routes through `TunnelParams.excludedRoutes`. R3 still applies, and
+> is now the check that the application is *inside* the tunnel.
+>
+> `effectiveInclusivePackages` still filters the package out of the *user's*
+> selection: the picker lists installed applications, and this one is not a
+> choice the user should have to make.
+
 **13. `setBlocking` stays unset.** Upstream never calls it, so the descriptor
 handed to the native L2TP loop keeps its current read semantics. This matches
 what `TunnelConfig` already defaulted to; no code changed.
