@@ -94,6 +94,12 @@
   "lanSharingEnabled": "LAN sharing is enabled for this session.",
   "connectToDetectLan": "Connect to detect the current LAN IP for other devices.",
   "lanDisabled": "LAN access is disabled.",
+  "profileConnectivityHelp": "Leave empty to use the connectivity check set in Settings. Accepts an http(s) URL, a service such as smb://disk.example, or a plain host:445. An organisation handing out a set can point this at a probe only reachable through the tunnel.",
+  "systemSurfaces": "Notification and tile",
+  "notificationDisconnectButton": "Disconnect button in the notification",
+  "notificationDisconnectButtonHelp": "The ongoing notification cannot be hidden — Android requires one while the tunnel runs — but its button can. Turn this off for a quieter shade.",
+  "quickSettingsTile": "Quick Settings tile",
+  "quickSettingsTileHelp": "Offers the tile in Android's tile editor. Turning it off removes a tile you have already placed; turning it back on puts it back in the editor, ready to be added again.",
   "connectivityCheck": "Connectivity check",
   "batteryOptimization": "Battery optimization",
   "batteryOptimizationAllowed": "Allowed for background use.",
@@ -102,8 +108,8 @@
   "batteryOptimizationUnknown": "Status unavailable.",
   "allowBackgroundVpn": "Allow",
   "statusCheckUrl": "Status check URL",
-  "statusCheckHelp": "Used for the status check after you connect. Tap the badge anytime to refresh.",
-  "connectivityUrl": "Connectivity URL",
+  "statusCheckHelp": "Used for the status check after you connect. Tap the badge anytime to refresh. An http(s) URL is fetched and judged by its status; anything else is dialled and timed — smb://disk.example, rdp://, ssh://, dns://, tcp://host:8443, or a plain host:445.",
+  "connectivityUrl": "Connectivity check target",
   "connectivityTimeout": "Connectivity timeout (ms)",
   "timeoutHelp": "Maximum time to wait before marking the check unreachable.",
   "l2tpSecurityNotice": "L2TP security notice",
@@ -219,6 +225,19 @@
   "profileSetNameHint": "e.g. Acme corporate VPN",
   "profileSetIncludes": "The set carries the pre-shared key, the proxy details and the certificates. The VPN username and password are left out, so each person enters their own.",
   "chooseProfilesForSet": "Choose the profiles to include",
+  "groupHasNoChosenProfiles": "None of its profiles are selected",
+  "includeConnectivityCheck": "Include the connectivity check",
+  "includeConnectivityCheckHelp": "The profile carries the check URL or address it names. Leave it out when the file is going outside the network that host is on.",
+  "chooseGroupsForSet": "Failover groups to include",
+  "groupNeedsItsProfiles": "Tick all of its profiles to include this group",
+  "importedFailoverGroups": "{count, plural, =1{1 group} other{{count} groups}}",
+  "@importedFailoverGroups": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "noProfilesSelected": "Choose at least one profile.",
   "setPassword": "Set password",
   "confirmSetPassword": "Confirm password",
@@ -583,8 +602,7 @@
   "couldNotOpenTelegram": "Could not open Telegram.",
   "githubLinkInvalid": "GitHub link is invalid.",
   "couldNotOpenGithub": "Could not open GitHub.",
-  "enterValidHttpUrl": "Enter a valid absolute HTTP or HTTPS URL",
-  "onlyHttpAndHttpsSupported": "Only HTTP and HTTPS URLs are supported",
+  "enterValidCheckTarget": "Enter an http(s) URL, a service like smb://disk.example, or an address like 10.0.0.1:445",
   "enterWholeNumberOfMilliseconds": "Enter a whole number of milliseconds",
   "enterTimeoutGreaterThanZero": "Enter a timeout greater than 0 ms",
   "dnsRequirementHostnameOrIpv4": "hostname or IPv4",

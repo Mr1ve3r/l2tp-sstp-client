@@ -224,6 +224,26 @@ final class ProfileFormProxyUsernameChanged extends ProfileFormEvent {
   List<Object?> get props => [value];
 }
 
+/// The profile's own connectivity check endpoint. Empty means the
+/// application-wide setting.
+final class ProfileFormConnectivityUrlChanged extends ProfileFormEvent {
+  const ProfileFormConnectivityUrlChanged(this.value);
+
+  final String value;
+
+  @override
+  List<Object?> get props => [value];
+}
+
+final class ProfileFormConnectivityTimeoutChanged extends ProfileFormEvent {
+  const ProfileFormConnectivityTimeoutChanged(this.value);
+
+  final String value;
+
+  @override
+  List<Object?> get props => [value];
+}
+
 final class ProfileFormProxyPasswordChanged extends ProfileFormEvent {
   const ProfileFormProxyPasswordChanged(this.value);
 
@@ -267,6 +287,8 @@ class ProfileFormState extends Equatable {
     this.proxyPort = '${Profile.defaultProxyPort}',
     this.proxyUsername = '',
     this.proxyPassword = '',
+    this.connectivityUrl = '',
+    this.connectivityTimeoutMs = '',
     this.trustOptions = const TrustOptions(),
     this.messageId = 0,
     this.message,
@@ -307,6 +329,11 @@ class ProfileFormState extends Equatable {
   final String proxyUsername;
   final String proxyPassword;
 
+  /// This profile's own connectivity check. Both blank means the
+  /// application-wide setting is used, which is what most profiles say.
+  final String connectivityUrl;
+  final String connectivityTimeoutMs;
+
   /// What the certificate store offers this form.
   final TrustOptions trustOptions;
 
@@ -346,6 +373,14 @@ class ProfileFormState extends Equatable {
       dnsAutomatic ? null : _dnsErrorText('DNS 2', dns2, dns2Protocol);
   String? get mtuErrorText => _mtuValidationMessage(mtu);
 
+  /// Blank is not an error: it is how a profile says "use the global setting".
+  String? get connectivityUrlErrorText => connectivityUrl.trim().isEmpty
+      ? null
+      : ConnectivityCheckSettings.validateUrl(connectivityUrl);
+
+  String? get connectivityTimeoutErrorText =>
+      ConnectivityCheckSettings.validateTimeoutMs(connectivityTimeoutMs);
+
   ProfileFormState copyWith({
     String? profileId,
     bool? loading,
@@ -376,6 +411,8 @@ class ProfileFormState extends Equatable {
     String? proxyPort,
     String? proxyUsername,
     String? proxyPassword,
+    String? connectivityUrl,
+    String? connectivityTimeoutMs,
     TrustOptions? trustOptions,
     int? messageId,
     String? message,
@@ -412,6 +449,9 @@ class ProfileFormState extends Equatable {
       proxyPort: proxyPort ?? this.proxyPort,
       proxyUsername: proxyUsername ?? this.proxyUsername,
       proxyPassword: proxyPassword ?? this.proxyPassword,
+      connectivityUrl: connectivityUrl ?? this.connectivityUrl,
+      connectivityTimeoutMs:
+          connectivityTimeoutMs ?? this.connectivityTimeoutMs,
       trustOptions: trustOptions ?? this.trustOptions,
       messageId: messageId ?? this.messageId,
       message: clearMessage ? null : (message ?? this.message),
@@ -449,6 +489,8 @@ class ProfileFormState extends Equatable {
     proxyPort,
     proxyUsername,
     proxyPassword,
+    connectivityUrl,
+    connectivityTimeoutMs,
     trustOptions,
     messageId,
     message,
@@ -584,6 +626,15 @@ class ProfileFormBloc extends Bloc<ProfileFormEvent, ProfileFormState> {
       (event, emit) =>
           emit(state.copyWith(proxyPassword: event.value, saved: false)),
     );
+    on<ProfileFormConnectivityUrlChanged>(
+      (event, emit) =>
+          emit(state.copyWith(connectivityUrl: event.value, saved: false)),
+    );
+    on<ProfileFormConnectivityTimeoutChanged>(
+      (event, emit) => emit(
+        state.copyWith(connectivityTimeoutMs: event.value.trim(), saved: false),
+      ),
+    );
     on<ProfileFormSaveRequested>(_onSaveRequested);
   }
 
@@ -633,6 +684,8 @@ class ProfileFormBloc extends Bloc<ProfileFormEvent, ProfileFormState> {
           proxyPort: '${Profile.defaultProxyPort}',
           proxyUsername: '',
           proxyPassword: '',
+          connectivityUrl: '',
+          connectivityTimeoutMs: '',
           saved: false,
         ),
       );
@@ -682,6 +735,10 @@ class ProfileFormBloc extends Bloc<ProfileFormEvent, ProfileFormState> {
         proxyPort: '${profile.proxyPort}',
         proxyUsername: profile.proxyUsername,
         proxyPassword: row.proxyPassword,
+        connectivityUrl: profile.connectivityCheckUrl,
+        connectivityTimeoutMs: profile.connectivityCheckTimeoutMs > 0
+            ? '${profile.connectivityCheckTimeoutMs}'
+            : '',
       ),
     );
   }
@@ -702,6 +759,16 @@ class ProfileFormBloc extends Bloc<ProfileFormEvent, ProfileFormState> {
     final serverTrim = state.server.trim();
     if (serverTrim.isEmpty) {
       emit(_messageState(AppText.current.enterServerAddress));
+      return;
+    }
+    final connectivityUrlErrorText = state.connectivityUrlErrorText;
+    if (connectivityUrlErrorText != null) {
+      emit(_messageState(connectivityUrlErrorText));
+      return;
+    }
+    final connectivityTimeoutErrorText = state.connectivityTimeoutErrorText;
+    if (connectivityTimeoutErrorText != null) {
+      emit(_messageState(connectivityTimeoutErrorText));
       return;
     }
     final mtuErrorText = state.mtuErrorText;
@@ -828,6 +895,11 @@ class ProfileFormBloc extends Bloc<ProfileFormEvent, ProfileFormState> {
         proxyPort:
             int.tryParse(state.proxyPort.trim()) ?? Profile.defaultProxyPort,
         proxyUsername: state.proxyUsername.trim(),
+        connectivityCheckUrl: state.connectivityUrl.trim(),
+        // A blank field is not zero-the-number, it is "no override": both
+        // spellings store zero, and zero is what falls back to the global one.
+        connectivityCheckTimeoutMs:
+            int.tryParse(state.connectivityTimeoutMs.trim()) ?? 0,
       );
       await _profilesRepository.upsertProfile(
         profile,

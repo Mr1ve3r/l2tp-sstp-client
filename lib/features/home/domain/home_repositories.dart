@@ -45,7 +45,16 @@ abstract class ProfilesRepository {
 
   /// Writes the profile out. Without [password] the file carries no secret;
   /// with one, the secrets go inside an encrypted container (SPEC 8.1.4).
-  Future<void> exportProfileFile(String id, {String? password});
+  ///
+  /// [includeConnectivityCheck] says whether the profile's own connectivity
+  /// check goes with it. It names a host on the sender's network, which is
+  /// worth handing over inside an organisation and worth leaving out when the
+  /// file is going anywhere else.
+  Future<void> exportProfileFile(
+    String id, {
+    String? password,
+    bool includeConnectivityCheck = true,
+  });
 
   /// Writes several profiles out as one sealed set.
   ///
@@ -53,10 +62,16 @@ abstract class ProfilesRepository {
   /// around, and by default it carries the pre-shared key. [secrets] says what
   /// travels; the default leaves out the login and password, which belong to
   /// whoever receives the set rather than to whoever made it.
+  ///
+  /// [groupIds] names the failover groups to put in the set. A group whose
+  /// members are not all in [profileIds] is left out: it would arrive as a
+  /// group that is missing the server it exists to fall back to.
   Future<void> exportProfileBundle({
     required List<String> profileIds,
     required String bundleName,
     required String password,
+    List<String> groupIds,
+    bool includeConnectivityCheck,
     TransferSecrets secrets,
   });
 
@@ -75,9 +90,14 @@ abstract class ProfilesRepository {
   Future<void> clearProfileAwaitingCredentials(String id);
 
   /// Stores the entries of [bundle] that [choices] asks for.
+  ///
+  /// [groupIndexes] names the failover groups to keep, by index into
+  /// [ProfileBundle.groups]. Null means all of them, which is what a caller
+  /// that never showed the user a choice means.
   Future<BundleImportResult> importProfileBundle({
     required ProfileBundle bundle,
     required List<BundleImportChoice> choices,
+    List<int>? groupIndexes,
   });
   String newProfileId();
 }
@@ -92,6 +112,13 @@ abstract class SettingsRepository {
   Future<ConnectivityCheckSettings> loadConnectivityCheckSettings();
   Future<void> saveConnectivityCheckSettings(
     ConnectivityCheckSettings settings,
+  );
+
+  /// Which system surfaces the application shows: the notification's button
+  /// and the Quick Settings tile (SPEC 7.1.3, 7.1.4).
+  Future<SystemSurfaceSettings> loadSystemSurfaceSettings();
+  Future<SystemSurfaceSettings> saveSystemSurfaceSettings(
+    SystemSurfaceSettings settings,
   );
   Future<LogDisplayLevel> loadLogDisplayLevel();
   Future<void> saveLogDisplayLevel(LogDisplayLevel level);

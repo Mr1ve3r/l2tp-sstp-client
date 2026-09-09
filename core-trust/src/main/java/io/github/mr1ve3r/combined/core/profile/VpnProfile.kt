@@ -1,5 +1,6 @@
 package io.github.mr1ve3r.combined.core.profile
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.PrimaryKey
 import androidx.room.TypeConverters
@@ -85,6 +86,17 @@ data class VpnProfile(
     val proxyPort: Int = DEFAULT_PROXY_PORT,
     val proxyUsername: String = "",
     val proxyPasswordRef: String = "",
+    // Connectivity check. Empty and zero mean "use the application-wide
+    // setting"; a profile handed out by an organisation can name a probe of
+    // its own that is only reachable through the tunnel.
+    //
+    // The SQL defaults are declared rather than left to Kotlin because these
+    // two columns arrive by `ALTER TABLE ADD COLUMN`, which SQLite will not do
+    // for a `NOT NULL` column without one. Room validates the default it finds
+    // against the schema it exported, so the annotation is what keeps
+    // `MIGRATION_3_4` and a freshly created database the same table.
+    @ColumnInfo(defaultValue = "") val connectivityCheckUrl: String = "",
+    @ColumnInfo(defaultValue = "0") val connectivityCheckTimeoutMs: Int = 0,
 ) {
     /** The applications [perAppMode] applies to, or empty when it applies to none. */
     val activeAppList: List<String>

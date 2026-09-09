@@ -30,7 +30,7 @@ import io.github.mr1ve3r.combined.core.profile.VpnProfile
         FailoverGroup::class,
         FailoverGroupMember::class,
     ],
-    version = 3,
+    version = 4,
     exportSchema = true,
 )
 @TypeConverters(StringListConverter::class, ProfileConverters::class)
@@ -55,7 +55,7 @@ abstract class TrustDatabase : RoomDatabase() {
 
         private fun build(context: Context): TrustDatabase = Room
             .databaseBuilder(context, TrustDatabase::class.java, NAME)
-            .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
             .build()
 
         /**
@@ -128,6 +128,25 @@ abstract class TrustDatabase : RoomDatabase() {
         private const val CREATE_FAILOVER_GROUP_MEMBER_INDEX =
             "CREATE INDEX IF NOT EXISTS `index_failover_group_member_profileId` " +
                 "ON `failover_group_member` (`profileId`)"
+
+        /**
+         * Gives a profile a connectivity check of its own (SPEC 8.1).
+         *
+         * Two columns added to a table users already have rows in, which
+         * SQLite does without rebuilding it because both are `NOT NULL` with a
+         * default. The defaults are what every existing profile means: no
+         * override, so the application-wide setting is used.
+         */
+        val MIGRATION_3_4: Migration = object : Migration(3, 4) {
+            override fun migrate(connection: SupportSQLiteDatabase) {
+                connection.execSQL(
+                    "ALTER TABLE `profiles` ADD COLUMN `connectivityCheckUrl` TEXT NOT NULL DEFAULT ''",
+                )
+                connection.execSQL(
+                    "ALTER TABLE `profiles` ADD COLUMN `connectivityCheckTimeoutMs` INTEGER NOT NULL DEFAULT 0",
+                )
+            }
+        }
 
         val MIGRATION_2_3: Migration = object : Migration(2, 3) {
             override fun migrate(connection: SupportSQLiteDatabase) {

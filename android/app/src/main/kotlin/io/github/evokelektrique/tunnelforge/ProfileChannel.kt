@@ -27,6 +27,14 @@ class ProfileChannel(
     private val groups: FailoverGroupStore,
     private val scope: CoroutineScope,
     private val clock: () -> Long = System::currentTimeMillis,
+    /**
+     * Called after the surface preferences were written, so the tile component
+     * and a notification that is already showing catch up with them. Android
+     * work rather than store work, which is why it arrives as a callback
+     * instead of a [android.content.Context] this class would otherwise not
+     * need.
+     */
+    private val onUiPreferencesChanged: () -> Unit = {},
 ) {
     /** Answers one call. Success and failure are both reported through [reply]. */
     fun handle(method: String, arguments: Any?, reply: TrustChannel.Reply) {
@@ -47,6 +55,19 @@ class ProfileChannel(
                     return
                 }
                 answer(reply) { saveGroup(map) }
+            }
+
+            ProfileContract.LOAD_UI_PREFERENCES -> reply.success(uiPreferences())
+
+            ProfileContract.SAVE_UI_PREFERENCES -> {
+                profiles.setNotificationDisconnectActionEnabled(
+                    args?.get(ProfileContract.FIELD_NOTIFICATION_DISCONNECT_ACTION) as? Boolean ?: true,
+                )
+                profiles.setQuickSettingsTileEnabled(
+                    args?.get(ProfileContract.FIELD_QUICK_SETTINGS_TILE) as? Boolean ?: true,
+                )
+                onUiPreferencesChanged()
+                reply.success(uiPreferences())
             }
 
             ProfileContract.LAST_PROFILE_ID -> reply.success(profiles.lastProfileId())
@@ -142,6 +163,11 @@ class ProfileChannel(
         val stored = groups.save(group, memberIds)
         return writeGroup(stored, groups.findWithMembers(stored.id)?.members?.map { it.id } ?: emptyList())
     }
+
+    private fun uiPreferences(): Map<String, Any?> = mapOf(
+        ProfileContract.FIELD_NOTIFICATION_DISCONNECT_ACTION to profiles.notificationDisconnectActionEnabled(),
+        ProfileContract.FIELD_QUICK_SETTINGS_TILE to profiles.quickSettingsTileEnabled(),
+    )
 
     private fun writeGroup(group: FailoverGroup, memberIds: List<String>): Map<String, Any?> = mapOf(
         ProfileContract.GROUP_FIELD_ID to group.id,

@@ -2,6 +2,7 @@ import 'package:equatable/equatable.dart';
 
 import 'package:tunnel_forge/core/vpn_protocol.dart';
 import 'package:tunnel_forge/features/trust/domain/trust_models.dart';
+import 'package:tunnel_forge/core/network/connectivity_target.dart';
 import 'package:tunnel_forge/l10n/app_localizations.dart';
 
 /// Connection surface: Android VPN/TUN vs. local proxy listeners only.
@@ -304,7 +305,54 @@ class ProxyExposure {
   );
 }
 
-/// Global endpoint used by the connectivity badge for direct reachability checks.
+/// Which system surfaces the application puts itself on (SPEC 7.1.3, 7.1.4).
+///
+/// Both default to on, which is what the application has always done. They are
+/// stored by the host rather than in Flutter's own preferences: the service
+/// posts its notification on paths where no Dart code is running, so a flag
+/// only Flutter could read would be lost on an always-on start.
+///
+/// The ongoing notification itself is not among them. A foreground service must
+/// have one, so what the setting takes away is the button on it.
+class SystemSurfaceSettings {
+  const SystemSurfaceSettings({
+    this.disconnectActionEnabled = true,
+    this.quickSettingsTileEnabled = true,
+  });
+
+  /// The "Disconnect" button on the ongoing notification.
+  final bool disconnectActionEnabled;
+
+  /// Whether the Quick Settings tile is offered in the tile editor.
+  final bool quickSettingsTileEnabled;
+
+  SystemSurfaceSettings copyWith({
+    bool? disconnectActionEnabled,
+    bool? quickSettingsTileEnabled,
+  }) => SystemSurfaceSettings(
+    disconnectActionEnabled:
+        disconnectActionEnabled ?? this.disconnectActionEnabled,
+    quickSettingsTileEnabled:
+        quickSettingsTileEnabled ?? this.quickSettingsTileEnabled,
+  );
+
+  @override
+  bool operator ==(Object other) =>
+      other is SystemSurfaceSettings &&
+      disconnectActionEnabled == other.disconnectActionEnabled &&
+      quickSettingsTileEnabled == other.quickSettingsTileEnabled;
+
+  @override
+  int get hashCode =>
+      Object.hash(disconnectActionEnabled, quickSettingsTileEnabled);
+}
+
+/// Global endpoint used by the connectivity badge for direct reachability
+/// checks.
+///
+/// [url] is a URL only by name and by history. Since an address is also
+/// accepted — `10.0.0.1`, `probe.acme.internal:53` — what it really holds is a
+/// [ConnectivityCheckTarget]; see [target].
 class ConnectivityCheckSettings {
   const ConnectivityCheckSettings({
     this.url = defaultUrl,
@@ -334,15 +382,19 @@ class ConnectivityCheckSettings {
     return value;
   }
 
+  /// What this setting aims at, or null when it names nothing usable.
+  ConnectivityCheckTarget? get target =>
+      ConnectivityCheckTarget.tryParse(normalizeUrl(url));
+
+  /// Why [text] cannot be checked, or null if it can.
+  ///
+  /// An address without a scheme is accepted: it is dialled as a socket rather
+  /// than fetched, which is the only thing that can be done with a gateway or a
+  /// resolver, and the only thing worth doing with a host that speaks no HTTP.
   static String? validateUrl(String text) {
     final normalized = normalizeUrl(text);
-    final uri = Uri.tryParse(normalized);
-    if (uri == null || !uri.hasScheme || uri.host.isEmpty) {
-      return AppText.current.enterValidHttpUrl;
-    }
-    final scheme = uri.scheme.toLowerCase();
-    if (scheme != 'http' && scheme != 'https') {
-      return AppText.current.onlyHttpAndHttpsSupported;
+    if (ConnectivityCheckTarget.tryParse(normalized) == null) {
+      return AppText.current.enterValidCheckTarget;
     }
     return null;
   }
@@ -569,6 +621,8 @@ class Profile {
     this.proxyHost = '',
     this.proxyPort = defaultProxyPort,
     this.proxyUsername = '',
+    this.connectivityCheckUrl = '',
+    this.connectivityCheckTimeoutMs = 0,
   });
 
   /// TUN interface MTU (bytes). Shared default for new profiles and quick-connect.
@@ -621,6 +675,17 @@ class Profile {
   final int proxyPort;
   final String proxyUsername;
 
+  /// Where the connectivity badge points while this profile is up, and how
+  /// long it waits, overriding the application-wide [ConnectivityCheckSettings].
+  ///
+  /// Empty and zero mean "use the global setting", which is what every profile
+  /// made before this field existed says. An organisation handing out a set can
+  /// name its own probe — one that is only reachable through the tunnel — and
+  /// have it travel with the profiles, because the export carries the profile
+  /// map whole.
+  final String connectivityCheckUrl;
+  final int connectivityCheckTimeoutMs;
+
   /// Where an SSTP server listens when a profile names no port.
   static const int defaultSstpPort = 443;
 
@@ -664,6 +729,8 @@ class Profile {
     String? proxyHost,
     int? proxyPort,
     String? proxyUsername,
+    String? connectivityCheckUrl,
+    int? connectivityCheckTimeoutMs,
   }) {
     return Profile(
       id: id ?? this.id,
@@ -698,6 +765,27 @@ class Profile {
       proxyHost: proxyHost ?? this.proxyHost,
       proxyPort: proxyPort ?? this.proxyPort,
       proxyUsername: proxyUsername ?? this.proxyUsername,
+      connectivityCheckUrl: connectivityCheckUrl ?? this.connectivityCheckUrl,
+      connectivityCheckTimeoutMs:
+          connectivityCheckTimeoutMs ?? this.connectivityCheckTimeoutMs,
+    );
+  }
+
+  /// The connectivity check to run for this profile: its own where it names
+  /// one, [fallback] otherwise.
+  ///
+  /// The two halves fall back separately. A profile that names a URL but no
+  /// timeout means "this endpoint, the usual patience", not "this endpoint,
+  /// five seconds because that is the constant".
+  ConnectivityCheckSettings effectiveConnectivityCheck(
+    ConnectivityCheckSettings fallback,
+  ) {
+    final url = connectivityCheckUrl.trim();
+    return ConnectivityCheckSettings(
+      url: url.isEmpty ? fallback.url : url,
+      timeoutMs: connectivityCheckTimeoutMs > 0
+          ? connectivityCheckTimeoutMs
+          : fallback.timeoutMs,
     );
   }
 
@@ -905,6 +993,8 @@ class Profile {
     'proxyHost': proxyHost,
     'proxyPort': proxyPort,
     'proxyUsername': proxyUsername,
+    'connectivityCheckUrl': connectivityCheckUrl,
+    'connectivityCheckTimeoutMs': connectivityCheckTimeoutMs,
   };
 
   /// The strings in [raw], trimmed, without blanks or repeats.
@@ -1005,6 +1095,9 @@ class Profile {
       proxyHost: (m['proxyHost'] as String?)?.trim() ?? '',
       proxyPort: _intOr(m['proxyPort'], defaultProxyPort),
       proxyUsername: (m['proxyUsername'] as String?) ?? '',
+      connectivityCheckUrl:
+          (m['connectivityCheckUrl'] as String?)?.trim() ?? '',
+      connectivityCheckTimeoutMs: _intOr(m['connectivityCheckTimeoutMs'], 0),
     );
   }
 }

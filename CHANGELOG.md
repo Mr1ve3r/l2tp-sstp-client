@@ -14,6 +14,69 @@ publish otherwise.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-09-09
+
+Failover groups travel with a shared set, the system surfaces can be turned
+down, and a connectivity check can be pointed at something that is actually
+behind the tunnel.
+
+### Added
+
+- **A profile set carries its failover groups.** An administrator who hands out
+  six profiles and the order to try them in now hands out both: the set is
+  version 6 and holds the groups alongside the profiles. A group names its
+  members by their position in the set rather than by profile id, because ids
+  belong to the device that made them and change on the way in. The export
+  offers a group only when every one of its profiles is ticked, the import
+  offers each group separately, and a member the recipient skipped is left out
+  rather than made to block the group. Handing the same set out again rewrites
+  the group it already created instead of leaving a second one beside it. Sets
+  written by 0.4.0 still open.
+- **The notification button and the Quick Settings tile can be turned off.** The
+  ongoing notification itself cannot: Android requires one while the tunnel
+  runs, so what the setting takes away is the "Disconnect" button on it. Both
+  flags are stored where the service can read them without the application
+  running, so an always-on tunnel that starts at boot honours them too.
+- **A profile can name its own connectivity check.** Left empty it uses the
+  application-wide setting, which is what every existing profile does, and the
+  endpoint and the timeout fall back separately. The check travels with the
+  profile in an export, and whether it does is a tick box rather than a default:
+  it names a host on the sender's network, and a recipient outside that network
+  would get a badge calling a working tunnel broken.
+- **A connectivity check can be an address or a service, not only a URL.** An
+  `http(s)` URL is still fetched and judged by its status code. Anything else is
+  dialled and timed, which is the only question that can be asked of a file
+  share, a gateway, a resolver, or anything else that speaks no HTTP:
+  `smb://disk.example`, `rdp://`, `ssh://`, `dns://`, `tcp://host:8443`, or a
+  plain `host:445`. A scheme is a name for a port number, and an explicit port
+  always wins over it.
+
+### Changed
+
+- **This application now travels inside its own tunnel.** It used to exclude
+  itself, and `addDisallowedApplication` works on the whole UID, so every socket
+  the application opened went over the underlying network — the connectivity
+  check among them. The check therefore measured the phone's ordinary internet
+  rather than the tunnel, which is invisible against a public probe and fatal
+  against a host that only exists behind the VPN. Nothing about the transport
+  depended on the exclusion: the sockets that carry the tunnel are protected one
+  by one, and the peer's own address is kept off the tunnel's routes. This
+  reverses a decision recorded under SPEC 3.1.
+
+### Fixed
+
+- **Saving a profile no longer removes it from its failover groups.** The store
+  wrote a row by deleting it and inserting a new one, and the membership table
+  cascades on that delete, so entering the login on a profile that arrived in a
+  shared set emptied it out of the group the set had just created. Memberships
+  already lost cannot be reconstructed and have to be filled in again once.
+- **Re-importing a certificate no longer strips it from the profiles that
+  selected it.** The same cause, on the certificate table: opening a shared set
+  a second time re-imported its certificates and took the trust anchor away from
+  every profile trusting them, including profiles unrelated to the set.
+- **The action row of the import sheet no longer overflows** when its buttons
+  are wider than the sheet, which they are in Russian.
+
 ## [0.4.0] - 2026-09-07
 
 Profiles can be handed out as a set, and the secrets in a transfer are now
@@ -238,7 +301,8 @@ to the phases in [`SPEC`](SPEC).
 - **Proxy-only mode**, inherited from TunnelForge, fails its L2TP handshake and
   has not been attributed to a cause. See SPEC appendix В.8.
 
-[Unreleased]: https://github.com/Mr1ve3r/l2tp-sstp-client/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/Mr1ve3r/l2tp-sstp-client/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/Mr1ve3r/l2tp-sstp-client/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/Mr1ve3r/l2tp-sstp-client/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/Mr1ve3r/l2tp-sstp-client/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/Mr1ve3r/l2tp-sstp-client/compare/v0.1.0...v0.2.0

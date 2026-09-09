@@ -187,6 +187,133 @@ void main() {
       expect(await store.loadProfiles(), hasLength(1));
     });
 
+    /// The set carries the order its gateways are tried in; the recipient
+    /// should not have to rebuild it by hand after every handout.
+    test('builds the failover group of the set out of what landed', () async {
+      final result = await repository.importProfileBundle(
+        bundle: ProfileBundle(
+          name: 'Acme',
+          entries: [
+            _entry(name: 'Amsterdam'),
+            _entry(name: 'Berlin'),
+          ],
+          groups: const [
+            BundledFailoverGroup(
+              name: 'Acme',
+              connectTimeoutSec: 25,
+              memberIndexes: [1, 0],
+            ),
+          ],
+        ),
+        choices: const [
+          BundleImportChoice(entryIndex: 0, action: BundleImportAction.add),
+          BundleImportChoice(entryIndex: 1, action: BundleImportAction.add),
+        ],
+      );
+
+      expect(result.groupsAdded, 1);
+      final groups = await store.loadFailoverGroups();
+      expect(groups, hasLength(1));
+      expect(groups.single.name, 'Acme');
+      expect(groups.single.connectTimeoutSec, 25);
+      final profiles = await store.loadProfiles();
+      final byName = <String, String>{
+        for (final profile in profiles) profile.displayName: profile.id,
+      };
+      // Berlin first, because that is the order the set put them in — not the
+      // order they happened to be stored.
+      expect(groups.single.memberIds, [byName['Berlin'], byName['Amsterdam']]);
+    });
+
+    test(
+      'a skipped member is left out rather than blocking the group',
+      () async {
+        final result = await repository.importProfileBundle(
+          bundle: ProfileBundle(
+            name: 'Acme',
+            entries: [
+              _entry(name: 'Amsterdam'),
+              _entry(name: 'Berlin'),
+            ],
+            groups: const [
+              BundledFailoverGroup(name: 'Acme', memberIndexes: [0, 1]),
+            ],
+          ),
+          choices: const [
+            BundleImportChoice(entryIndex: 0, action: BundleImportAction.add),
+            BundleImportChoice(entryIndex: 1, action: BundleImportAction.skip),
+          ],
+        );
+
+        expect(result.groupsAdded, 1);
+        final groups = await store.loadFailoverGroups();
+        expect(groups.single.memberIds, hasLength(1));
+      },
+    );
+
+    test('a group with nothing left is not created at all', () async {
+      final result = await repository.importProfileBundle(
+        bundle: ProfileBundle(
+          name: 'Acme',
+          entries: [_entry(name: 'Amsterdam')],
+          groups: const [
+            BundledFailoverGroup(name: 'Acme', memberIndexes: [0]),
+          ],
+        ),
+        choices: const [
+          BundleImportChoice(entryIndex: 0, action: BundleImportAction.skip),
+        ],
+      );
+
+      expect(result.groupsAdded, 0);
+      expect(await store.loadFailoverGroups(), isEmpty);
+    });
+
+    /// The same set is handed out again whenever the organisation changes
+    /// something, and the third handout should not leave three groups.
+    test('importing the same set twice rewrites its group', () async {
+      ProfileBundle bundle() => ProfileBundle(
+        name: 'Acme',
+        entries: [
+          _entry(name: 'Amsterdam'),
+          _entry(name: 'Berlin'),
+        ],
+        groups: const [
+          BundledFailoverGroup(
+            name: 'Acme',
+            connectTimeoutSec: 25,
+            memberIndexes: [0, 1],
+          ),
+        ],
+      );
+      const choices = [
+        BundleImportChoice(entryIndex: 0, action: BundleImportAction.add),
+        BundleImportChoice(entryIndex: 1, action: BundleImportAction.add),
+      ];
+
+      final first = await repository.importProfileBundle(
+        bundle: bundle(),
+        choices: choices,
+      );
+      final profiles = await store.loadProfiles();
+      final second = await repository.importProfileBundle(
+        bundle: bundle(),
+        choices: [
+          for (final profile in profiles)
+            BundleImportChoice(
+              entryIndex: profile.displayName == 'Amsterdam' ? 0 : 1,
+              action: BundleImportAction.replace,
+              targetProfileId: profile.id,
+            ),
+        ],
+      );
+
+      expect(first.groupsAdded, 1);
+      expect(second.groupsAdded, 0);
+      expect(second.groupsUpdated, 1);
+      expect(await store.loadFailoverGroups(), hasLength(1));
+    });
+
     test('deleting a profile stops it being marked as awaiting', () async {
       final result = await repository.importProfileBundle(
         bundle: ProfileBundle(name: 'Acme', entries: [_entry()]),

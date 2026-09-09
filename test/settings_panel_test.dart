@@ -29,6 +29,8 @@ void main() {
     ValueChanged<SplitTunnelSettings>? onSplitTunnelSettingsChanged,
     ValueChanged<ProxySettings>? onProxySettingsChanged,
     ValueChanged<ConnectivityCheckSettings>? onConnectivityCheckSettingsChanged,
+    SystemSurfaceSettings systemSurfaceSettings = const SystemSurfaceSettings(),
+    ValueChanged<SystemSurfaceSettings>? onSystemSurfaceSettingsChanged,
     VoidCallback? onRefreshBatteryOptimization,
     VoidCallback? onRequestBatteryOptimization,
     VoidCallback? onRefreshVersionCheck,
@@ -49,6 +51,7 @@ void main() {
           proxySettings: proxySettings,
           proxyExposure: proxyExposure,
           connectivityCheckSettings: connectivityCheckSettings,
+          systemSurfaceSettings: systemSurfaceSettings,
           batteryOptimizationStatus: batteryOptimizationStatus,
           batteryOptimizationBusy: batteryOptimizationBusy,
           onConnectionModeChanged: (_) {},
@@ -56,6 +59,8 @@ void main() {
           onProxySettingsChanged: onProxySettingsChanged ?? (_) {},
           onConnectivityCheckSettingsChanged:
               onConnectivityCheckSettingsChanged ?? (_) {},
+          onSystemSurfaceSettingsChanged:
+              onSystemSurfaceSettingsChanged ?? (_) {},
           onRefreshBatteryOptimization: onRefreshBatteryOptimization ?? () {},
           onRequestBatteryOptimization: onRequestBatteryOptimization ?? () {},
           onChooseApps: () {},
@@ -465,10 +470,64 @@ void main() {
       200,
       scrollable: settingsScrollView(),
     );
+    // A scheme this application cannot speak. A bare address is not an error
+    // any more -- it is dialled as a socket -- so the invalid case has to be
+    // something that is neither a URL it can fetch nor a host it can reach.
     await tester.enterText(connectivityUrlField(), 'ftp://example.com');
     await tester.pump();
 
-    expect(find.text('Only HTTP and HTTPS URLs are supported'), findsOneWidget);
+    expect(
+      find.text(
+        'Enter an http(s) URL, a service like smb://disk.example, '
+        'or an address like 10.0.0.1:445',
+      ),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('a bare address is accepted as a check target', (tester) async {
+    ConnectivityCheckSettings? changed;
+    await tester.pumpWidget(
+      buildPanel(
+        proxySettings: const ProxySettings(),
+        connectionMode: ConnectionMode.vpnTunnel,
+        onConnectivityCheckSettingsChanged: (settings) => changed = settings,
+      ),
+    );
+
+    await tester.scrollUntilVisible(
+      connectivityUrlField(),
+      200,
+      scrollable: settingsScrollView(),
+    );
+    await tester.enterText(connectivityUrlField(), '10.0.0.1:53');
+    await tester.pump();
+
+    expect(find.textContaining('Enter an http(s) URL'), findsNothing);
+    expect(changed?.url, '10.0.0.1:53');
+  });
+
+  /// The shape an SMB share is named in: a scheme standing for a port number.
+  testWidgets('a service scheme is accepted as a check target', (tester) async {
+    ConnectivityCheckSettings? changed;
+    await tester.pumpWidget(
+      buildPanel(
+        proxySettings: const ProxySettings(),
+        connectionMode: ConnectionMode.vpnTunnel,
+        onConnectivityCheckSettingsChanged: (settings) => changed = settings,
+      ),
+    );
+
+    await tester.scrollUntilVisible(
+      connectivityUrlField(),
+      200,
+      scrollable: settingsScrollView(),
+    );
+    await tester.enterText(connectivityUrlField(), 'smb://disk.corp.example');
+    await tester.pump();
+
+    expect(find.textContaining('Enter an http(s) URL'), findsNothing);
+    expect(changed?.url, 'smb://disk.corp.example');
   });
 
   testWidgets('invalid connectivity timeout shows validation error', (
@@ -492,6 +551,74 @@ void main() {
     expect(find.text('Enter a timeout greater than 0 ms'), findsOneWidget);
   });
 
+  /// The notification cannot be hidden — a foreground service must have one —
+  /// so what the switch takes away is the button on it.
+  testWidgets('the notification button switch emits the flag it turned off', (
+    tester,
+  ) async {
+    SystemSurfaceSettings? changed;
+    await tester.pumpWidget(
+      buildPanel(
+        proxySettings: const ProxySettings(),
+        onSystemSurfaceSettingsChanged: (settings) => changed = settings,
+      ),
+    );
+
+    await tester.scrollUntilVisible(
+      find.byKey(const Key('notification_disconnect_action_switch')),
+      200,
+      scrollable: settingsScrollView(),
+    );
+    await tester.ensureVisible(
+      find.byKey(const Key('notification_disconnect_action_switch')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const Key('notification_disconnect_action_switch')),
+    );
+    await tester.pump();
+
+    expect(changed?.disconnectActionEnabled, isFalse);
+    // The tile is a separate decision and must not ride along.
+    expect(changed?.quickSettingsTileEnabled, isTrue);
+  });
+
+  testWidgets('the tile switch reflects what is stored', (tester) async {
+    SystemSurfaceSettings? changed;
+    await tester.pumpWidget(
+      buildPanel(
+        proxySettings: const ProxySettings(),
+        systemSurfaceSettings: const SystemSurfaceSettings(
+          quickSettingsTileEnabled: false,
+        ),
+        onSystemSurfaceSettingsChanged: (settings) => changed = settings,
+      ),
+    );
+
+    await tester.scrollUntilVisible(
+      find.byKey(const Key('quick_settings_tile_switch')),
+      200,
+      scrollable: settingsScrollView(),
+    );
+    await tester.ensureVisible(
+      find.byKey(const Key('quick_settings_tile_switch')),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      tester
+          .widget<SwitchListTile>(
+            find.byKey(const Key('quick_settings_tile_switch')),
+          )
+          .value,
+      isFalse,
+    );
+
+    await tester.tap(find.byKey(const Key('quick_settings_tile_switch')));
+    await tester.pump();
+
+    expect(changed?.quickSettingsTileEnabled, isTrue);
+  });
+
   testWidgets('L2TP security notice tile is shown and opens callback', (
     tester,
   ) async {
@@ -511,6 +638,12 @@ void main() {
       200,
       scrollable: settingsScrollView(),
     );
+    // scrollUntilVisible stops as soon as the widget is built, which can leave
+    // it just below the fold; ensureVisible brings it the rest of the way.
+    await tester.ensureVisible(
+      find.byKey(const Key('l2tp_security_notice_tile')),
+    );
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('l2tp_security_notice_tile')));
     await tester.pump();
 
@@ -568,6 +701,12 @@ void main() {
       250,
       scrollable: settingsScrollView(),
     );
+    // scrollUntilVisible stops as soon as the widget is built, which can leave
+    // it just below the fold; ensureVisible brings it the rest of the way.
+    await tester.ensureVisible(
+      find.byKey(const Key('settings_update_refresh_button')),
+    );
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('settings_update_refresh_button')));
     await tester.pumpAndSettle();
 

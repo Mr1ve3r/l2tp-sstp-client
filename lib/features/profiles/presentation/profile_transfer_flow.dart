@@ -85,17 +85,21 @@ Future<void> importProfileBundleInteractively(
   required ProfilesBloc bloc,
   required ProfileBundle bundle,
 }) async {
-  final choices = await ProfileBundleImportSheet.show(
+  final selection = await ProfileBundleImportSheet.show(
     context,
     bundle: bundle,
     existing: bloc.state.profiles,
   );
-  if (choices == null || !context.mounted) return;
+  if (selection == null || !context.mounted) return;
   await _awaitImport(
     context,
     bloc: bloc,
     dispatch: () => bloc.add(
-      ProfilesBundleImportRequested(bundle: bundle, choices: choices),
+      ProfilesBundleImportRequested(
+        bundle: bundle,
+        choices: selection.choices,
+        groupIndexes: selection.groupIndexes,
+      ),
     ),
   );
 }

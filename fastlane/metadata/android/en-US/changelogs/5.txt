@@ -1,0 +1,21 @@
+Failover groups now travel with a shared set of profiles.
+
+An administrator who hands out several profiles and the order to try them in
+hands out both. The export offers a group once all of its profiles are chosen,
+the import offers each group separately, and a profile the recipient skipped is
+left out rather than blocking the group. Handing the same set out again rewrites
+the group it already made instead of leaving a second one beside it.
+
+The connectivity check can be pointed at something behind the tunnel. It accepts
+a service or an address as well as a URL, so a file share, a gateway or a
+resolver can be checked: smb://disk.example, ssh://, dns://, tcp://host:8443 or
+a plain host:445. A profile can carry a check of its own, and whether it travels
+with an export is now a choice. The application also routes itself through its
+own tunnel, which is what the check had always needed and never had.
+
+The Disconnect button on the notification and the Quick Settings tile can each
+be turned off, for a quieter shade.
+
+Fixed: saving a profile no longer removes it from its failover groups, and
+re-importing a certificate no longer strips it from the profiles that selected
+it. Memberships and selections already lost have to be set again once.

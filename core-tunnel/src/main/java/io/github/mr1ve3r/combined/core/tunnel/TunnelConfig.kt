@@ -29,16 +29,28 @@ import android.net.Network
  *   way. The flag becomes load-bearing for an engine that reads the descriptor
  *   from Kotlin instead — which is what phase 6 brings.
  * @property underlyingNetworks which networks the tunnel runs over.
- * @property excludeOwnPackage this application's package name, to be kept out
- *   of the tunnel, or `null` to leave it in.
+ * @property ownPackage this application's package name, which travels inside
+ *   the tunnel like any other application, or `null` to leave the question
+ *   alone.
  *
- *   The default is `null` because this module takes no position on it; the host
- *   decides. The Android application does set it, having verified on a device
- *   that excluding itself breaks neither routing mode (SPEC 3.1).
+ *   It used to be excluded (SPEC 3.1), and that turned out to be the reason the
+ *   connectivity check never measured the tunnel: `addDisallowedApplication`
+ *   works on the whole UID, so every socket the application opened -- the check
+ *   among them -- went over the underlying network. A probe on the far side of
+ *   the tunnel could not be reached, and a public one answered whether the
+ *   tunnel was up or not.
  *
- *   Only meaningful for [PerAppRouting.Exclude] and [PerAppRouting.AllApps]:
- *   under [PerAppRouting.Include] an application is already outside the tunnel
- *   unless it is named.
+ *   Nothing about the transport depends on the exclusion. The sockets that
+ *   carry the tunnel are protected individually through
+ *   [SocketProtector][io.github.mr1ve3r.combined.engine.SocketProtector], and
+ *   the peer's own address is kept off the tunnel's routes through
+ *   [TunnelParams.excludedRoutes][
+ *   io.github.mr1ve3r.combined.engine.TunnelParams.excludedRoutes]. Excluding
+ *   the whole application was a third layer over those two, and the widest one.
+ *
+ *   Only meaningful for [PerAppRouting.Include], where an application is
+ *   outside the tunnel unless it is named. Under the other two it is already
+ *   inside.
  */
 data class TunnelConfig(
     val sessionName: String,
@@ -46,7 +58,7 @@ data class TunnelConfig(
     val ipv4Only: Boolean = false,
     val blocking: Boolean? = null,
     val underlyingNetworks: UnderlyingNetworks = UnderlyingNetworks.Unspecified,
-    val excludeOwnPackage: String? = null,
+    val ownPackage: String? = null,
 )
 
 /** Which applications a tunnel carries. */

@@ -140,6 +140,72 @@ class FailoverGroupStoreInstrumentedTest {
         assertFalse(groups.list().isEmpty())
     }
 
+    /**
+     * Editing a member does not take it out of the group.
+     *
+     * This is the bug the fix to [ProfileDao.upsert] is about.
+     * `@Insert(onConflict = REPLACE)` deletes the row before inserting the new
+     * one, and `failover_group_member` cascades on that delete, so saving a
+     * profile silently emptied it out of every group. The way to hit it is the
+     * ordinary one: a set arrives with the logins left blank, the recipient
+     * fills one in, and that profile is gone from the group the set brought.
+     */
+    @Test
+    fun savingAMemberLeavesItInItsGroups() = runBlocking {
+        groups.save(group(), listOf("l2tp-1", "sstp-1"))
+
+        // What entering a login does: the same profile, saved again.
+        val edited = profiles.find("l2tp-1")!!.copy(username = "alice.smith")
+        profiles.save(edited, password = "typed-in", psk = "psk")
+
+        open()
+        val stored = groups.findWithMembers("group-1")
+        assertEquals(listOf("l2tp-1", "sstp-1"), stored?.members?.map { it.id })
+        assertEquals("alice.smith", profiles.find("l2tp-1")?.username)
+    }
+
+    /** The same, for every group a profile is in rather than just the first. */
+    @Test
+    fun savingAMemberLeavesItInAllOfItsGroups() = runBlocking {
+        groups.save(group(), listOf("l2tp-1", "sstp-1"))
+        groups.save(
+            FailoverGroup(id = "group-2", name = "Backup", createdAt = 2L),
+            listOf("spare", "l2tp-1"),
+        )
+
+        profiles.save(profiles.find("l2tp-1")!!.copy(mtu = 1380), password = "pw", psk = "psk")
+
+        open()
+        assertEquals(
+            listOf("l2tp-1", "sstp-1"),
+            groups.findWithMembers("group-1")?.members?.map { it.id },
+        )
+        assertEquals(
+            listOf("spare", "l2tp-1"),
+            groups.findWithMembers("group-2")?.members?.map { it.id },
+        )
+    }
+
+    /**
+     * Re-saving a group keeps its members even when nothing rewrites them.
+     *
+     * `FailoverGroupStore.save` writes the membership straight after the group
+     * row, so this held before the fix too — by accident of ordering. Asserting
+     * it here is what stops that ordering from silently becoming load-bearing
+     * again.
+     */
+    @Test
+    fun savingAGroupKeepsTheMembersItAlreadyHad() = runBlocking {
+        groups.save(group(), listOf("l2tp-1", "sstp-1"))
+
+        groups.save(group().copy(connectTimeoutSec = 30), listOf("l2tp-1", "sstp-1"))
+
+        open()
+        val stored = groups.findWithMembers("group-1")
+        assertEquals(listOf("l2tp-1", "sstp-1"), stored?.members?.map { it.id })
+        assertEquals(30, stored?.group?.connectTimeoutSec)
+    }
+
     private fun open() {
         if (::database.isInitialized) database.close()
         database = Room.databaseBuilder(context, TrustDatabase::class.java, DATABASE_NAME).build()

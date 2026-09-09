@@ -74,6 +74,15 @@ class _FakeSettingsRepository implements SettingsRepository {
   Future<LogDisplayLevel> loadLogDisplayLevel() async => initialLevel;
 
   @override
+  Future<SystemSurfaceSettings> loadSystemSurfaceSettings() async =>
+      const SystemSurfaceSettings();
+
+  @override
+  Future<SystemSurfaceSettings> saveSystemSurfaceSettings(
+    SystemSurfaceSettings settings,
+  ) async => settings;
+
+  @override
   Future<bool> loadBatteryOptimizationConnectPromptShown() async => false;
 
   @override

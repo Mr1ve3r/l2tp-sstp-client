@@ -29,6 +29,15 @@ class ProfileChannelContract {
 
   static const String argGroup = 'group';
 
+  /// Which system surfaces the application puts itself on (SPEC 7.1.3, 7.1.4).
+  /// Stored on the host because the service reads them with no Dart running.
+  static const String loadUiPreferences = 'loadUiPreferences';
+  static const String saveUiPreferences = 'saveUiPreferences';
+
+  static const String argNotificationDisconnectAction =
+      'notificationDisconnectAction';
+  static const String argQuickSettingsTile = 'quickSettingsTile';
+
   static const String argId = 'id';
   static const String argProfile = 'profile';
   static const String argProfiles = 'profiles';
@@ -101,6 +110,14 @@ abstract class ProfileBackend {
 
   /// Removes [group]. Its membership goes with it; the profiles stay.
   Future<void> deleteGroup(String id);
+
+  /// Which system surfaces the application shows (SPEC 7.1.3, 7.1.4).
+  Future<SystemSurfaceSettings> loadUiPreferences();
+
+  /// Stores [settings] and returns them as the host holds them.
+  Future<SystemSurfaceSettings> saveUiPreferences(
+    SystemSurfaceSettings settings,
+  );
 }
 
 /// [ProfileBackend] over the method channel to the host.
@@ -269,6 +286,42 @@ class MethodChannelProfileBackend implements ProfileBackend {
     );
   }
 
+  @override
+  Future<SystemSurfaceSettings> loadUiPreferences() async {
+    final raw = await _channel.invokeMethod<Map<Object?, Object?>>(
+      ProfileChannelContract.loadUiPreferences,
+    );
+    return _surfaceSettings(_asMap(raw));
+  }
+
+  @override
+  Future<SystemSurfaceSettings> saveUiPreferences(
+    SystemSurfaceSettings settings,
+  ) async {
+    final raw = await _channel.invokeMethod<Map<Object?, Object?>>(
+      ProfileChannelContract.saveUiPreferences,
+      <String, Object?>{
+        ProfileChannelContract.argNotificationDisconnectAction:
+            settings.disconnectActionEnabled,
+        ProfileChannelContract.argQuickSettingsTile:
+            settings.quickSettingsTileEnabled,
+      },
+    );
+    return _surfaceSettings(_asMap(raw));
+  }
+
+  /// The host's answer, falling back to what the application does today when
+  /// a key is missing: both surfaces on.
+  static SystemSurfaceSettings _surfaceSettings(Map<String, Object?>? map) =>
+      SystemSurfaceSettings(
+        disconnectActionEnabled:
+            map?[ProfileChannelContract.argNotificationDisconnectAction]
+                as bool? ??
+            true,
+        quickSettingsTileEnabled:
+            map?[ProfileChannelContract.argQuickSettingsTile] as bool? ?? true,
+      );
+
   /// A method channel hands back `Map<Object?, Object?>`; JSON wants strings.
   static Map<String, Object?>? _asMap(Object? raw) {
     if (raw is! Map) return null;
@@ -283,6 +336,7 @@ class MemoryProfileBackend implements ProfileBackend {
   String? _lastProfileId;
   bool _legacyImportDone = false;
   int _nextGroupId = 1;
+  SystemSurfaceSettings _surfaces = const SystemSurfaceSettings();
 
   @override
   Future<void> delete(String id) async {
@@ -396,6 +450,17 @@ class MemoryProfileBackend implements ProfileBackend {
 
   @override
   Future<void> deleteGroup(String id) async => _groups.remove(id);
+
+  @override
+  Future<SystemSurfaceSettings> loadUiPreferences() async => _surfaces;
+
+  @override
+  Future<SystemSurfaceSettings> saveUiPreferences(
+    SystemSurfaceSettings settings,
+  ) async {
+    _surfaces = settings;
+    return _surfaces;
+  }
 
   /// Unique within one fake store, which is all a test needs; the host's ids
   /// come from the same generator the profiles use.

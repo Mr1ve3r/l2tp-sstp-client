@@ -193,8 +193,12 @@ class _VpnHomePageViewState extends State<_VpnHomePageView>
   ConnectivityPingRequest _connectivityPingRequest(
     SettingsState settingsState,
     TunnelState tunnelState,
+    ProfilesState profilesState,
   ) {
-    final connectivitySettings = settingsState.connectivityCheckSettings;
+    final connectivitySettings = _connectivityCheckFor(
+      profilesState,
+      settingsState.connectivityCheckSettings,
+    );
     final url = connectivitySettings.url;
     final timeoutMs = connectivitySettings.timeoutMs;
     if (settingsState.connectionMode == ConnectionMode.proxyOnly) {
@@ -214,6 +218,33 @@ class _VpnHomePageViewState extends State<_VpnHomePageView>
     );
   }
 
+  /// The check to run for what is connected: the active profile's own where it
+  /// names one, [fallback] otherwise.
+  ///
+  /// A group is answered by the first member that names a check. Which member
+  /// actually came up is not something the tunnel state reports, and a set
+  /// handed out by an organisation gives every member the same endpoint, so the
+  /// first one is the right answer in the case this exists for and a harmless
+  /// one everywhere else.
+  ConnectivityCheckSettings _connectivityCheckFor(
+    ProfilesState profilesState,
+    ConnectivityCheckSettings fallback,
+  ) {
+    if (profilesState.hasActiveGroup) {
+      for (final member in profilesState.activeGroupMembers) {
+        if (member.connectivityCheckUrl.trim().isNotEmpty ||
+            member.connectivityCheckTimeoutMs > 0) {
+          return member.effectiveConnectivityCheck(fallback);
+        }
+      }
+      return fallback;
+    }
+    final profile = profilesState.hasActiveProfile
+        ? profilesState.activeProfileRow?.profile
+        : null;
+    return profile?.effectiveConnectivityCheck(fallback) ?? fallback;
+  }
+
   Future<void> _handleTunnelStateChange(TunnelState current) async {
     final message = current.message;
     if (message != null && message.id != _lastTunnelMessageId) {
@@ -224,7 +255,11 @@ class _VpnHomePageViewState extends State<_VpnHomePageView>
     if (!_lastTunnelUp && current.tunnelUp && !current.stopRequested) {
       context.read<ConnectivityBloc>().add(
         ConnectivityRunRequested(
-          _connectivityPingRequest(settingsState, current),
+          _connectivityPingRequest(
+            settingsState,
+            current,
+            context.read<ProfilesBloc>().state,
+          ),
         ),
       );
     } else if (_lastTunnelUp && !current.tunnelUp) {
@@ -942,6 +977,7 @@ class _VpnHomePageViewState extends State<_VpnHomePageView>
                               _connectivityPingRequest(
                                 settingsState,
                                 tunnelState,
+                                profilesState,
                               ),
                             ),
                           ),
@@ -970,6 +1006,7 @@ class _VpnHomePageViewState extends State<_VpnHomePageView>
                     proxySettings: settingsState.proxySettings,
                     connectivityCheckSettings:
                         settingsState.connectivityCheckSettings,
+                    systemSurfaceSettings: settingsState.systemSurfaceSettings,
                     onConnectionModeChanged: (mode) => context
                         .read<SettingsBloc>()
                         .add(SettingsConnectionModeChanged(mode)),
@@ -984,6 +1021,9 @@ class _VpnHomePageViewState extends State<_VpnHomePageView>
                         context.read<SettingsBloc>().add(
                           SettingsConnectivityCheckSettingsChanged(settings),
                         ),
+                    onSystemSurfaceSettingsChanged: (settings) => context
+                        .read<SettingsBloc>()
+                        .add(SettingsSystemSurfaceSettingsChanged(settings)),
                     batteryOptimizationStatus:
                         settingsState.batteryOptimizationStatus,
                     batteryOptimizationBusy:

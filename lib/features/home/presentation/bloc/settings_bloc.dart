@@ -75,6 +75,16 @@ final class SettingsProxySettingsChanged extends SettingsEvent {
   List<Object?> get props => [settings];
 }
 
+/// Turns the notification's button or the Quick Settings tile on or off.
+final class SettingsSystemSurfaceSettingsChanged extends SettingsEvent {
+  const SettingsSystemSurfaceSettingsChanged(this.settings);
+
+  final SystemSurfaceSettings settings;
+
+  @override
+  List<Object?> get props => [settings];
+}
+
 final class SettingsConnectivityCheckSettingsChanged extends SettingsEvent {
   const SettingsConnectivityCheckSettingsChanged(this.settings);
 
@@ -92,6 +102,7 @@ class SettingsState extends Equatable {
     this.splitTunnelSettings = const SplitTunnelSettings(),
     this.proxySettings = const ProxySettings(),
     this.connectivityCheckSettings = const ConnectivityCheckSettings(),
+    this.systemSurfaceSettings = const SystemSurfaceSettings(),
     this.connectivityUrlError,
     this.installedVersion,
     this.installedVersionError,
@@ -112,6 +123,7 @@ class SettingsState extends Equatable {
   final SplitTunnelSettings splitTunnelSettings;
   final ProxySettings proxySettings;
   final ConnectivityCheckSettings connectivityCheckSettings;
+  final SystemSurfaceSettings systemSurfaceSettings;
   final String? connectivityUrlError;
   final String? installedVersion;
   final String? installedVersionError;
@@ -132,6 +144,7 @@ class SettingsState extends Equatable {
     SplitTunnelSettings? splitTunnelSettings,
     ProxySettings? proxySettings,
     ConnectivityCheckSettings? connectivityCheckSettings,
+    SystemSurfaceSettings? systemSurfaceSettings,
     String? connectivityUrlError,
     bool clearConnectivityUrlError = false,
     String? installedVersion,
@@ -159,6 +172,8 @@ class SettingsState extends Equatable {
       proxySettings: proxySettings ?? this.proxySettings,
       connectivityCheckSettings:
           connectivityCheckSettings ?? this.connectivityCheckSettings,
+      systemSurfaceSettings:
+          systemSurfaceSettings ?? this.systemSurfaceSettings,
       connectivityUrlError: clearConnectivityUrlError
           ? null
           : (connectivityUrlError ?? this.connectivityUrlError),
@@ -193,6 +208,7 @@ class SettingsState extends Equatable {
     splitTunnelSettings,
     proxySettings,
     connectivityCheckSettings,
+    systemSurfaceSettings,
     connectivityUrlError,
     installedVersion,
     installedVersionError,
@@ -220,6 +236,7 @@ class SettingsBloc extends Bloc<SettingsEvent, SettingsState> {
     on<SettingsConnectionModeChanged>(_onConnectionModeChanged);
     on<SettingsSplitTunnelSettingsChanged>(_onSplitTunnelSettingsChanged);
     on<SettingsProxySettingsChanged>(_onProxySettingsChanged);
+    on<SettingsSystemSurfaceSettingsChanged>(_onSystemSurfaceSettingsChanged);
     on<SettingsConnectivityCheckSettingsChanged>(
       _onConnectivityCheckSettingsChanged,
     );
@@ -265,6 +282,8 @@ class SettingsBloc extends Bloc<SettingsEvent, SettingsState> {
         .getBatteryOptimizationStatus();
     final updateCheckConsentFuture = _settingsRepository
         .loadUpdateCheckConsentGranted();
+    final systemSurfaceSettingsFuture = _settingsRepository
+        .loadSystemSurfaceSettings();
 
     final connectionMode = await connectionModeFuture;
     final splitTunnelSettings = await splitTunnelSettingsFuture;
@@ -272,6 +291,7 @@ class SettingsBloc extends Bloc<SettingsEvent, SettingsState> {
     final connectivityCheckSettings = await connectivityCheckSettingsFuture;
     final batteryOptimizationStatus = await batteryOptimizationStatusFuture;
     final updateCheckConsentGranted = await updateCheckConsentFuture;
+    final systemSurfaceSettings = await systemSurfaceSettingsFuture;
 
     emit(
       state.copyWith(
@@ -280,6 +300,7 @@ class SettingsBloc extends Bloc<SettingsEvent, SettingsState> {
         splitTunnelSettings: splitTunnelSettings,
         proxySettings: proxySettings,
         connectivityCheckSettings: connectivityCheckSettings,
+        systemSurfaceSettings: systemSurfaceSettings,
         batteryOptimizationStatus: batteryOptimizationStatus,
         updateCheckConsentGranted: updateCheckConsentGranted,
         clearConnectivityUrlError: true,
@@ -444,6 +465,19 @@ class SettingsBloc extends Bloc<SettingsEvent, SettingsState> {
   ) async {
     emit(state.copyWith(proxySettings: event.settings));
     await _settingsRepository.saveProxySettings(event.settings);
+  }
+
+  Future<void> _onSystemSurfaceSettingsChanged(
+    SettingsSystemSurfaceSettingsChanged event,
+    Emitter<SettingsState> emit,
+  ) async {
+    emit(state.copyWith(systemSurfaceSettings: event.settings));
+    // The host is the authority: it writes the flags, disables or enables the
+    // tile component, and rebuilds a notification that is already showing.
+    final stored = await _settingsRepository.saveSystemSurfaceSettings(
+      event.settings,
+    );
+    emit(state.copyWith(systemSurfaceSettings: stored));
   }
 
   Future<void> _onConnectivityCheckSettingsChanged(

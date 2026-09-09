@@ -445,6 +445,31 @@ class MainActivity : FlutterActivity() {
      * The store is the same one the service reads when the system starts it
      * without the application running, which is the point of it being in Kotlin.
      */
+    /**
+     * Puts the surface preferences into effect: the tile component is enabled
+     * or disabled, and a notification that is already on screen is rebuilt so
+     * the button appears or goes away now rather than at the next connect.
+     */
+    private fun applySystemSurfacePreferences() {
+        SystemSurfacePreferences.applyQuickSettingsTile(
+            applicationContext,
+            SystemSurfacePreferences.quickSettingsTileEnabled(applicationContext),
+        )
+        if (!TunnelVpnService.isSessionActive()) return
+        try {
+            startService(
+                Intent(this, TunnelVpnService::class.java).apply {
+                    action = TunnelVpnService.ACTION_REFRESH_NOTIFICATION
+                },
+            )
+        } catch (e: IllegalStateException) {
+            // The application was backgrounded between the tap and this call.
+            // The notification catches up at the next connect; nothing else
+            // depends on it.
+            AppLog.w(TAG, "notification refresh rejected", e)
+        }
+    }
+
     private fun configureProfileChannel(flutterEngine: FlutterEngine) {
         val channel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, ProfileContract.METHOD_CHANNEL)
         val profileChannel =
@@ -453,6 +478,7 @@ class MainActivity : FlutterActivity() {
                 trust = TrustStore.get(applicationContext),
                 groups = FailoverGroupStore.get(applicationContext),
                 scope = trustScope,
+                onUiPreferencesChanged = ::applySystemSurfacePreferences,
             )
         channel.setMethodCallHandler { call, result ->
             profileChannel.handle(

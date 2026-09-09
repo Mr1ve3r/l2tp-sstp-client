@@ -112,28 +112,54 @@ class TunnelBuilderTest {
         assertTrue(spec.calls.none { it.startsWith("addAllowedApplication") })
     }
 
+    /**
+     * A full-device tunnel carries this application too.
+     *
+     * It used to exclude itself, which is what kept the connectivity check on
+     * the underlying network: the exclusion is per-UID, so it took every socket
+     * the application opened with it.
+     */
     @Test
-    fun `own package is left alone unless the caller asks for its exclusion`() {
-        val spec = RecordingTunnelInterface()
+    fun `own package travels inside a full-device tunnel`() {
+        val spec = RecordingTunnelInterface(installedPackages = setOf(OWN_PACKAGE))
 
-        TunnelBuilder().configure(spec, PARAMS, CONFIG)
+        TunnelBuilder().configure(spec, PARAMS, CONFIG.copy(ownPackage = OWN_PACKAGE))
 
         assertTrue(spec.calls.none { it.startsWith("addDisallowedApplication") })
+        assertTrue(spec.calls.none { it.startsWith("addAllowedApplication") })
     }
 
+    /** Nothing is in an inclusive tunnel unless named, so it names itself. */
     @Test
-    fun `own package is excluded when configured, alongside the profile's exclusions`() {
+    fun `own package names itself in an inclusive tunnel`() {
         val spec = RecordingTunnelInterface(installedPackages = setOf("com.example.a", OWN_PACKAGE))
         val config =
             CONFIG.copy(
-                perAppRouting = PerAppRouting.Exclude(setOf("com.example.a")),
-                excludeOwnPackage = OWN_PACKAGE,
+                perAppRouting = PerAppRouting.Include(setOf("com.example.a")),
+                ownPackage = OWN_PACKAGE,
             )
 
         TunnelBuilder().configure(spec, PARAMS, config)
 
         assertEquals(
-            setOf("addDisallowedApplication(com.example.a)", "addDisallowedApplication($OWN_PACKAGE)"),
+            setOf("addAllowedApplication(com.example.a)", "addAllowedApplication($OWN_PACKAGE)"),
+            spec.calls.filter { it.startsWith("addAllowedApplication") }.toSet(),
+        )
+    }
+
+    @Test
+    fun `own package is not excluded alongside the profile's exclusions`() {
+        val spec = RecordingTunnelInterface(installedPackages = setOf("com.example.a", OWN_PACKAGE))
+        val config =
+            CONFIG.copy(
+                perAppRouting = PerAppRouting.Exclude(setOf("com.example.a")),
+                ownPackage = OWN_PACKAGE,
+            )
+
+        TunnelBuilder().configure(spec, PARAMS, config)
+
+        assertEquals(
+            setOf("addDisallowedApplication(com.example.a)"),
             spec.calls.filter { it.startsWith("addDisallowedApplication") }.toSet(),
         )
     }

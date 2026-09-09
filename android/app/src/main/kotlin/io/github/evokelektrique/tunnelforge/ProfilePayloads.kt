@@ -54,6 +54,8 @@ internal object ProfilePayloads {
         ProfileContract.FIELD_PROXY_HOST to profile.proxyHost,
         ProfileContract.FIELD_PROXY_PORT to profile.proxyPort,
         ProfileContract.FIELD_PROXY_USERNAME to profile.proxyUsername,
+        ProfileContract.FIELD_CONNECTIVITY_CHECK_URL to profile.connectivityCheckUrl,
+        ProfileContract.FIELD_CONNECTIVITY_CHECK_TIMEOUT_MS to profile.connectivityCheckTimeoutMs,
     )
 
     /**
@@ -107,6 +109,11 @@ internal object ProfilePayloads {
             ),
             proxyUsername = string(map, ProfileContract.FIELD_PROXY_USERNAME),
             proxyPasswordRef = VpnProfile.proxyPasswordRefFor(id),
+            connectivityCheckUrl = string(map, ProfileContract.FIELD_CONNECTIVITY_CHECK_URL).trim(),
+            // A negative or absent budget means the application-wide one, the
+            // same as zero; only a positive number is an override.
+            connectivityCheckTimeoutMs = int(map, ProfileContract.FIELD_CONNECTIVITY_CHECK_TIMEOUT_MS, 0)
+                .coerceAtLeast(0),
         )
     }
 

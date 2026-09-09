@@ -19,6 +19,7 @@ class _FakeSettingsRepository implements SettingsRepository {
         url: 'https://example.com/ping',
         timeoutMs: 3200,
       );
+  SystemSurfaceSettings systemSurfaceSettings = const SystemSurfaceSettings();
   bool batteryOptimizationConnectPromptShown = false;
   bool updateCheckConsentGranted = false;
 
@@ -28,6 +29,18 @@ class _FakeSettingsRepository implements SettingsRepository {
   @override
   Future<ConnectivityCheckSettings> loadConnectivityCheckSettings() async {
     return connectivityCheckSettings;
+  }
+
+  @override
+  Future<SystemSurfaceSettings> loadSystemSurfaceSettings() async =>
+      systemSurfaceSettings;
+
+  @override
+  Future<SystemSurfaceSettings> saveSystemSurfaceSettings(
+    SystemSurfaceSettings settings,
+  ) async {
+    systemSurfaceSettings = settings;
+    return settings;
   }
 
   @override

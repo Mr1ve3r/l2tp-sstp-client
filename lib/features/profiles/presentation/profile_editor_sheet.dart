@@ -103,6 +103,8 @@ class _ProfileEditorViewState extends State<ProfileEditorView> {
   late final TextEditingController _proxyPortController;
   late final TextEditingController _proxyUsernameController;
   late final TextEditingController _proxyPasswordController;
+  late final TextEditingController _connectivityUrlController;
+  late final TextEditingController _connectivityTimeoutController;
   bool _passwordVisible = false;
   bool _pskVisible = false;
   bool _proxyPasswordVisible = false;
@@ -125,6 +127,8 @@ class _ProfileEditorViewState extends State<ProfileEditorView> {
     _proxyPortController = TextEditingController();
     _proxyUsernameController = TextEditingController();
     _proxyPasswordController = TextEditingController();
+    _connectivityUrlController = TextEditingController();
+    _connectivityTimeoutController = TextEditingController();
   }
 
   @override
@@ -143,6 +147,8 @@ class _ProfileEditorViewState extends State<ProfileEditorView> {
     _proxyPortController.dispose();
     _proxyUsernameController.dispose();
     _proxyPasswordController.dispose();
+    _connectivityUrlController.dispose();
+    _connectivityTimeoutController.dispose();
     super.dispose();
   }
 
@@ -342,6 +348,64 @@ class _ProfileEditorViewState extends State<ProfileEditorView> {
         context,
         label: label,
       ).copyWith(errorText: errorText, errorMaxLines: 2),
+    );
+  }
+
+  /// This profile's own connectivity check (SPEC 8.1).
+  ///
+  /// Both fields are optional and both fall back on their own: an empty URL
+  /// means the application-wide endpoint, an empty timeout the application-wide
+  /// budget. The hints show what those are, so leaving a field alone is a
+  /// visible choice rather than a blank.
+  Widget _connectivitySection(
+    BuildContext context,
+    ProfileFormState state,
+    TextTheme tt,
+    Color sectionColor,
+  ) {
+    final t = AppLocalizations.of(context);
+    return _sectionCard(
+      key: const Key('profile_connectivity_section'),
+      color: sectionColor,
+      title: t.connectivityCheck,
+      tt: tt,
+      children: [
+        TextField(
+          key: const Key('profile_connectivity_url'),
+          controller: _connectivityUrlController,
+          keyboardType: TextInputType.url,
+          autocorrect: false,
+          enableSuggestions: false,
+          textCapitalization: TextCapitalization.none,
+          smartDashesType: SmartDashesType.disabled,
+          smartQuotesType: SmartQuotesType.disabled,
+          onChanged: (value) => context.read<ProfileFormBloc>().add(
+            ProfileFormConnectivityUrlChanged(value),
+          ),
+          decoration:
+              _deco(
+                context,
+                label: t.connectivityUrl,
+                hint: ConnectivityCheckSettings.defaultUrl,
+              ).copyWith(
+                errorText: state.connectivityUrlErrorText,
+                errorMaxLines: 2,
+                helperText: t.profileConnectivityHelp,
+                helperMaxLines: 3,
+              ),
+        ),
+        const SizedBox(height: 12),
+        _numberField(
+          context: context,
+          key: const Key('profile_connectivity_timeout'),
+          controller: _connectivityTimeoutController,
+          label: t.connectivityTimeout,
+          errorText: state.connectivityTimeoutErrorText,
+          onChanged: (value) => context.read<ProfileFormBloc>().add(
+            ProfileFormConnectivityTimeoutChanged(value),
+          ),
+        ),
+      ],
     );
   }
 
@@ -672,6 +736,11 @@ class _ProfileEditorViewState extends State<ProfileEditorView> {
         _syncController(_proxyPortController, state.proxyPort);
         _syncController(_proxyUsernameController, state.proxyUsername);
         _syncController(_proxyPasswordController, state.proxyPassword);
+        _syncController(_connectivityUrlController, state.connectivityUrl);
+        _syncController(
+          _connectivityTimeoutController,
+          state.connectivityTimeoutMs,
+        );
 
         if (state.loadError != null) {
           return Padding(
@@ -859,6 +928,13 @@ class _ProfileEditorViewState extends State<ProfileEditorView> {
                               dnsSectionColor,
                             ),
                           ],
+                          const SizedBox(height: 12),
+                          _connectivitySection(
+                            context,
+                            state,
+                            tt,
+                            dnsSectionColor,
+                          ),
                           const SizedBox(height: 12),
                           TextField(
                             key: const Key('mtu_field'),
